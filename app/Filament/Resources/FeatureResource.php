@@ -49,26 +49,13 @@ class FeatureResource extends Resource
                     ->columns(2),
                 
                 Forms\Components\Section::make('Normalization Settings')
-                    ->description('These settings control how values are normalized for scoring')
+                    ->description('These settings control how values are normalized for scoring. Min/max values are calculated automatically from actual product data.')
                     ->schema([
                         Forms\Components\Toggle::make('is_higher_better')
                             ->label('Higher is Better')
                             ->default(true)
                             ->helperText('ON = higher values score better (e.g., battery life). OFF = lower values score better (e.g., weight)')
                             ->inline(false),
-                        
-                        Forms\Components\Grid::make(2)
-                            ->schema([
-                                Forms\Components\TextInput::make('min_value')
-                                    ->label('Minimum Value')
-                                    ->numeric()
-                                    ->helperText('Lowest expected value for normalization'),
-                                
-                                Forms\Components\TextInput::make('max_value')
-                                    ->label('Maximum Value')
-                                    ->numeric()
-                                    ->helperText('Highest expected value for normalization'),
-                            ]),
                     ]),
             ]);
     }
@@ -97,18 +84,6 @@ class FeatureResource extends Resource
                     ->falseIcon('heroicon-o-arrow-trending-down')
                     ->trueColor('success')
                     ->falseColor('warning'),
-                
-                Tables\Columns\TextColumn::make('min_value')
-                    ->label('Min')
-                    ->numeric()
-                    ->sortable()
-                    ->placeholder('—'),
-                
-                Tables\Columns\TextColumn::make('max_value')
-                    ->label('Max')
-                    ->numeric()
-                    ->sortable()
-                    ->placeholder('—'),
                 
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
