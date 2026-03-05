@@ -23,10 +23,12 @@ class ProductScoringService
         Collection $features,
         Collection $products,
         array $weights,
-        ?float $amazonRatingWeight = 50
-    ): float {
+        ?float $amazonRatingWeight = 50,
+        ?float $priceWeight = 50
+    ): array {
         $totalWeightedScore = 0;
         $totalWeight = 0;
+        $featureScores = [];
 
         // Calculate scores for each feature
         foreach ($features as $feature) {
@@ -47,6 +49,7 @@ class ProductScoringService
                 $feature,
                 $products
             );
+            $featureScores[$feature->id] = round($normalizedScore, 1);
 
             // Apply weight
             $totalWeightedScore += $normalizedScore * $weight;
@@ -61,12 +64,26 @@ class ProductScoringService
             $totalWeight += $amazonRatingWeight;
         }
 
-        // Calculate final Match Score
-        if ($totalWeight === 0) {
-            return 0;
+        // Add Price Score (virtual feature)
+        // Logic: Lower price tier is better (1=Budget, 2=Mid, 3=Premium)
+        if ($product->price_tier && $priceWeight > 0) {
+            // Map tiers to scores: 1->100, 2->50, 3->0
+            $priceScore = match((int)$product->price_tier) {
+                1 => 100,
+                2 => 50,
+                3 => 0,
+                default => 50,
+            };
+            
+            $totalWeightedScore += $priceScore * $priceWeight;
+            $totalWeight += $priceWeight;
         }
 
-        return round(($totalWeightedScore / $totalWeight), 1);
+        // Calculate final Match Score
+        return [
+            'score' => $totalWeight === 0 ? 0 : round(($totalWeightedScore / $totalWeight), 1),
+            'feature_scores' => $featureScores
+        ];
     }
 
     /**
@@ -113,19 +130,27 @@ class ProductScoringService
      */
     public function calculateFeatureRange(Feature $feature, Collection $products): array
     {
+        // If the feature has no unit, it's an AI-generated subjective score (0-100)
+        // Hardcode the bounds so the visual bars match the actual 0-100 value exactly.
+        if (empty($feature->unit)) {
+            return ['min' => 0, 'max' => 100];
+        }
+
         $values = $products->flatMap(function ($product) use ($feature) {
             return $product->featureValues
                 ->where('feature_id', $feature->id)
                 ->pluck('raw_value');
-        })->filter();
+        })->filter(function($val) {
+            return $val !== null && $val !== '';
+        });
 
         if ($values->isEmpty()) {
             return ['min' => 0, 'max' => 100];
         }
 
         return [
-            'min' => $values->min(),
-            'max' => $values->max(),
+            'min' => (float) $values->min(),
+            'max' => (float) $values->max(),
         ];
     }
 

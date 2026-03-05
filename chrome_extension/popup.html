@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        body {
+            width: 300px;
+            padding: 15px;
+            font-family: sans-serif;
+        }
+
+        button {
+            width: 100%;
+            padding: 10px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        button:hover {
+            background: #2563eb;
+        }
+
+        #status {
+            margin-top: 10px;
+            font-size: 13px;
+            color: #666;
+            word-break: break-all;
+        }
+
+        .error {
+            color: #ef4444;
+        }
+
+        .success {
+            color: #10b981;
+        }
+    </style>
+</head>
+
+<body>
+    <h3>PW2D Scraper</h3>
+
+    <div style="margin-bottom: 15px;">
+        <label for="categorySearch"
+            style="display:block; margin-bottom:5px; font-size:12px; font-weight:bold; color:#333;">Search
+            Category</label>
+        <input type="text" id="categorySearch" placeholder="Type to filter..."
+            style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; margin-bottom:10px; box-sizing: border-box;">
+
+        <label for="categorySelect"
+            style="display:block; margin-bottom:5px; font-size:12px; font-weight:bold; color:#333;">Select
+            Category</label>
+        <select id="categorySelect"
+            style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; margin-bottom:10px;">
+            <option value="" disabled selected>Loading categories...</option>
+        </select>
+    </div>
+
+    <button id="scrapeBtn" disabled>Import Product (Single)</button>
+
+    <hr style="margin: 15px 0; border: 0; border-top: 1px solid #eee;">
+
+    <!-- Batch Mode UI -->
+    <h4 style="margin: 0 0 10px 0; color: #333;">Batch Mode</h4>
+
+    <button id="scanPageBtn" style="background: #6366f1; margin-bottom: 8px;">Scan Page for Products</button>
+
+    <div id="batchControls" style="display: none;">
+        <div style="font-size: 13px; margin-bottom: 8px;">
+            Found <strong id="foundCount">0</strong> products.
+        </div>
+
+        <!-- Auto-pagination toggle -->
+        <label
+            style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px; font-size: 13px; color: #333; cursor: pointer;">
+            <input type="checkbox" id="autoNextPageCheck" checked>
+            Automatically scan and scrape next pages
+        </label>
+
+        <button id="startBatchBtn" style="background: #10b981; margin-bottom: 8px;">Start Batch Import</button>
+    </div>
+
+    <div id="batchProgress" style="display: none;">
+        <div style="font-size: 13px; margin-bottom: 5px;">
+            Processing: <span id="progressCount">0/0</span>
+        </div>
+        <button id="resumeBatchBtn" style="display: none; background: #10b981; margin-bottom: 8px;">Resume
+            Batch</button>
+        <button id="stopBatchBtn" style="background: #ef4444;">Stop Batch</button>
+    </div>
+
+    <div id="status"></div>
+    <script src="popup.js"></script>
+</body>
+
+</html>

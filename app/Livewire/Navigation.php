@@ -11,13 +11,6 @@ class Navigation extends Component
 
     public function render()
     {
-        // Get only root categories (no parent)
-        $rootCategories = Category::whereNull('parent_id')
-            ->orderBy('name')
-            ->get();
-
-        return view('livewire.navigation', [
-            'rootCategories' => $rootCategories,
-        ]);
+        return view('livewire.navigation');
     }
 }

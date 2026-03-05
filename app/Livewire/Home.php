@@ -3,6 +3,7 @@
 namespace App\Livewire;
 
 use App\Models\Category;
+use App\Models\SearchLog;
 use Illuminate\Support\Facades\Http;
 use Livewire\Component;
 
@@ -11,6 +12,12 @@ class Home extends Component
     public $searchQuery = '';
     public $isSearching = false;
     public $searchError = '';
+
+    public function setQueryAndSearch($query)
+    {
+        $this->searchQuery = $query;
+        $this->searchCategory();
+    }
 
     /**
      * AI-powered category search.
@@ -50,7 +57,7 @@ class Home extends Component
             // Call Gemini API
             $apiKey = config('services.gemini.api_key');
             $response = Http::timeout(10)->post(
-                "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={$apiKey}",
+                "https://generativelanguage.googleapis.com/v1beta/models/" . config('services.gemini.site_model') . ":generateContent?key={$apiKey}",
                 [
                     'contents' => [
                         [
@@ -117,6 +124,22 @@ class Home extends Component
             // Flash the user's original query to session for AI Concierge
             session()->flash('ai_initial_prompt', $this->searchQuery);
 
+            // Dispatch event for PostHog tracking
+            $this->dispatch('ai_search_submitted', 
+                location: 'homepage', 
+                query: $this->searchQuery
+            );
+            
+            // Log to database - success with matched category
+            $matchedCategory = $categories->where('slug', $slug)->first();
+            SearchLog::create([
+                'type' => 'homepage_ai',
+                'query' => $this->searchQuery,
+                'category_name' => $matchedCategory->name ?? $slug,
+                'results_count' => 1,
+                'user_id' => auth()->id(),
+            ]);
+
             // Redirect to category page
             return redirect()->route('category.show', $slug);
 
@@ -125,6 +148,17 @@ class Home extends Component
                 'message' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
+
+            // Log failed/no-category searches so we can track user intent gaps
+            SearchLog::create([
+                'type' => 'homepage_ai',
+                'query' => $this->searchQuery,
+                'category_name' => null,
+                'results_count' => 0,
+                'response_summary' => $e->getMessage(),
+                'user_id' => auth()->id(),
+            ]);
+
             $this->searchError = $e->getMessage();
             $this->isSearching = false;
         }
@@ -137,7 +171,7 @@ class Home extends Component
             ->withCount('products')
             ->orderByDesc('products_count')
             ->limit(8)
-            ->get();
+            ->get(['id', 'name', 'slug', 'description', 'image']);
 
         return view('livewire.home', [
             'popularCategories' => $popularCategories,

@@ -45,15 +45,19 @@ class ProductResource extends Resource
                             ->label('Product Name')
                             ->required()
                             ->maxLength(255),
+                            
+                        Forms\Components\Textarea::make('ai_summary')
+                            ->label('AI Summary')
+                            ->columnSpanFull()
+                            ->placeholder('Will be generated later...'),
                         
-                        Forms\Components\Select::make('categories')
-                            ->label('Categories')
-                            ->relationship('categories', 'name')
-                            ->multiple()
+                        Forms\Components\Select::make('category_id')
+                            ->label('Category')
+                            ->relationship('category', 'name')
                             ->searchable()
                             ->preload()
                             ->required()
-                            ->helperText('Select one or more categories this product belongs to'),
+                            ->helperText('Select the category this product belongs to'),
                     ])
                     ->columns(2),
                 
@@ -62,15 +66,18 @@ class ProductResource extends Resource
                         Forms\Components\FileUpload::make('image_path')
                             ->label('Product Image')
                             ->image()
+                            ->disk('public')
                             ->directory('products/images')
+                            ->visibility('public')
                             ->imageEditor()
                             ->maxSize(5120)
+                            ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp', 'image/jpg'])
                             ->helperText('Upload product image (max 5MB)'),
                         
                         Forms\Components\TextInput::make('affiliate_url')
                             ->label('Affiliate URL')
                             ->url()
-                            ->maxLength(500)
+                            ->maxLength(1000)
                             ->helperText('Link to product page or affiliate link'),
                     ])
                     ->columns(1),
@@ -117,10 +124,11 @@ class ProductResource extends Resource
                     ->sortable()
                     ->searchable(),
                 
-                Tables\Columns\TextColumn::make('categories.name')
-                    ->label('Categories')
+                Tables\Columns\TextColumn::make('category.name')
+                    ->label('Category')
                     ->badge()
-                    ->separator(','),
+                    ->sortable()
+                    ->searchable(),
                 
                 Tables\Columns\TextColumn::make('amazon_rating')
                     ->label('Rating')
@@ -146,11 +154,10 @@ class ProductResource extends Resource
                     ->searchable()
                     ->preload(),
                 
-                Tables\Filters\SelectFilter::make('categories')
-                    ->relationship('categories', 'name')
+                Tables\Filters\SelectFilter::make('category')
+                    ->relationship('category', 'name')
                     ->searchable()
-                    ->preload()
-                    ->multiple(),
+                    ->preload(),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),

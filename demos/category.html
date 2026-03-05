@@ -1,0 +1,1100 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Computer Microphones – pw2d</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --blue: #3B82F6;
+            --blue-dark: #1D4ED8;
+            --amber: #F59E0B;
+            --green: #10B981;
+            --purple: #8B5CF6;
+            --bg-dark: #0B0F1A;
+            --bg-card: #111827;
+            --bg-panel: #0F172A;
+            --border: rgba(255, 255, 255, 0.08);
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg-dark);
+            color: #F1F5F9;
+            min-height: 100vh;
+        }
+
+        /* ── NAV ── */
+        nav {
+            position: sticky;
+            top: 0;
+            z-index: 200;
+            backdrop-filter: blur(20px);
+            background: rgba(11, 15, 26, 0.85);
+            border-bottom: 1px solid var(--border);
+            padding: 0 2rem;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .logo {
+            font-weight: 800;
+            font-size: 1.2rem;
+            text-decoration: none;
+            color: #fff;
+        }
+
+        .breadcrumb {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.85rem;
+            color: #64748B;
+        }
+
+        .breadcrumb a {
+            color: #64748B;
+            text-decoration: none;
+        }
+
+        .breadcrumb a:hover {
+            color: #CBD5E1;
+        }
+
+        /* ── CATEGORY HEADER ── */
+        .cat-header {
+            background: linear-gradient(135deg, #0F172A 0%, #1E1B4B 100%);
+            border-bottom: 1px solid var(--border);
+            padding: 2.5rem 2rem;
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            flex-wrap: wrap;
+        }
+
+        .cat-header-icon {
+            font-size: 3.5rem;
+        }
+
+        .cat-header-text h1 {
+            font-size: 1.8rem;
+            font-weight: 900;
+        }
+
+        .cat-header-text p {
+            color: #94A3B8;
+            margin-top: 0.3rem;
+            font-size: 0.92rem;
+        }
+
+        .cat-header-stats {
+            display: flex;
+            gap: 1.5rem;
+            margin-top: 0.8rem;
+        }
+
+        .stat {
+            font-size: 0.8rem;
+            color: #64748B;
+        }
+
+        .stat strong {
+            color: #CBD5E1;
+            display: block;
+            font-size: 1rem;
+        }
+
+        .filter-bar {
+            margin: 0 2rem;
+            padding: 1rem 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .filter-select {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            color: #CBD5E1;
+            padding: 7px 14px;
+            border-radius: 10px;
+            font-size: 0.85rem;
+            cursor: pointer;
+        }
+
+        /* ── LAYOUT ── */
+        .main-layout {
+            display: flex;
+            gap: 0;
+        }
+
+        /* ── PRODUCT GRID ── */
+        .products-area {
+            flex: 1;
+            padding: 2rem;
+            min-width: 0;
+        }
+
+        .grid-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1.5rem;
+        }
+
+        .grid-header h2 {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #94A3B8;
+        }
+
+        .sort-note {
+            font-size: 0.78rem;
+            color: #475569;
+        }
+
+        .products-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+            gap: 1.2rem;
+        }
+
+        .product-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            overflow: hidden;
+            transition: transform 0.2s, border-color 0.2s;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .product-card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(59, 130, 246, 0.35);
+        }
+
+        .product-card.top-pick {
+            border-color: rgba(245, 158, 11, 0.5);
+        }
+
+        .top-badge {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 2;
+            background: linear-gradient(135deg, #F59E0B, #D97706);
+            color: #fff;
+            font-size: 0.65rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            padding: 3px 10px;
+            border-radius: 999px;
+        }
+
+        .card-img {
+            height: 160px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #1E293B, #0F172A);
+            font-size: 3.5rem;
+        }
+
+        .card-body {
+            padding: 1rem 1.1rem 1.2rem;
+        }
+
+        .card-brand {
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: #64748B;
+            margin-bottom: 0.25rem;
+        }
+
+        .card-name {
+            font-size: 0.92rem;
+            font-weight: 700;
+            margin-bottom: 0.8rem;
+            line-height: 1.4;
+        }
+
+        .match-score-label {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+
+        .match-label {
+            font-size: 0.7rem;
+            color: #64748B;
+            font-weight: 500;
+        }
+
+        .match-pct {
+            font-size: 0.85rem;
+            font-weight: 800;
+        }
+
+        .score-bar {
+            height: 5px;
+            background: rgba(255, 255, 255, 0.06);
+            border-radius: 999px;
+            overflow: hidden;
+        }
+
+        .score-fill {
+            height: 100%;
+            border-radius: 999px;
+            transition: width 0.6s cubic-bezier(.4, 0, .2, 1);
+        }
+
+        .score-91 .match-pct {
+            color: var(--green);
+        }
+
+        .score-91 .score-fill {
+            width: 91%;
+            background: linear-gradient(90deg, var(--green), #34D399);
+        }
+
+        .score-84 .match-pct {
+            color: var(--blue);
+        }
+
+        .score-84 .score-fill {
+            width: 84%;
+            background: linear-gradient(90deg, var(--blue), #60A5FA);
+        }
+
+        .score-77 .match-pct {
+            color: var(--blue);
+        }
+
+        .score-77 .score-fill {
+            width: 77%;
+            background: linear-gradient(90deg, var(--blue), #60A5FA);
+        }
+
+        .score-68 .match-pct {
+            color: #94A3B8;
+        }
+
+        .score-68 .score-fill {
+            width: 68%;
+            background: #334155;
+        }
+
+        .score-62 .match-pct {
+            color: #94A3B8;
+        }
+
+        .score-62 .score-fill {
+            width: 62%;
+            background: #334155;
+        }
+
+        .score-55 .match-pct {
+            color: #64748B;
+        }
+
+        .score-55 .score-fill {
+            width: 55%;
+            background: #1E293B;
+        }
+
+        .card-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 0.9rem;
+        }
+
+        .card-rating {
+            font-size: 0.78rem;
+            color: #94A3B8;
+        }
+
+        .card-rating span {
+            color: var(--amber);
+        }
+
+        .card-price {
+            font-size: 0.72rem;
+            padding: 3px 10px;
+            border-radius: 999px;
+            font-weight: 600;
+        }
+
+        .tier-1 {
+            background: rgba(16, 185, 129, 0.12);
+            color: var(--green);
+        }
+
+        .tier-2 {
+            background: rgba(59, 130, 246, 0.12);
+            color: var(--blue);
+        }
+
+        .tier-3 {
+            background: rgba(245, 158, 11, 0.12);
+            color: var(--amber);
+        }
+
+        /* ── CUSTOMIZE BUTTON (main CTA) ── */
+        .customize-fab {
+            position: fixed;
+            bottom: 32px;
+            right: 32px;
+            z-index: 300;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            animation: bob 3s ease-in-out infinite;
+        }
+
+        .fab-hint {
+            font-size: 0.72rem;
+            font-weight: 600;
+            color: var(--purple);
+            background: rgba(139, 92, 246, 0.15);
+            border: 1px solid rgba(139, 92, 246, 0.3);
+            padding: 4px 12px;
+            border-radius: 999px;
+            white-space: nowrap;
+            animation: fadeSlideUp 0.8s 0.5s ease both;
+        }
+
+        .fab-btn {
+            width: 68px;
+            height: 68px;
+            border-radius: 22px;
+            border: none;
+            cursor: pointer;
+            background: linear-gradient(135deg, #7C3AED, #4F46E5);
+            box-shadow: 0 8px 32px rgba(124, 58, 237, 0.5), 0 0 0 0 rgba(124, 58, 237, 0.3);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 3px;
+            animation: pulse-glow 2.5s ease-in-out infinite;
+            transition: transform 0.2s;
+        }
+
+        .fab-btn:hover {
+            transform: scale(1.08);
+        }
+
+        .fab-btn svg {
+            width: 22px;
+            height: 22px;
+            color: #fff;
+        }
+
+        .fab-label {
+            font-size: 0.58rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        /* ── PANEL (shown on click) ── */
+        .panel-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 250;
+            background: rgba(0, 0, 0, 0.55);
+            backdrop-filter: blur(4px);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+        }
+
+        .panel-overlay.open {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .panel {
+            position: fixed;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            z-index: 260;
+            width: min(420px, 100vw);
+            background: var(--bg-panel);
+            border-left: 1px solid var(--border);
+            transform: translateX(100%);
+            transition: transform 0.35s cubic-bezier(.4, 0, .2, 1);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .panel.open {
+            transform: translateX(0);
+        }
+
+        .panel-head {
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+
+        .panel-head h2 {
+            font-size: 1.05rem;
+            font-weight: 800;
+        }
+
+        .panel-head p {
+            font-size: 0.78rem;
+            color: #64748B;
+            margin-top: 2px;
+        }
+
+        .panel-close {
+            width: 32px;
+            height: 32px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: #94A3B8;
+            cursor: pointer;
+            font-size: 1.1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+        }
+
+        .panel-close:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .panel-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        /* Panel Tabs */
+        .panel-tabs {
+            display: flex;
+            background: rgba(255, 255, 255, 0.04);
+            border-radius: 12px;
+            padding: 4px;
+        }
+
+        .panel-tab {
+            flex: 1;
+            padding: 8px;
+            border-radius: 9px;
+            border: none;
+            background: transparent;
+            color: #64748B;
+            font-size: 0.78rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .panel-tab.active {
+            background: var(--bg-card);
+            color: #F1F5F9;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Sliders */
+        .slider-section h3 {
+            font-size: 0.8rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: #64748B;
+            margin-bottom: 1rem;
+        }
+
+        .slider-row {
+            margin-bottom: 1.2rem;
+        }
+
+        .slider-label-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+
+        .slider-name {
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .slider-val {
+            font-size: 0.82rem;
+            font-weight: 700;
+            color: var(--purple);
+            min-width: 28px;
+            text-align: right;
+        }
+
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 5px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.08);
+            outline: none;
+            cursor: pointer;
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #7C3AED, #4F46E5);
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(124, 58, 237, 0.5);
+        }
+
+        input[type=range]::-webkit-slider-runnable-track {
+            border-radius: 999px;
+        }
+
+        /* Presets */
+        .presets-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .preset-btn {
+            padding: 12px 10px;
+            border-radius: 14px;
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            cursor: pointer;
+            text-align: left;
+            transition: all 0.2s;
+            font-family: 'Inter', sans-serif;
+            color: #F1F5F9;
+        }
+
+        .preset-btn:hover {
+            border-color: rgba(139, 92, 246, 0.5);
+            background: rgba(139, 92, 246, 0.08);
+        }
+
+        .preset-btn.selected {
+            border-color: var(--purple);
+            background: rgba(139, 92, 246, 0.12);
+        }
+
+        .preset-icon {
+            font-size: 1.4rem;
+            margin-bottom: 5px;
+        }
+
+        .preset-name {
+            font-size: 0.82rem;
+            font-weight: 700;
+        }
+
+        .preset-desc {
+            font-size: 0.72rem;
+            color: #64748B;
+            margin-top: 2px;
+        }
+
+        /* AI Chat */
+        .ai-chat {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .chat-bubble {
+            padding: 10px 14px;
+            border-radius: 14px;
+            font-size: 0.85rem;
+            line-height: 1.6;
+        }
+
+        .chat-ai {
+            background: rgba(124, 58, 237, 0.12);
+            border: 1px solid rgba(124, 58, 237, 0.2);
+            color: #C4B5FD;
+            border-radius: 14px 14px 14px 4px;
+        }
+
+        .chat-input-row {
+            display: flex;
+            gap: 8px;
+            margin-top: 6px;
+        }
+
+        .chat-input-row input {
+            flex: 1;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            color: #F1F5F9;
+            padding: 10px 14px;
+            border-radius: 12px;
+            outline: none;
+            font-size: 0.85rem;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .chat-send {
+            padding: 10px 14px;
+            border-radius: 12px;
+            border: none;
+            background: var(--purple);
+            color: #fff;
+            font-weight: 700;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-family: 'Inter', sans-serif;
+        }
+
+        @keyframes bob {
+
+            0%,
+            100% {
+                transform: translateY(0);
+            }
+
+            50% {
+                transform: translateY(-6px);
+            }
+        }
+
+        @keyframes fadeSlideUp {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes pulse-glow {
+
+            0%,
+            100% {
+                box-shadow: 0 8px 32px rgba(124, 58, 237, 0.5), 0 0 0 0 rgba(124, 58, 237, 0.3);
+            }
+
+            50% {
+                box-shadow: 0 8px 40px rgba(124, 58, 237, 0.7), 0 0 0 14px rgba(124, 58, 237, 0);
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- NAV -->
+    <nav>
+        <a href="home.html" class="logo">pw2d</a>
+        <div class="breadcrumb">
+            <a href="home.html">Home</a>
+            <span>›</span>
+            <span>Computer Microphones</span>
+        </div>
+    </nav>
+
+    <!-- CATEGORY HEADER -->
+    <div class="cat-header">
+        <div class="cat-header-icon">🎙️</div>
+        <div class="cat-header-text">
+            <h1>Computer Microphones</h1>
+            <p>24 products compared — ranked by your personal priorities</p>
+            <div class="cat-header-stats">
+                <div class="stat"><strong>24</strong> Products</div>
+                <div class="stat"><strong>8</strong> Features scored</div>
+                <div class="stat"><strong>3</strong> Price tiers</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- FILTER BAR -->
+    <div class="filter-bar">
+        <select class="filter-select">
+            <option>All Brands</option>
+            <option>Blue Yeti</option>
+            <option>Rode</option>
+            <option>Fifine</option>
+        </select>
+        <select class="filter-select">
+            <option>Any Price</option>
+            <option>Budget</option>
+            <option>Mid-Range</option>
+            <option>Premium</option>
+        </select>
+    </div>
+
+    <!-- MAIN LAYOUT -->
+    <div class="main-layout">
+        <div class="products-area">
+            <div class="grid-header">
+                <h2>Ranked by your priorities</h2>
+                <span class="sort-note">↕ Drag sliders in Customize panel to re-rank</span>
+            </div>
+
+            <div class="products-grid">
+                <!-- Card 1 - Top Pick -->
+                <div class="product-card top-pick score-91">
+                    <div class="top-badge">🏆 Your Top Pick</div>
+                    <div class="card-img">🎙️</div>
+                    <div class="card-body">
+                        <div class="card-brand">Blue</div>
+                        <div class="card-name">Blue Yeti X Professional USB Microphone</div>
+                        <div class="match-score-label">
+                            <span class="match-label">Match Score</span>
+                            <span class="match-pct">91%</span>
+                        </div>
+                        <div class="score-bar">
+                            <div class="score-fill"></div>
+                        </div>
+                        <div class="card-footer">
+                            <span class="card-rating"><span>★</span> 4.7 (2.4k)</span>
+                            <span class="card-price tier-2">Mid-Range</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Card 2 -->
+                <div class="product-card score-84">
+                    <div class="card-img">🎤</div>
+                    <div class="card-body">
+                        <div class="card-brand">HyperX</div>
+                        <div class="card-name">HyperX QuadCast S RGB USB Condenser</div>
+                        <div class="match-score-label">
+                            <span class="match-label">Match Score</span>
+                            <span class="match-pct">84%</span>
+                        </div>
+                        <div class="score-bar">
+                            <div class="score-fill"></div>
+                        </div>
+                        <div class="card-footer">
+                            <span class="card-rating"><span>★</span> 4.6 (1.8k)</span>
+                            <span class="card-price tier-2">Mid-Range</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Card 3 -->
+                <div class="product-card score-77">
+                    <div class="card-img">🎙</div>
+                    <div class="card-body">
+                        <div class="card-brand">Rode</div>
+                        <div class="card-name">Rode NT-USB Mini USB Microphone</div>
+                        <div class="match-score-label">
+                            <span class="match-label">Match Score</span>
+                            <span class="match-pct">77%</span>
+                        </div>
+                        <div class="score-bar">
+                            <div class="score-fill"></div>
+                        </div>
+                        <div class="card-footer">
+                            <span class="card-rating"><span>★</span> 4.5 (982)</span>
+                            <span class="card-price tier-2">Mid-Range</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Card 4 -->
+                <div class="product-card score-68">
+                    <div class="card-img">🎙️</div>
+                    <div class="card-body">
+                        <div class="card-brand">Fifine</div>
+                        <div class="card-name">Fifine K669 USB Cardioid Condenser Mic</div>
+                        <div class="match-score-label">
+                            <span class="match-label">Match Score</span>
+                            <span class="match-pct">68%</span>
+                        </div>
+                        <div class="score-bar">
+                            <div class="score-fill"></div>
+                        </div>
+                        <div class="card-footer">
+                            <span class="card-rating"><span>★</span> 4.3 (12k)</span>
+                            <span class="card-price tier-1">Budget</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Card 5 -->
+                <div class="product-card score-62">
+                    <div class="card-img">🎤</div>
+                    <div class="card-body">
+                        <div class="card-brand">Elgato</div>
+                        <div class="card-name">Elgato Wave:3 Premium Studio Microphone</div>
+                        <div class="match-score-label">
+                            <span class="match-label">Match Score</span>
+                            <span class="match-pct">62%</span>
+                        </div>
+                        <div class="score-bar">
+                            <div class="score-fill"></div>
+                        </div>
+                        <div class="card-footer">
+                            <span class="card-rating"><span>★</span> 4.5 (3.1k)</span>
+                            <span class="card-price tier-3">Premium</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Card 6 -->
+                <div class="product-card score-55">
+                    <div class="card-img">🎙</div>
+                    <div class="card-body">
+                        <div class="card-brand">Shure</div>
+                        <div class="card-name">Shure MV7 USB/XLR Dynamic Podcast Mic</div>
+                        <div class="match-score-label">
+                            <span class="match-label">Match Score</span>
+                            <span class="match-pct">55%</span>
+                        </div>
+                        <div class="score-bar">
+                            <div class="score-fill"></div>
+                        </div>
+                        <div class="card-footer">
+                            <span class="card-rating"><span>★</span> 4.7 (4.2k)</span>
+                            <span class="card-price tier-3">Premium</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CUSTOMIZE FAB -->
+    <div class="customize-fab" id="customizeFab">
+        <div class="fab-hint">✦ Click to personalize your ranking</div>
+        <button class="fab-btn" onclick="openPanel()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                <line x1="4" y1="6" x2="20" y2="6" />
+                <line x1="4" y1="12" x2="20" y2="12" />
+                <line x1="4" y1="18" x2="20" y2="18" />
+                <circle cx="10" cy="6" r="2" fill="currentColor" stroke="none" />
+                <circle cx="16" cy="12" r="2" fill="currentColor" stroke="none" />
+                <circle cx="8" cy="18" r="2" fill="currentColor" stroke="none" />
+            </svg>
+            <span class="fab-label">Customize</span>
+        </button>
+    </div>
+
+    <!-- PANEL OVERLAY -->
+    <div class="panel-overlay" id="overlay" onclick="closePanel()"></div>
+
+    <!-- PANEL -->
+    <div class="panel" id="panel">
+        <div class="panel-head">
+            <div>
+                <h2>🎛️ Personalize Rankings</h2>
+                <p>Drag sliders to match your priorities</p>
+            </div>
+            <button class="panel-close" onclick="closePanel()">✕</button>
+        </div>
+
+        <div class="panel-body">
+
+            <!-- Tabs -->
+            <div class="panel-tabs">
+                <button class="panel-tab active" onclick="switchTab('sliders', this)">⚖️ Weights</button>
+                <button class="panel-tab" onclick="switchTab('presets', this)">⚡ Presets</button>
+                <button class="panel-tab" onclick="switchTab('ai', this)">🤖 AI Help</button>
+            </div>
+
+            <!-- SLIDERS TAB -->
+            <div id="tab-sliders" class="slider-section">
+                <h3>Feature Priority</h3>
+                <div class="slider-row">
+                    <div class="slider-label-row">
+                        <span class="slider-name">🎵 Sound Quality</span>
+                        <span class="slider-val" id="sq-val">72</span>
+                    </div>
+                    <input type="range" min="0" max="100" value="72"
+                        oninput="document.getElementById('sq-val').textContent = this.value; updateScores();">
+                </div>
+                <div class="slider-row">
+                    <div class="slider-label-row">
+                        <span class="slider-name">🔇 Noise Suppression</span>
+                        <span class="slider-val" id="ns-val">50</span>
+                    </div>
+                    <input type="range" min="0" max="100" value="50"
+                        oninput="document.getElementById('ns-val').textContent = this.value; updateScores();">
+                </div>
+                <div class="slider-row">
+                    <div class="slider-label-row">
+                        <span class="slider-name">🔌 Ease of Use</span>
+                        <span class="slider-val" id="eu-val">60</span>
+                    </div>
+                    <input type="range" min="0" max="100" value="60"
+                        oninput="document.getElementById('eu-val').textContent = this.value; updateScores();">
+                </div>
+                <div class="slider-row">
+                    <div class="slider-label-row">
+                        <span class="slider-name">🏗️ Build Quality</span>
+                        <span class="slider-val" id="bq-val">45</span>
+                    </div>
+                    <input type="range" min="0" max="100" value="45"
+                        oninput="document.getElementById('bq-val').textContent = this.value; updateScores();">
+                </div>
+                <h3 style="margin-top:0.5rem">Virtual Weights</h3>
+                <div class="slider-row">
+                    <div class="slider-label-row">
+                        <span class="slider-name">💰 Price (lower = better match)</span>
+                        <span class="slider-val" id="price-val">80</span>
+                    </div>
+                    <input type="range" min="0" max="100" value="80"
+                        oninput="document.getElementById('price-val').textContent = this.value; updateScores();">
+                </div>
+                <div class="slider-row">
+                    <div class="slider-label-row">
+                        <span class="slider-name">⭐ Amazon Rating</span>
+                        <span class="slider-val" id="rating-val">50</span>
+                    </div>
+                    <input type="range" min="0" max="100" value="50"
+                        oninput="document.getElementById('rating-val').textContent = this.value; updateScores();">
+                </div>
+            </div>
+
+            <!-- PRESETS TAB -->
+            <div id="tab-presets" style="display:none">
+                <div class="presets-grid">
+                    <button class="preset-btn" onclick="selectPreset(this, [90,80,40,50,30,60])">
+                        <div class="preset-icon">🎙️</div>
+                        <div class="preset-name">Podcaster</div>
+                        <div class="preset-desc">Sound quality first</div>
+                    </button>
+                    <button class="preset-btn" onclick="selectPreset(this, [50,90,60,40,50,70])">
+                        <div class="preset-icon">🏠</div>
+                        <div class="preset-name">Home Office</div>
+                        <div class="preset-desc">Clear calls on budget</div>
+                    </button>
+                    <button class="preset-btn" onclick="selectPreset(this, [70,60,80,40,90,50])">
+                        <div class="preset-icon">💸</div>
+                        <div class="preset-name">Budget Buyer</div>
+                        <div class="preset-desc">Max value for money</div>
+                    </button>
+                    <button class="preset-btn" onclick="selectPreset(this, [100,70,50,90,20,80])">
+                        <div class="preset-icon">🎸</div>
+                        <div class="preset-name">Studio Pro</div>
+                        <div class="preset-desc">Uncompromising quality</div>
+                    </button>
+                </div>
+            </div>
+
+            <!-- AI TAB -->
+            <div id="tab-ai" style="display:none" class="ai-chat">
+                <div class="chat-bubble chat-ai">
+                    👋 Hi! Tell me about your use case and I'll automatically adjust the sliders to match your
+                    priorities. For example: <em>"I'm a student on a budget who mostly does Zoom calls"</em>
+                </div>
+                <div class="chat-input-row">
+                    <input type="text" placeholder="Describe your needs…" id="aiChatInput">
+                    <button class="chat-send" onclick="sendAiMessage()">Ask →</button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        function openPanel() {
+            document.getElementById('panel').classList.add('open');
+            document.getElementById('overlay').classList.add('open');
+            document.getElementById('customizeFab').style.display = 'none';
+        }
+        function closePanel() {
+            document.getElementById('panel').classList.remove('open');
+            document.getElementById('overlay').classList.remove('open');
+            document.getElementById('customizeFab').style.display = 'flex';
+        }
+        function switchTab(tabId, btn) {
+            ['sliders', 'presets', 'ai'].forEach(t => {
+                document.getElementById('tab-' + t).style.display = t === tabId ? '' : 'none';
+            });
+            document.querySelectorAll('.panel-tab').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        }
+        function updateScores() {
+            // Demo animation: slightly randomize scores to simulate re-ranking
+            const cards = document.querySelectorAll('.product-card');
+            cards.forEach(card => {
+                const fill = card.querySelector('.score-fill');
+                const pct = card.querySelector('.match-pct');
+                if (fill && pct) {
+                    const base = parseInt(fill.style.width) || parseInt(getComputedStyle(fill).width);
+                    const newVal = Math.min(99, Math.max(30, parseInt(pct.textContent) + (Math.random() * 10 - 5)));
+                    pct.textContent = Math.round(newVal) + '%';
+                    fill.style.width = Math.round(newVal) + '%';
+                }
+            });
+        }
+        function selectPreset(btn, vals) {
+            document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('selected'));
+            btn.classList.add('selected');
+            const sliders = document.querySelectorAll('input[type=range]');
+            const valEls = ['sq-val', 'ns-val', 'eu-val', 'bq-val', 'price-val', 'rating-val'];
+            vals.forEach((v, i) => {
+                if (sliders[i]) sliders[i].value = v;
+                const el = document.getElementById(valEls[i]);
+                if (el) el.textContent = v;
+            });
+            updateScores();
+        }
+        function sendAiMessage() {
+            const input = document.getElementById('aiChatInput');
+            const val = input.value.trim();
+            if (!val) return;
+            input.value = '';
+            setTimeout(() => {
+                const chat = document.getElementById('tab-ai');
+                const bubble = document.createElement('div');
+                bubble.className = 'chat-bubble chat-ai';
+                bubble.innerHTML = '✨ <strong>AI adjusted your sliders!</strong> Based on your needs, I prioritized <em>Noise Suppression</em> and <em>Value</em>. Products have been re-ranked. You can fine-tune with the sliders.';
+                chat.insertBefore(bubble, chat.querySelector('.chat-input-row'));
+                selectPreset(document.querySelector('.preset-btn'), [50, 90, 60, 40, 85, 50]);
+            }, 600);
+        }
+        // Auto-open panel after 2s to demo the feature
+        setTimeout(() => openPanel(), 1800);
+    </script>
+</body>
+
+</html>

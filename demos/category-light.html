@@ -1,0 +1,1269 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Microphones Comparison – pw2d (Light)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --blue: #2563EB;
+            --purple: #7C3AED;
+            --green: #10B981;
+            --amber: #F59E0B;
+            --text-main: #0F172A;
+            --text-muted: #64748B;
+            --bg-main: #F8FAFC;
+            --bg-white: #FFFFFF;
+            --border: #E2E8F0;
+            --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg-main);
+            color: var(--text-main);
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* ── NAV ── */
+        nav {
+            position: sticky;
+            top: 0;
+            z-index: 200;
+            backdrop-filter: blur(12px);
+            background: rgba(255, 255, 255, 0.92);
+            border-bottom: 1px solid var(--border);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+        }
+
+        .nav-inner {
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 0 1.5rem;
+            height: 72px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .logo {
+            flex-shrink: 0;
+            text-decoration: none;
+        }
+
+        .logo img {
+            height: 48px;
+            width: auto;
+        }
+
+        .nav-search-wrap {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            padding: 0 2rem;
+            position: relative;
+        }
+
+        .nav-search {
+            position: relative;
+            width: 100%;
+            max-width: 480px;
+        }
+
+        .nav-search input {
+            width: 100%;
+            padding: 10px 16px 10px 42px;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            font-size: 0.9rem;
+            color: var(--text-main);
+            background: #fff;
+            outline: none;
+            font-family: 'Inter', sans-serif;
+            transition: all 0.2s;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .nav-search input:focus {
+            border-color: var(--blue);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        .nav-search input::placeholder {
+            color: #94A3B8;
+        }
+
+        .nav-search-icon {
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            pointer-events: none;
+            color: #94A3B8;
+        }
+
+        .search-dropdown {
+            position: absolute;
+            top: calc(100% + 6px);
+            left: 0;
+            right: 0;
+            background: #fff;
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.12);
+            display: none;
+            overflow: hidden;
+            z-index: 200;
+        }
+
+        .search-dropdown.open {
+            display: block;
+        }
+
+        .dd-section-label {
+            padding: 8px 16px;
+            font-size: 0.7rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            background: #F8FAFC;
+            border-bottom: 1px solid #F1F5F9;
+        }
+
+        .dd-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 16px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: var(--text-main);
+            text-decoration: none;
+            transition: background 0.15s;
+            cursor: pointer;
+            border-bottom: 1px solid #F8FAFC;
+        }
+
+        .dd-item:hover {
+            background: #EFF6FF;
+        }
+
+        .dd-item small {
+            color: var(--text-muted);
+            font-size: 0.78rem;
+        }
+
+        .dd-item .arrow {
+            color: #CBD5E1;
+            font-size: 0.8rem;
+        }
+
+        .nav-right {
+            flex-shrink: 0;
+            width: 48px;
+        }
+
+        /* ── HEADER + GUIDE (merged) ── */
+        .cat-header {
+            background: linear-gradient(135deg, #fff 0%, #F8FAFC 100%);
+            border-bottom: 1px solid var(--border);
+            padding: 2rem;
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            gap: 2rem;
+            align-items: start;
+        }
+
+        .cat-left {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .cat-header-img {
+            width: 100%;
+            height: 180px;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: var(--shadow-md);
+        }
+
+        .cat-header-img img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .cat-info h1 {
+            font-size: 1.6rem;
+            font-weight: 900;
+            letter-spacing: -0.02em;
+            margin-bottom: 4px;
+        }
+
+        .cat-info p {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+
+        /* Guide (right column) */
+        .cat-guide {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .cat-title {
+            font-size: 1.8rem;
+            font-weight: 900;
+            letter-spacing: -0.02em;
+            margin: 0 0 0.5rem;
+            color: var(--text-main);
+        }
+
+        .guide-tabs {
+            display: flex;
+            gap: 0;
+            border-bottom: 2px solid var(--border);
+        }
+
+        .guide-tab {
+            padding: 12px 18px;
+            border: none;
+            background: none;
+            font-weight: 700;
+            font-size: 0.82rem;
+            color: var(--text-muted);
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .guide-tab:hover {
+            color: var(--text-main);
+        }
+
+        .guide-tab.active {
+            color: var(--blue);
+            border-bottom-color: var(--blue);
+        }
+
+        .guide-body {
+            padding: 1rem 0 0;
+        }
+
+        .guide-body p {
+            font-size: 0.88rem;
+            color: var(--text-muted);
+            line-height: 1.7;
+        }
+
+        .guide-body p b {
+            color: var(--text-main);
+        }
+
+        .guide-toggle {
+            display: inline-block;
+            font-size: 0.8rem;
+            color: var(--blue);
+            font-weight: 700;
+            cursor: pointer;
+            margin-top: 8px;
+            border: none;
+            background: none;
+            padding: 0;
+        }
+
+        .guide-content {
+            display: none;
+        }
+
+        .guide-content.active {
+            display: block;
+        }
+
+        /* ── PRODUCT GRID ── */
+        .content-area {
+            padding: 2rem;
+        }
+
+        @media (max-width: 640px) {
+            .content-area {
+                padding: 1rem 0.5rem;
+            }
+        }
+
+        .grid-tools {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+
+        .grid-tools h2 {
+            font-size: 1.1rem;
+            font-weight: 700;
+        }
+
+        .filter-row {
+            display: flex;
+            gap: 12px;
+        }
+
+        .select-btn {
+            padding: 8px 16px;
+            border: 1px solid var(--border);
+            background: #fff;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            color: var(--text-main);
+            cursor: pointer;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .products-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1.5rem;
+        }
+
+        @media (max-width: 640px) {
+            .products-grid {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 0.5rem;
+            }
+
+            .cat-header {
+                grid-template-columns: 1fr;
+                padding: 1.5rem 0.5rem;
+            }
+
+            .cat-header-img {
+                height: 140px;
+            }
+
+            .cat-title {
+                font-size: 1.3rem;
+            }
+
+            .guide-tab {
+                padding: 10px 10px;
+                font-size: 0.75rem;
+            }
+
+            .card {
+                border-radius: 16px;
+            }
+
+            .card-img {
+                height: 100px;
+            }
+
+            .card-body {
+                padding: 0.6rem;
+            }
+
+            .card-title {
+                font-size: 0.78rem;
+                -webkit-line-clamp: 2;
+                height: auto;
+                margin-bottom: 0.6rem;
+            }
+
+            .card-brand-row {
+                margin-bottom: 3px;
+            }
+
+            .card-brand {
+                font-size: 0.65rem;
+            }
+
+            .brand-rating {
+                font-size: 0.65rem;
+            }
+
+            .match-header span:first-child {
+                font-size: 0.65rem;
+            }
+
+            .match-header span:last-child {
+                font-size: 0.8rem;
+            }
+
+            .match-box {
+                margin-bottom: 0.5rem;
+            }
+
+            .card-footer {
+                margin-top: 0.5rem;
+                padding-top: 0.5rem;
+            }
+
+            .price-tier {
+                font-size: 0.7rem;
+            }
+
+            .amazon-btn {
+                font-size: 0.72rem;
+                padding: 10px 8px;
+            }
+
+            .grid-tools {
+                padding: 0 0.25rem;
+                margin-bottom: 1rem;
+            }
+
+            .grid-tools h2 {
+                font-size: 0.95rem;
+            }
+        }
+
+        .card {
+            background: #fff;
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            overflow: hidden;
+            transition: all 0.3s;
+            position: relative;
+            box-shadow: var(--shadow-sm);
+            cursor: pointer;
+        }
+
+        .card:hover {
+            transform: translateY(-6px);
+            box-shadow: 0 12px 40px rgba(255, 153, 0, 0.2);
+            border-color: #FF9900;
+        }
+
+        .card:hover .amazon-btn {
+            background: #E68A00;
+            letter-spacing: 0.5px;
+        }
+
+        .card.top-hit {
+            border: 2px solid var(--amber);
+        }
+
+        .award-ribbon {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            z-index: 10;
+            background: var(--amber);
+            color: #fff;
+            font-size: 0.7rem;
+            font-weight: 900;
+            padding: 4px 12px;
+            border-radius: 99px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            box-shadow: 0 4px 10px rgba(245, 158, 11, 0.3);
+        }
+
+        .card-img {
+            height: 180px;
+            background: #F1F5F9;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 4rem;
+            position: relative;
+        }
+
+        .card-body {
+            padding: 1.5rem;
+        }
+
+        .card-brand-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+
+        .card-brand {
+            font-size: 0.75rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            color: var(--blue);
+            letter-spacing: 0.04em;
+        }
+
+        .brand-rating {
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 2px;
+        }
+
+        .brand-rating span {
+            color: var(--amber);
+        }
+
+        .card-title {
+            font-size: 1.05rem;
+            font-weight: 800;
+            color: var(--text-main);
+            line-height: 1.4;
+            margin-bottom: 1.2rem;
+            height: 3rem;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .match-box {
+            margin-bottom: 1rem;
+        }
+
+        .match-header {
+            display: flex;
+            justify-content: space-between;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+
+        .match-header span:first-child {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .match-header span:last-child {
+            font-size: 0.95rem;
+        }
+
+        .bar-bg {
+            height: 8px;
+            background: #E2E8F0;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .bar-fill {
+            height: 100%;
+            border-radius: 10px;
+            transition: width 0.8s ease-out;
+        }
+
+        .card-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 1rem;
+            padding-top: 0.75rem;
+            border-top: 1px solid #F1F5F9;
+        }
+
+        .price-tier {
+            font-size: 0.78rem;
+            font-weight: 800;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .price-tier .tier-dollars {
+            letter-spacing: 1px;
+        }
+
+        .price-tier .tier-faded {
+            opacity: 0.2;
+        }
+
+        .tier-budget {
+            color: #16A34A;
+        }
+
+        .tier-mid {
+            color: #2563EB;
+        }
+
+        .tier-premium {
+            color: #D97706;
+        }
+
+        .amazon-btn {
+            display: block;
+            width: 100%;
+            text-align: center;
+            padding: 12px 16px;
+            background: #FF9900;
+            color: #fff;
+            font-size: 0.82rem;
+            font-weight: 800;
+            text-decoration: none;
+            transition: all 0.25s;
+            letter-spacing: 0.02em;
+        }
+
+        .amazon-btn:hover {
+            background: #E68A00;
+        }
+
+        /* Colors for match scores */
+        .score-high .match-header span:last-child {
+            color: var(--green);
+        }
+
+        .score-high .bar-fill {
+            background: var(--green);
+            width: 92%;
+        }
+
+        .score-mid .match-header span:last-child {
+            color: var(--blue);
+        }
+
+        .score-mid .bar-fill {
+            background: var(--blue);
+            width: 78%;
+        }
+
+        .score-low .match-header span:last-child {
+            color: var(--text-muted);
+        }
+
+        .score-low .bar-fill {
+            background: var(--text-muted);
+            width: 62%;
+        }
+
+        /* ── CUSTOMIZE FAB ── */
+        .cta-fab {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            z-index: 300;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 10px;
+        }
+
+        .fab-tip {
+            background: var(--purple);
+            color: #fff;
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 6px 16px;
+            border-radius: 12px;
+            box-shadow: var(--shadow-md);
+            animation: slideIn 0.5s ease both;
+        }
+
+        .fab-btn {
+            width: 64px;
+            height: 64px;
+            border-radius: 20px;
+            border: none;
+            cursor: pointer;
+            background: var(--purple);
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 8px 16px rgba(124, 58, 237, 0.4);
+            transition: transform 0.2s;
+        }
+
+        .fab-btn:hover {
+            transform: scale(1.1);
+            background: #6D28D9;
+        }
+
+        .fab-btn svg {
+            width: 28px;
+            height: 28px;
+        }
+
+        /* ── SIDE PANEL ── */
+        .overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(2px);
+            z-index: 400;
+            display: none;
+        }
+
+        .overlay.active {
+            display: block;
+        }
+
+        .panel {
+            position: fixed;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            width: 400px;
+            max-width: 90vw;
+            background: #fff;
+            z-index: 410;
+            border-left: 1px solid var(--border);
+            transform: translateX(100%);
+            transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            flex-direction: column;
+            box-shadow: -10px 0 30px rgba(0, 0, 0, 0.05);
+        }
+
+        .panel.active {
+            transform: translateX(0);
+        }
+
+        .panel-header {
+            padding: 2rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .panel-header h2 {
+            font-size: 1.25rem;
+            font-weight: 900;
+        }
+
+        .close-btn {
+            font-size: 1.5rem;
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: var(--text-muted);
+        }
+
+        .panel-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 2rem;
+        }
+
+        .tab-nav {
+            display: flex;
+            background: #F1F5F9;
+            padding: 4px;
+            border-radius: 14px;
+            margin-bottom: 2rem;
+        }
+
+        .tab-btn {
+            flex: 1;
+            border: none;
+            background: none;
+            padding: 10px;
+            border-radius: 10px;
+            font-weight: 700;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .tab-btn.active {
+            background: #fff;
+            color: var(--text-main);
+            box-shadow: var(--shadow-sm);
+        }
+
+        /* Sliders */
+        .slider-box {
+            margin-bottom: 1.5rem;
+        }
+
+        .slider-label {
+            display: flex;
+            justify-content: space-between;
+            font-weight: 700;
+            font-size: 0.9rem;
+            margin-bottom: 8px;
+        }
+
+        .slider-label span:last-child {
+            font-weight: 900;
+            font-size: 0.95rem;
+        }
+
+        .slider-intro {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            line-height: 1.6;
+            margin-bottom: 1.5rem;
+            padding: 12px 14px;
+            background: #F8FAFC;
+            border-radius: 12px;
+            border-left: 3px solid var(--blue);
+        }
+
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 6px;
+            border-radius: 10px;
+            background: #E2E8F0;
+            outline: none;
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            border: 2px solid #fff;
+            background: var(--thumb-color, #64748B);
+        }
+
+        /* Presets */
+        .preset-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        .preset-card {
+            padding: 16px;
+            border: 2px solid var(--border);
+            border-radius: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: #fff;
+            text-align: left;
+        }
+
+        .preset-card:hover {
+            border-color: var(--purple);
+            background: #F5F3FF;
+        }
+
+        .preset-card.active {
+            border-color: var(--purple);
+            background: #F5F3FF;
+        }
+
+        .preset-card b {
+            display: block;
+            font-size: 0.95rem;
+            margin-bottom: 2px;
+        }
+
+        .preset-card small {
+            color: var(--text-muted);
+            font-size: 0.75rem;
+        }
+
+        /* Chat */
+        .chat-area {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .bubble {
+            padding: 12px 16px;
+            border-radius: 16px;
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+
+        .bot {
+            background: #F5F3FF;
+            color: #5B21B6;
+            font-weight: 500;
+            border-bottom-left-radius: 4px;
+        }
+
+        .chat-input-wrap {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .chat-input-wrap input {
+            flex: 1;
+            padding: 10px 16px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            outline: none;
+        }
+
+        .chat-go {
+            padding: 10px 20px;
+            background: var(--purple);
+            color: #fff;
+            border: none;
+            border-radius: 12px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <nav>
+        <div class="nav-inner">
+            <a href="home-light.html" class="logo">
+                <img src="../public/images/logo.png" alt="pw2d – Power to Decide">
+            </a>
+            <div class="nav-search-wrap">
+                <div class="nav-search">
+                    <svg class="nav-search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                        <circle cx="11" cy="11" r="8" />
+                        <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                    </svg>
+                    <input type="search" id="navSearchInput" placeholder="Search categories or products..."
+                        autocomplete="off" oninput="handleNavSearch(this.value)" onfocus="handleNavSearch(this.value)">
+                    <div class="search-dropdown" id="navDropdown">
+                        <div class="dd-section-label">Categories</div>
+                        <a class="dd-item" href="#">Computer Microphones <span class="arrow">›</span></a>
+                        <a class="dd-item" href="#">Mechanical Keyboards <span class="arrow">›</span></a>
+                        <div class="dd-section-label">Products</div>
+                        <a class="dd-item" href="#">Blue Yeti X <small>in Computer Microphones</small> <span
+                                class="arrow">→</span></a>
+                        <a class="dd-item" href="#">HyperX QuadCast S <small>in Computer Microphones</small> <span
+                                class="arrow">→</span></a>
+                    </div>
+                </div>
+            </div>
+            <div class="nav-right"></div>
+        </div>
+    </nav>
+
+    <header class="cat-header">
+        <div class="cat-left">
+            <div class="cat-header-img"><img src="../public/storage/categories/images/computer-microphones-ai.png"
+                    alt="Computer Microphones"></div>
+        </div>
+        <div class="cat-guide">
+            <h1 class="cat-title">Computer Microphones</h1>
+            <div class="guide-tabs">
+                <button class="guide-tab active" onclick="setGuide('decide', this)">✨ How to Decide</button>
+                <button class="guide-tab" onclick="setGuide('pitfalls', this)">⚠️ The Pitfalls</button>
+                <button class="guide-tab" onclick="setGuide('jargon', this)">📖 Key Jargon</button>
+            </div>
+            <div class="guide-body">
+                <div class="guide-content active" id="guide-decide">
+                    <p>Start by prioritizing what is non-negotiable. Every user should demand a high score on the
+                        <b>Voice Clarity</b> slider; this is the fundamental purpose of the product. Next, evaluate your
+                        environment: if you have a noisy keyboard, a nearby fan, or other people in the room, the
+                        <b>Background Noise Isolation</b> slider becomes your most important feature.
+                    </p>
+                    <button class="guide-toggle"
+                        onclick="this.closest('.guide-content').classList.toggle('expanded')">Read full guide ▾</button>
+                </div>
+                <div class="guide-content" id="guide-pitfalls">
+                    <p>Don't overpay for features you'll never use. Many premium mics include <b>multi-pattern
+                            recording</b> — great for ASMR or music, but overkill for Zoom calls. Watch out for mics
+                        marketed as "studio quality" that lack basic <b>USB connectivity</b>; you'll need extra
+                        interfaces.</p>
+                </div>
+                <div class="guide-content" id="guide-jargon">
+                    <p><b>Cardioid</b> — Picks up sound from the front, rejects background noise. <b>Condenser</b> —
+                        More sensitive; captures detail but also ambient noise. <b>Bit Depth/Sample Rate</b> —
+                        24-bit/96kHz is studio quality, 16-bit/48kHz is fine for voice. <b>SPL</b> — Max sound pressure
+                        before distortion.</p>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="content-area">
+        <div class="grid-tools">
+            <h2>Personalized Results</h2>
+            <div class="filter-row">
+                <select class="select-btn">
+                    <option>All Brands</option>
+                    <option>Blue</option>
+                    <option>Rode</option>
+                </select>
+                <select class="select-btn">
+                    <option>All Prices</option>
+                    <option>Budget</option>
+                    <option>Pro</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="products-grid">
+            <!-- Card 1 -->
+            <div class="card top-hit score-high">
+                <div class="award-ribbon">🏆 Best Match</div>
+                <div class="card-img">🎙️</div>
+                <div class="card-body">
+                    <div class="card-brand-row">
+                        <div class="card-brand">Blue Microphones</div>
+                        <div class="brand-rating"><span>★</span> 4.7</div>
+                    </div>
+                    <div class="card-title">Blue Yeti X Multi-Pattern USB Condenser</div>
+                    <div class="match-box">
+                        <div class="match-header"><span>Personal Match Score</span> <span>92%</span></div>
+                        <div class="bar-bg">
+                            <div class="bar-fill"></div>
+                        </div>
+                    </div>
+                    <div class="card-footer">
+                        <div class="price-tier tier-mid"><span class="tier-dollars">$$<span
+                                    class="tier-faded">$</span></span> Mid Range</div>
+                    </div>
+                </div>
+                <a href="#" class="amazon-btn">View on Amazon →</a>
+            </div>
+
+            <!-- Card 2 -->
+            <div class="card score-mid">
+                <div class="card-img">🎤</div>
+                <div class="card-body">
+                    <div class="card-brand-row">
+                        <div class="card-brand">HyperX</div>
+                        <div class="brand-rating"><span>★</span> 4.6</div>
+                    </div>
+                    <div class="card-title">HyperX QuadCast S – RGB USB Mic</div>
+                    <div class="match-box">
+                        <div class="match-header"><span>Personal Match Score</span> <span>78%</span></div>
+                        <div class="bar-bg">
+                            <div class="bar-fill"></div>
+                        </div>
+                    </div>
+                    <div class="card-footer">
+                        <div class="price-tier tier-mid"><span class="tier-dollars">$$<span
+                                    class="tier-faded">$</span></span> Mid Range</div>
+                    </div>
+                </div>
+                <a href="#" class="amazon-btn">View on Amazon →</a>
+            </div>
+
+            <!-- Card 3 -->
+            <div class="card score-mid">
+                <div class="card-img">🎙</div>
+                <div class="card-body">
+                    <div class="card-brand-row">
+                        <div class="card-brand">Rode</div>
+                        <div class="brand-rating"><span>★</span> 4.4</div>
+                    </div>
+                    <div class="card-title">Rode NT-USB Mini Studio Microphone</div>
+                    <div class="match-box">
+                        <div class="match-header"><span>Personal Match Score</span> <span>74%</span></div>
+                        <div class="bar-bg">
+                            <div class="bar-fill"></div>
+                        </div>
+                    </div>
+                    <div class="card-footer">
+                        <div class="price-tier tier-mid"><span class="tier-dollars">$$<span
+                                    class="tier-faded">$</span></span> Mid Range</div>
+                    </div>
+                </div>
+                <a href="#" class="amazon-btn">View on Amazon →</a>
+            </div>
+
+            <!-- Card 4 -->
+            <div class="card score-low">
+                <div class="card-img">📻</div>
+                <div class="card-body">
+                    <div class="card-brand-row">
+                        <div class="card-brand">Fifine</div>
+                        <div class="brand-rating"><span>★</span> 4.3</div>
+                    </div>
+                    <div class="card-title">Fifine K669B Metal USB Condenser</div>
+                    <div class="match-box">
+                        <div class="match-header"><span>Personal Match Score</span> <span>62%</span></div>
+                        <div class="bar-bg">
+                            <div class="bar-fill"></div>
+                        </div>
+                    </div>
+                    <div class="card-footer">
+                        <div class="price-tier tier-budget"><span class="tier-dollars">$<span
+                                    class="tier-faded">$$</span></span> Budget</div>
+                    </div>
+                </div>
+                <a href="#" class="amazon-btn">View on Amazon →</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- FAB -->
+    <div class="cta-fab">
+        <div class="fab-tip" id="fabTip">✦ Adjust rankings to your needs</div>
+        <button class="fab-btn" onclick="togglePanel()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <circle cx="12" cy="12" r="3" />
+                <path
+                    d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+        </button>
+    </div>
+
+    <!-- PANEL -->
+    <div class="overlay" id="overlay" onclick="togglePanel()"></div>
+    <div class="panel" id="panel">
+        <div class="panel-header">
+            <h2>Customize Rankings</h2>
+            <button class="close-btn" onclick="togglePanel()">✕</button>
+        </div>
+        <div class="panel-content">
+            <div class="tab-nav">
+                <button class="tab-btn active" onclick="setTab('weights', this)">Weights</button>
+                <button class="tab-btn" onclick="setTab('presets', this)">Presets</button>
+                <button class="tab-btn" onclick="setTab('ai', this)">AI Help</button>
+            </div>
+
+            <!-- Sliders -->
+            <div id="tab-weights">
+                <div class="slider-intro">Drag the sliders to set your priorities. Products are re-ranked instantly
+                    based on what matters most <b>to you</b>.</div>
+                <div class="slider-box">
+                    <div class="slider-label"><span>Sound Fidelity</span> <span id="v1">85</span></div>
+                    <input type="range" min="0" max="100" value="85" oninput="updateSlider(this)">
+                </div>
+                <div class="slider-box">
+                    <div class="slider-label"><span>Background Isolation</span> <span id="v2">40</span></div>
+                    <input type="range" min="0" max="100" value="40" oninput="updateSlider(this)">
+                </div>
+                <div class="slider-box">
+                    <div class="slider-label"><span>Build Sturdiness</span> <span id="v3">60</span></div>
+                    <input type="range" min="0" max="100" value="60" oninput="updateSlider(this)">
+                </div>
+                <div class="slider-box">
+                    <div class="slider-label"><span>Low Price Bonus</span> <span id="v4">75</span></div>
+                    <input type="range" min="0" max="100" value="75" oninput="updateSlider(this)">
+                </div>
+            </div>
+
+            <!-- Presets -->
+            <div id="tab-presets" style="display:none">
+                <div class="preset-grid">
+                    <div class="preset-card active" onclick="setPreset(this)"><b>Podcaster</b> <small>Studio quality
+                            focus</small></div>
+                    <div class="preset-card" onclick="setPreset(this)"><b>Zoom Calls</b> <small>Voice clarity
+                            focus</small></div>
+                    <div class="preset-card" onclick="setPreset(this)"><b>Gaming</b> <small>Isolation & low
+                            latency</small></div>
+                    <div class="preset-card" onclick="setPreset(this)"><b>Bargain</b> <small>Strict budget
+                            priority</small></div>
+                </div>
+            </div>
+
+            <!-- AI -->
+            <div id="tab-ai" style="display:none" class="chat-area">
+                <div class="bubble bot">
+                    Describe what you need! I'll automatically adjust the weights to find your perfect mic.
+                </div>
+                <div class="chat-input-wrap">
+                    <input type="text" placeholder="I'm a teacher recorded lectures..." id="chatIn">
+                    <button class="chat-go" onclick="sendChat()">Ask</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Nav search dropdown
+        function handleNavSearch(val) {
+            const dd = document.getElementById('navDropdown');
+            dd.classList.toggle('open', val.length >= 1 || document.activeElement === document.getElementById('navSearchInput'));
+        }
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.nav-search')) {
+                document.getElementById('navDropdown').classList.remove('open');
+            }
+        });
+        document.getElementById('navSearchInput').addEventListener('focus', function () {
+            if (this.value.length >= 0) document.getElementById('navDropdown').classList.add('open');
+        });
+
+        // Panel controls
+        function togglePanel() {
+            panel.classList.toggle('active');
+            overlay.classList.toggle('active');
+            fabTip.style.display = panel.classList.contains('active') ? 'none' : 'block';
+        }
+        function setTab(t, b) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            b.classList.add('active');
+            ['weights', 'presets', 'ai'].forEach(id => document.getElementById('tab-' + id).style.display = id === t ? 'block' : 'none');
+        }
+        function setGuide(tab, btn) {
+            document.querySelectorAll('.guide-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.guide-content').forEach(c => c.classList.remove('active'));
+            btn.classList.add('active');
+            document.getElementById('guide-' + tab).classList.add('active');
+        }
+        function setPreset(c) {
+            document.querySelectorAll('.preset-card').forEach(card => card.classList.remove('active'));
+            c.classList.add('active');
+        }
+        function sendChat() {
+            const val = chatIn.value;
+            if (!val) return;
+            chatIn.value = '';
+            const b = document.createElement('div');
+            b.className = 'bubble bot';
+            b.innerHTML = '✨ <b>AI Optimized!</b> I\'ve updated the weights for "' + val + '". The products have been re-ranked.';
+            document.querySelector('.chat-area').insertBefore(b, document.querySelector('.chat-input-wrap'));
+            setTab('weights', document.querySelector('.tab-btn'));
+        }
+        // Slider color: red(0) → yellow(50) → green(100)
+        function getSliderColor(val) {
+            if (val <= 50) {
+                const r = 220, g = Math.round(50 + val * 3.5), b = 50;
+                return `rgb(${r},${g},${b})`;
+            } else {
+                const r = Math.round(220 - (val - 50) * 3.6), g = Math.round(180 + (val - 50) * 0.6), b = 50 + Math.round((val - 50) * 0.6);
+                return `rgb(${r},${g},${b})`;
+            }
+        }
+        function updateSlider(el) {
+            const val = parseInt(el.value);
+            const label = el.closest('.slider-box').querySelector('.slider-label span:last-child');
+            const color = getSliderColor(val);
+            label.innerText = val;
+            label.style.color = color;
+            el.style.background = `linear-gradient(to right, ${color} 0%, ${color} ${val}%, #E2E8F0 ${val}%, #E2E8F0 100%)`;
+            el.style.setProperty('--thumb-color', color);
+        }
+        // Init all sliders on load
+        document.querySelectorAll('input[type=range]').forEach(el => updateSlider(el));
+
+        // Show panel after delay for demo
+        setTimeout(() => togglePanel(), 2000);
+    </script>
+</body>
+
+</html>

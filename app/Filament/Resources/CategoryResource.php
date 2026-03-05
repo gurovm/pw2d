@@ -54,6 +54,37 @@ class CategoryResource extends Resource
                         Forms\Components\Textarea::make('description')
                             ->rows(3)
                             ->columnSpanFull(),
+                            
+                        Forms\Components\Section::make('Buying Guide')
+                            ->schema([
+                                Forms\Components\RichEditor::make('buying_guide.how_to_decide')
+                                    ->label('How to Decide')
+                                    ->toolbarButtons(['bold', 'italic', 'bulletList', 'link', 'redo', 'undo']),
+                                Forms\Components\RichEditor::make('buying_guide.the_pitfalls')
+                                    ->label('The Pitfalls')
+                                    ->toolbarButtons(['bold', 'italic', 'bulletList', 'link', 'redo', 'undo']),
+                                Forms\Components\RichEditor::make('buying_guide.key_jargon')
+                                    ->label('Key Jargon')
+                                    ->toolbarButtons(['bold', 'italic', 'bulletList', 'link', 'redo', 'undo']),
+                            ])
+                            ->collapsible()
+                            ->columnSpanFull(),
+                        
+                        Forms\Components\FileUpload::make('image')
+                            ->label('Category Hero Image')
+                            ->image()
+                            ->disk('public')
+                            ->directory('categories/images')
+                            ->visibility('public')
+                            ->imageEditor()
+                            ->imageResizeMode('cover')
+                            ->imageCropAspectRatio('16:9')
+                            ->imageResizeTargetWidth('800')
+                            ->imageResizeTargetHeight('450')
+                            ->maxSize(10240)
+                            ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp', 'image/jpg'])
+                            ->helperText('Upload a high-quality image (will be auto-resized to 800x450px). Recommended: 1920x1080px or higher.')
+                            ->columnSpanFull(),
                     ])
                     ->columns(2),
             ]);
@@ -64,12 +95,26 @@ class CategoryResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('parent.name')
-                    ->numeric()
-                    ->sortable(),
+                    ->label('Parent Category')
+                    ->sortable()
+                    ->searchable()
+                    ->url(fn ($record) => $record->parent ? CategoryResource::getUrl('index', ['tableFilters[parent][value]' => $record->parent_id]) : null)
+                    ->color(fn ($record) => $record->parent ? 'primary' : null),
                 Tables\Columns\TextColumn::make('name')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('slug')
-                    ->searchable(),
+                    ->searchable()
+                    ->sortable(),
+                Tables\Columns\TextColumn::make('products_count')
+                    ->counts('products')
+                    ->label('Products')
+                    ->sortable()
+                    ->url(fn ($record) => ProductResource::getUrl('index', [
+                        'tableFilters' => [
+                            'categories' => [
+                                'values' => [$record->id],
+                            ],
+                        ],
+                    ]))
+                    ->color('primary'),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
@@ -80,7 +125,11 @@ class CategoryResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                //
+                Tables\Filters\SelectFilter::make('parent')
+                    ->relationship('parent', 'name')
+                    ->searchable()
+                    ->preload()
+                    ->label('Parent Category'),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
@@ -95,7 +144,8 @@ class CategoryResource extends Resource
     public static function getRelations(): array
     {
         return [
-            //
+            RelationManagers\FeaturesRelationManager::class,
+            RelationManagers\PresetsRelationManager::class,
         ];
     }
 

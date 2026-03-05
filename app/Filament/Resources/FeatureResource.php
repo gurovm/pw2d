@@ -35,6 +35,7 @@ class FeatureResource extends Resource
                             ->searchable()
                             ->preload()
                             ->required()
+                            ->default(fn () => session('last_feature_category_id'))
                             ->helperText('Features are specific to a category'),
                         
                         Forms\Components\TextInput::make('name')

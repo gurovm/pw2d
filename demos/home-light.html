@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>pw2d – Power to Decide (Light)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --blue: #2563EB;
+            --blue-dark: #1E40AF;
+            --blue-soft: #EFF6FF;
+            --purple: #7C3AED;
+            --text-main: #0F172A;
+            --text-muted: #64748B;
+            --bg-main: #F8FAFC;
+            --bg-white: #FFFFFF;
+            --border: #E2E8F0;
+            --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+            --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.08);
+            --glow: rgba(37, 99, 235, 0.15);
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg-main);
+            color: var(--text-main);
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* ── NAV ── */
+        nav {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(12px);
+            background: rgba(255, 255, 255, 0.92);
+            border-bottom: 1px solid var(--border);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+        }
+
+        .nav-inner {
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 0 1.5rem;
+            height: 72px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .logo {
+            flex-shrink: 0;
+            text-decoration: none;
+        }
+
+        .logo img {
+            height: 48px;
+            width: auto;
+        }
+
+        /* ── NAV SEARCH ── */
+        .nav-search-wrap {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            padding: 0 2rem;
+            position: relative;
+        }
+
+        .nav-search {
+            position: relative;
+            width: 100%;
+            max-width: 480px;
+        }
+
+        .nav-search input {
+            width: 100%;
+            padding: 10px 16px 10px 42px;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            font-size: 0.9rem;
+            color: var(--text-main);
+            background: #fff;
+            outline: none;
+            font-family: 'Inter', sans-serif;
+            transition: all 0.2s;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .nav-search input:focus {
+            border-color: var(--blue);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        .nav-search input::placeholder {
+            color: #94A3B8;
+        }
+
+        .nav-search-icon {
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            pointer-events: none;
+            color: #94A3B8;
+        }
+
+        .search-dropdown {
+            position: absolute;
+            top: calc(100% + 6px);
+            left: 0;
+            right: 0;
+            background: #fff;
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.12);
+            display: none;
+            overflow: hidden;
+            z-index: 200;
+        }
+
+        .search-dropdown.open {
+            display: block;
+        }
+
+        .dd-section-label {
+            padding: 8px 16px;
+            font-size: 0.7rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            background: #F8FAFC;
+            border-bottom: 1px solid #F1F5F9;
+        }
+
+        .dd-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 16px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: var(--text-main);
+            text-decoration: none;
+            transition: background 0.15s;
+            cursor: pointer;
+            border-bottom: 1px solid #F8FAFC;
+        }
+
+        .dd-item:hover {
+            background: var(--blue-soft);
+        }
+
+        .dd-item small {
+            color: var(--text-muted);
+            font-size: 0.78rem;
+        }
+
+        .dd-item .arrow {
+            color: #CBD5E1;
+            font-size: 0.8rem;
+        }
+
+        .nav-right {
+            flex-shrink: 0;
+            width: 48px;
+        }
+
+        /* ── HERO ── */
+        .hero {
+            position: relative;
+            overflow: hidden;
+            min-height: 65vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 4rem 1.5rem 3rem;
+        }
+
+        .hero-glow {
+            position: absolute;
+            top: -100px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 1000px;
+            height: 600px;
+            border-radius: 50%;
+            background: radial-gradient(ellipse, rgba(37, 99, 235, 0.06) 0%, rgba(124, 58, 237, 0.04) 40%, transparent 70%);
+            pointer-events: none;
+        }
+
+        .hero-dots {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            background-image: radial-gradient(#CBD5E1 1px, transparent 1px);
+            background-size: 40px 40px;
+            opacity: 0.4;
+        }
+
+        .hero-eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--blue);
+            padding: 7px 16px;
+            border-radius: 999px;
+            border: 1px solid rgba(37, 99, 235, 0.2);
+            background: #fff;
+            box-shadow: var(--shadow-sm);
+            margin-bottom: 2rem;
+            animation: fadeSlideUp 0.6s ease both;
+        }
+
+        .hero h1 {
+            font-size: clamp(3rem, 7vw, 5.5rem);
+            font-weight: 900;
+            line-height: 1;
+            letter-spacing: -0.04em;
+            color: #0F172A;
+            margin-bottom: 1.5rem;
+            animation: fadeSlideUp 0.7s 0.1s ease both;
+        }
+
+        .hero h1 span {
+            background: linear-gradient(135deg, var(--blue) 0%, var(--purple) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hero-sub {
+            font-size: 1.25rem;
+            color: var(--text-muted);
+            max-width: 620px;
+            line-height: 1.6;
+            margin-bottom: 3.5rem;
+            animation: fadeSlideUp 0.6s 0.2s ease both;
+        }
+
+        /* ── AI SEARCH BOX ── */
+        .search-wrapper {
+            width: 100%;
+            max-width: 720px;
+            position: relative;
+            animation: fadeSlideUp 0.6s 0.3s ease both;
+        }
+
+        .search-shadow {
+            position: absolute;
+            inset: 4px;
+            border-radius: 20px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.1);
+            z-index: 0;
+        }
+
+        .search-box {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            align-items: center;
+            background: #fff;
+            border-radius: 22px;
+            border: 2px solid var(--border);
+            padding: 8px 8px 8px 24px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .search-wrapper:focus-within .search-box {
+            border-color: var(--blue);
+            box-shadow: 0 0 0 5px var(--glow);
+            transform: translateY(-2px);
+        }
+
+        .search-ai-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            white-space: nowrap;
+            font-size: 0.75rem;
+            font-weight: 800;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: var(--blue);
+            padding: 5px 12px;
+            border-radius: 10px;
+            background: var(--blue-soft);
+            margin-right: 14px;
+            border: 1px solid rgba(37, 99, 235, 0.1);
+        }
+
+        .search-box input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            outline: none;
+            font-size: 1.15rem;
+            color: var(--text-main);
+            font-family: 'Inter', sans-serif;
+            font-weight: 500;
+        }
+
+        .search-box input::placeholder {
+            color: #94A3B8;
+        }
+
+        .search-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 16px 32px;
+            border-radius: 16px;
+            border: none;
+            cursor: pointer;
+            background: linear-gradient(135deg, var(--blue) 0%, #3B82F6 100%);
+            color: #fff;
+            font-weight: 700;
+            font-size: 1rem;
+            font-family: 'Inter', sans-serif;
+            white-space: nowrap;
+            transition: all 0.2s;
+            box-shadow: 0 8px 20px rgba(37, 99, 235, 0.3);
+        }
+
+        .search-btn:hover {
+            background: var(--blue-dark);
+            transform: translateY(-1px);
+            box-shadow: 0 10px 25px rgba(37, 99, 235, 0.4);
+        }
+
+        /* Suggestions */
+        .search-hints {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 1.5rem;
+            animation: fadeSlideUp 0.6s 0.4s ease both;
+        }
+
+        .hint-chip {
+            font-size: 0.82rem;
+            color: var(--text-muted);
+            padding: 7px 16px;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            background: #fff;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .hint-chip:hover {
+            color: var(--blue);
+            border-color: var(--blue);
+            background: var(--blue-soft);
+            transform: translateY(-1px);
+        }
+
+        .hint-chip b {
+            color: var(--blue);
+            font-weight: 700;
+            margin-right: 4px;
+        }
+
+        /* ── HOW IT WORKS ── */
+        .how-section {
+            padding: 3rem 1.5rem 2rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .section-label {
+            text-align: center;
+            font-size: 0.85rem;
+            font-weight: 800;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--purple);
+            margin-bottom: 1.2rem;
+        }
+
+        .section-title {
+            text-align: center;
+            font-size: 2.5rem;
+            font-weight: 900;
+            margin-bottom: 4rem;
+            color: var(--text-main);
+        }
+
+        .steps-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 2rem;
+        }
+
+        .step-card {
+            background: #fff;
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            padding: 0;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .step-card:hover {
+            transform: translateY(-8px);
+            border-color: var(--blue);
+            box-shadow: var(--shadow-md);
+        }
+
+        .step-icon-strip {
+            height: 100px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 3.2rem;
+            position: relative;
+        }
+
+        .step-card:nth-child(1) .step-icon-strip {
+            background: linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%);
+        }
+
+        .step-card:nth-child(2) .step-icon-strip {
+            background: linear-gradient(135deg, #F5F3FF 0%, #EDE9FE 100%);
+        }
+
+        .step-card:nth-child(3) .step-icon-strip {
+            background: linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%);
+        }
+
+        .step-body {
+            padding: 2rem 2.5rem 2.5rem;
+        }
+
+        .step-num {
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+            font-weight: 900;
+            margin-bottom: 1.2rem;
+        }
+
+        .step-card:nth-child(1) .step-num {
+            background: var(--blue-soft);
+            color: var(--blue);
+        }
+
+        .step-card:nth-child(2) .step-num {
+            background: #F5F3FF;
+            color: var(--purple);
+        }
+
+        .step-card:nth-child(3) .step-num {
+            background: #FFF7ED;
+            color: #F59E0B;
+        }
+
+        .step-card h3 {
+            font-size: 1.3rem;
+            font-weight: 800;
+            margin-bottom: 1rem;
+            color: var(--text-main);
+        }
+
+        .step-card p {
+            font-size: 1rem;
+            color: var(--text-muted);
+            line-height: 1.7;
+        }
+
+        .step-icon-bg {
+            position: absolute;
+            bottom: -20px;
+            right: -10px;
+            font-size: 6rem;
+            opacity: 0.05;
+            transform: rotate(-12deg);
+            pointer-events: none;
+        }
+
+        /* ── CATEGORIES ── */
+        .categories-section {
+            padding: 2rem 1.5rem 8rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .categories-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .cat-card {
+            background: #fff;
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            overflow: hidden;
+            text-decoration: none;
+            color: inherit;
+            display: flex;
+            flex-direction: column;
+            transition: all 0.3s;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .cat-card:hover {
+            transform: translateY(-5px);
+            border-color: var(--blue);
+            box-shadow: var(--shadow-md);
+        }
+
+        .cat-img {
+            height: 180px;
+            background: #F8FAFC;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .cat-img img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.4s ease;
+        }
+
+        .cat-card:hover .cat-img img {
+            transform: scale(1.05);
+        }
+
+        .cat-body {
+            padding: 1.5rem;
+            flex: 1;
+        }
+
+        .cat-body h3 {
+            font-size: 1.15rem;
+            font-weight: 800;
+            margin-bottom: 0.5rem;
+        }
+
+        .cat-meta {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 1rem;
+        }
+
+        .cat-count {
+            font-size: 0.8rem;
+            color: var(--blue);
+            font-weight: 700;
+            background: var(--blue-soft);
+            padding: 3px 10px;
+            border-radius: 8px;
+        }
+
+        .cat-arrow {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: var(--blue-soft);
+            color: var(--blue);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 900;
+        }
+
+        /* ── FOOTER ── */
+        footer {
+            border-top: 1px solid var(--border);
+            padding: 3rem 1.5rem;
+            text-align: center;
+        }
+
+        .footer-text {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        @keyframes fadeSlideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <nav>
+        <div class="nav-inner">
+            <a href="#" class="logo">
+                <img src="../public/images/logo.png" alt="pw2d – Power to Decide">
+            </a>
+            <div class="nav-search-wrap">
+                <div class="nav-search">
+                    <svg class="nav-search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                        <circle cx="11" cy="11" r="8" />
+                        <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                    </svg>
+                    <input type="search" id="navSearchInput" placeholder="Search categories or products..."
+                        autocomplete="off" oninput="handleNavSearch(this.value)" onfocus="handleNavSearch(this.value)">
+                    <div class="search-dropdown" id="navDropdown">
+                        <div class="dd-section-label">Categories</div>
+                        <a class="dd-item" href="#">Computer Microphones <span class="arrow">›</span></a>
+                        <a class="dd-item" href="#">Mechanical Keyboards <span class="arrow">›</span></a>
+                        <div class="dd-section-label">Products</div>
+                        <a class="dd-item" href="#">Blue Yeti X <small>in Computer Microphones</small> <span
+                                class="arrow">→</span></a>
+                        <a class="dd-item" href="#">Keychron K2 <small>in Mechanical Keyboards</small> <span
+                                class="arrow">→</span></a>
+                    </div>
+                </div>
+            </div>
+            <div class="nav-right"></div>
+        </div>
+    </nav>
+
+    <section class="hero">
+        <div class="hero-glow"></div>
+        <div class="hero-dots"></div>
+
+        <div class="hero-eyebrow">✦ The Smart Way to Shop</div>
+
+        <h1>Compare with <span>Intelligence</span></h1>
+
+        <p class="hero-sub">
+            Stop digging through endless spec sheets. Tell our AI what you're doing, and we'll instantly find the right
+            category and rank items for you.
+        </p>
+
+        <div class="search-wrapper">
+            <div class="search-shadow"></div>
+            <div class="search-box">
+                <span class="search-ai-badge">AI Search</span>
+                <input type="text" id="aiInput" placeholder="Describe what you need..." />
+                <button class="search-btn" onclick="handleSearch()">
+                    Find My Gear
+                </button>
+            </div>
+        </div>
+
+        <div class="search-hints">
+            <span class="hint-chip" onclick="setHint(this.innerText)"><b>→</b> quiet mechanical keyboard</span>
+            <span class="hint-chip" onclick="setHint(this.innerText)"><b>→</b> 4k webcam for streaming</span>
+            <span class="hint-chip" onclick="setHint(this.innerText)"><b>→</b> wireless headset for gaming</span>
+        </div>
+    </section>
+
+    <section class="how-section">
+        <div class="section-label">How it Works</div>
+        <h2 class="section-title">Beyond simple lists</h2>
+        <div class="steps-grid">
+            <div class="step-card">
+                <div class="step-icon-strip">💬</div>
+                <div class="step-body">
+                    <div class="step-num">1</div>
+                    <h3>Natural Input</h3>
+                    <p>Describe your needs in plain English. Our AI analyzes your use case, budget, and style to
+                        identify
+                        the perfect category.</p>
+                </div>
+            </div>
+            <div class="step-card">
+                <div class="step-icon-strip">🎛️</div>
+                <div class="step-body">
+                    <div class="step-num">2</div>
+                    <h3>Priority Sliders</h3>
+                    <p>Every user is different. Drag priorities on our custom sliders to tell us what matters: price,
+                        quality, or specific features.</p>
+                </div>
+            </div>
+            <div class="step-card">
+                <div class="step-icon-strip">🎯</div>
+                <div class="step-body">
+                    <div class="step-num">3</div>
+                    <h3>Dynamic Ranking</h3>
+                    <p>Watch the list update instantly. We recalculate every product's match score based on YOUR
+                        specific
+                        needs.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="categories-section">
+        <div class="section-label">Popular Categories</div>
+        <h2 class="section-title">Ready to Compare</h2>
+        <div class="categories-grid">
+            <a href="category-light.html" class="cat-card">
+                <div class="cat-img"><img src="../public/storage/categories/images/computer-microphones-ai.png"
+                        alt="Computer Microphones"></div>
+                <div class="cat-body">
+                    <h3>Computer Microphones</h3>
+                    <p style="color:var(--text-muted); font-size:0.9rem">The best mics for streaming, podcasting and
+                        office calls.</p>
+                    <div class="cat-meta">
+                        <span class="cat-count">Top 12 Picks</span>
+                        <div class="cat-arrow">→</div>
+                    </div>
+                </div>
+            </a>
+            <a href="#" class="cat-card">
+                <div class="cat-img"><img src="../public/storage/categories/images/computer-speakers-ai.png"
+                        alt="Computer Speakers"></div>
+                <div class="cat-body">
+                    <h3>Computer Speakers</h3>
+                    <p style="color:var(--text-muted); font-size:0.9rem">Premium desktop audio for music, gaming and
+                        work.</p>
+                    <div class="cat-meta">
+                        <span class="cat-count">Top 12 Picks</span>
+                        <div class="cat-arrow">→</div>
+                    </div>
+                </div>
+            </a>
+            <a href="#" class="cat-card">
+                <div class="cat-img"><img src="../public/storage/categories/images/01KHHAMDHAW88GJYWBGV42WCZW.png"
+                        alt="Computer Mice"></div>
+                <div class="cat-body">
+                    <h3>Computer Mice</h3>
+                    <p style="color:var(--text-muted); font-size:0.9rem">Ergonomic, wireless and high-precision mice for
+                        any workflow.</p>
+                    <div class="cat-meta">
+                        <span class="cat-count">Top 12 Picks</span>
+                        <div class="cat-arrow">→</div>
+                    </div>
+                </div>
+            </a>
+            <a href="#" class="cat-card">
+                <div class="cat-img"><img src="../public/storage/categories/images/webcams-ai.png" alt="Webcams"></div>
+                <div class="cat-body">
+                    <h3>Webcams</h3>
+                    <p style="color:var(--text-muted); font-size:0.9rem">Crystal-clear video for meetings and content
+                        creation.</p>
+                    <div class="cat-meta">
+                        <span class="cat-count">Top 12 Picks</span>
+                        <div class="cat-arrow">→</div>
+                    </div>
+                </div>
+            </a>
+            <a href="#" class="cat-card">
+                <div class="cat-img"><img src="../public/storage/categories/images/01KHNG1GT0H5P44Y68D2BX11XA.png"
+                        alt="Gaming Headsets"></div>
+                <div class="cat-body">
+                    <h3>Gaming Headsets</h3>
+                    <p style="color:var(--text-muted); font-size:0.9rem">Immersive sound and clear comms for competitive
+                        play.</p>
+                    <div class="cat-meta">
+                        <span class="cat-count">Top 12 Picks</span>
+                        <div class="cat-arrow">→</div>
+                    </div>
+                </div>
+            </a>
+        </div>
+    </section>
+
+    <footer>
+        <div class="footer-text">© 2025 pw2d – Power to Decide. AI-Enhanced Comparison Platform.</div>
+    </footer>
+
+    <script>
+        // Nav search dropdown
+        function handleNavSearch(val) {
+            const dd = document.getElementById('navDropdown');
+            dd.classList.toggle('open', val.length >= 1 || document.activeElement === document.getElementById('navSearchInput'));
+        }
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.nav-search')) {
+                document.getElementById('navDropdown').classList.remove('open');
+            }
+        });
+        document.getElementById('navSearchInput').addEventListener('focus', function () {
+            if (this.value.length >= 0) document.getElementById('navDropdown').classList.add('open');
+        });
+
+        // Hero AI search
+        function setHint(text) {
+            const hint = text.replace(/^→\s*/, '').trim();
+            document.getElementById('aiInput').value = hint;
+            document.getElementById('aiInput').focus();
+        }
+        function handleSearch() {
+            const val = document.getElementById('aiInput').value;
+            if (val) alert('AI Search: ' + val);
+        }
+        // Cycle placeholders
+        const ph = [
+            'I need a mic for streaming...',
+            'Mechanical keyboard for quiet coder...',
+            'Wireless gaming mouse for small hands...',
+            'Webcam for professional Zoom calls...'
+        ];
+        let i = 0;
+        setInterval(() => {
+            i = (i + 1) % ph.length;
+            document.getElementById('aiInput').placeholder = ph[i];
+        }, 3000);
+    </script>
+</body>
+
+</html>

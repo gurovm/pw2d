@@ -8,4 +8,7 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', Home::class)->name('home');
 
 // Category Comparison Page
-Route::get('/category/{slug}', ProductCompare::class)->name('category.show');
+Route::get('/compare/{slug}', ProductCompare::class)->name('category.show');
+
+// Product Detail URL (Fallback for Modal)
+Route::get('/product/{product:slug}', ProductCompare::class)->name('product.show');

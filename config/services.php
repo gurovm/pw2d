@@ -36,7 +36,23 @@ return [
     ],
 
     'gemini' => [
-        'api_key' => env('GEMINI_API_KEY'),
+        'api_key'     => env('GEMINI_API_KEY'),
+        'site_model'  => env('AGENT_SITE_MODEL', 'gemini-2.5-flash'),
+        'admin_model' => env('AGENT_ADMIN_MODEL', 'gemini-2.5-pro'),
     ],
 
+    'amazon' => [
+        'affiliate_tag' => env('AMAZON_AFFILIATE_TAG'),
+    ],
+
+    'extension' => [
+        'token' => env('CHROME_EXTENSION_KEY'),
+    ],
+'posthog' => [
+        'key' => env('POSTHOG_API_KEY'),
+        'host' => env('POSTHOG_HOST', 'https://eu.posthog.com'),
+    ],
+    'google' => [
+        'analytics_id' => env('GA_MEASUREMENT_ID'),
+    ],
 ];

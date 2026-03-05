@@ -74,7 +74,7 @@ class ListProducts extends ListRecords
                         // Call Gemini API
                         $apiKey = config('services.gemini.api_key');
                         $response = \Illuminate\Support\Facades\Http::timeout(30)->post(
-                            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={$apiKey}",
+                            "https://generativelanguage.googleapis.com/v1beta/models/" . config('services.gemini.admin_model') . ":generateContent?key={$apiKey}",
                             [
                                 'contents' => [
                                     [
