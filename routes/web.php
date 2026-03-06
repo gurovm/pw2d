@@ -12,3 +12,9 @@ Route::get('/compare/{slug}', ProductCompare::class)->name('category.show');
 
 // Product Detail URL (Fallback for Modal)
 Route::get('/product/{product:slug}', ProductCompare::class)->name('product.show');
+
+// Static Pages
+Route::view('/about', 'pages.about')->name('about');
+Route::view('/contact', 'pages.contact')->name('contact');
+Route::view('/privacy-policy', 'pages.privacy-policy')->name('privacy-policy');
+Route::view('/terms-of-service', 'pages.terms-of-service')->name('terms-of-service');

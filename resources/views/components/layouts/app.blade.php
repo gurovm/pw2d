@@ -50,11 +50,38 @@
     </main>
 
     <!-- Footer -->
-    <footer class="bg-gray-50 border-t border-gray-200 mt-20">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-            <div class="text-center text-gray-600 text-sm">
-                <p>&copy; {{ date('Y') }} pw2d - Power to Decide. All rights reserved.</p>
-                <p class="mt-2">Make smarter decisions with personalized product comparisons.</p>
+    <footer class="bg-gray-900 mt-20">
+        <!-- Affiliate Disclosure Bar -->
+        <div class="border-b border-gray-700 bg-gray-800">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 text-center">
+                <p class="text-amber-400 text-xs">
+                    <strong>Affiliate Disclosure:</strong>
+                    <span class="text-gray-400 font-normal"> Pw2D is reader-supported. When you buy through links on our site, we may earn an affiliate commission at no extra cost to you.</span>
+                </p>
+            </div>
+        </div>
+
+        <!-- Main Footer Content -->
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+            <div class="flex flex-col sm:flex-row items-center justify-between gap-6">
+                <!-- Brand -->
+                <div class="flex flex-col items-center sm:items-start">
+                    <span class="text-white font-bold text-lg tracking-tight">Pw2D</span>
+                    <span class="text-gray-500 text-xs mt-0.5">Power to Decide</span>
+                </div>
+
+                <!-- Nav Links -->
+                <nav class="flex flex-wrap justify-center gap-x-6 gap-y-2">
+                    <a href="{{ route('about') }}" class="text-gray-400 hover:text-white text-sm transition-colors duration-150">About</a>
+                    <a href="{{ route('contact') }}" class="text-gray-400 hover:text-white text-sm transition-colors duration-150">Contact</a>
+                    <a href="{{ route('privacy-policy') }}" class="text-gray-400 hover:text-white text-sm transition-colors duration-150">Privacy Policy</a>
+                    <a href="{{ route('terms-of-service') }}" class="text-gray-400 hover:text-white text-sm transition-colors duration-150">Terms of Service</a>
+                </nav>
+            </div>
+
+            <!-- Divider + Copyright -->
+            <div class="border-t border-gray-800 mt-8 pt-6 text-center">
+                <p class="text-gray-600 text-xs">&copy; {{ date('Y') }} Pw2D &mdash; Power to Decide. All rights reserved.</p>
             </div>
         </div>
     </footer>
