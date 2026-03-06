@@ -84,17 +84,43 @@ class ProductCompare extends Component
     #[Computed]
     public function scoredProducts()
     {
-        // Cache the raw products+featureValues in Redis (90s TTL).
-        // Scoring still runs fresh on every render (weights change), but the DB
-        // round-trip is eliminated on all subsequent slider interactions.
+        // Cache raw product data as plain arrays (not Eloquent models).
+        // Eloquent unserialize for 2000+ objects takes ~90ms; plain arrays take ~5ms.
+        // Scoring still runs fresh (weights change), but the DB round-trip is skipped.
         $cacheKey = "products:cat{$this->category->id}:b{$this->filterBrand}:p{$this->filterPrice}";
-        $products = Cache::remember($cacheKey, 90, function () {
+        $rawData = Cache::remember($cacheKey, 90, function () {
             return Product::where('category_id', $this->category->id)
                 ->select(['id', 'brand_id', 'amazon_rating', 'price_tier'])
                 ->with(['featureValues:id,product_id,feature_id,raw_value'])
                 ->when($this->filterBrand, fn($q) => $q->where('brand_id', $this->filterBrand))
                 ->when($this->filterPrice, fn($q) => $q->where('price_tier', $this->filterPrice))
-                ->get();
+                ->get()
+                ->map(fn($p) => [
+                    'id'             => $p->id,
+                    'brand_id'       => $p->brand_id,
+                    'amazon_rating'  => $p->amazon_rating,
+                    'price_tier'     => $p->price_tier,
+                    'fvs'            => $p->featureValues
+                        ->map(fn($fv) => ['feature_id' => (int)$fv->feature_id, 'raw_value' => (float)$fv->raw_value])
+                        ->toArray(),
+                ])
+                ->toArray();
+        });
+
+        // Convert back to lightweight objects for the scoring service
+        $products = collect($rawData)->map(function ($arr) {
+            $p = new \stdClass();
+            $p->id = $arr['id'];
+            $p->brand_id = $arr['brand_id'];
+            $p->amazon_rating = $arr['amazon_rating'];
+            $p->price_tier = $arr['price_tier'];
+            $p->featureValues = collect($arr['fvs'])->map(function ($fv) {
+                $o = new \stdClass();
+                $o->feature_id = $fv['feature_id'];
+                $o->raw_value  = $fv['raw_value'];
+                return $o;
+            });
+            return $p;
         });
 
         $scoringService = new ProductScoringService();
