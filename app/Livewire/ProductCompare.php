@@ -16,27 +16,20 @@ use Livewire\Component;
 class ProductCompare extends Component
 {
     public $category;
-    public $features;
-    public $products;
-    
+    public $features; // Keeping this public is fine as it's a small collection
+
     // Feature weights (feature_id => weight 0-100)
     public $weights = [];
-    
+
     // Amazon rating weight (virtual feature)
     public $amazonRatingWeight = 50;
 
     // Price weight (virtual feature)
     public $priceWeight = 50;
-    
-    // Computed match scores (product_id => score)
-    public $matchScores = [];
-    
-    // Computed feature scores (product_id => [feature_id => score])
-    public $featureScores = [];
-    
+
     // Limits the number of products displayed
     public $displayLimit = 12;
-    
+
     // AI Concierge properties
     public $aiMessage = '';
     public $userInput = '';
@@ -50,7 +43,7 @@ class ProductCompare extends Component
 
     // Pinterest Modal State
     public $selectedProductSlug = null;
-    
+
     #[Computed(persist: true)]
     public function availableBrands()
     {
@@ -58,22 +51,75 @@ class ProductCompare extends Component
             return collect();
         }
 
-        return \App\Models\Brand::whereHas('products', function($query) {
+        return \App\Models\Brand::whereHas('products', function ($query) {
             $query->where('category_id', $this->category->id);
         })
-        ->withCount(['products' => function($query) {
-            $query->where('category_id', $this->category->id);
-        }])
-        ->orderByDesc('products_count')
-        ->get();
+            ->withCount(['products' => function ($query) {
+                $query->where('category_id', $this->category->id);
+            }])
+            ->orderByDesc('products_count')
+            ->get();
     }
-    
+
     #[Computed]
     public function selectedProduct()
     {
-        return $this->selectedProductSlug 
-            ? \App\Models\Product::with(['brand', 'featureValues.feature'])->where('slug', $this->selectedProductSlug)->first() 
+        return $this->selectedProductSlug
+            ? \App\Models\Product::with(['brand', 'featureValues.feature'])->where('slug', $this->selectedProductSlug)->first()
             : null;
+    }
+
+    /**
+     * THE MAGIC HAPPENS HERE:
+     * This computed property fetches all matching products, calculates scores in server memory,
+     * sorts them, and attaches the scores directly to the product object.
+     * It is NEVER sent to the frontend state payload.
+     */
+    #[Computed]
+    public function scoredProducts()
+    {
+        $query = Product::where('category_id', $this->category->id)
+            ->with(['brand', 'featureValues.feature']);
+
+        if ($this->filterBrand) {
+            $query->where('brand_id', $this->filterBrand);
+        }
+
+        if ($this->filterPrice) {
+            $query->where('price_tier', $this->filterPrice);
+        }
+
+        $products = $query->get();
+        $scoringService = new ProductScoringService();
+
+        // Calculate scores and map them directly onto the objects
+        $scored = $products->map(function ($product) use ($products, $scoringService) {
+            $result = $scoringService->calculateMatchScore(
+                $product,
+                $this->features,
+                $products, // Pass all products for dynamic normalization
+                $this->weights,
+                $this->amazonRatingWeight,
+                $this->priceWeight
+            );
+
+            // Attach dynamically for the view
+            $product->match_score = $result['score'];
+            $product->feature_scores = $result['feature_scores'];
+
+            return $product;
+        });
+
+        return $scored->sortByDesc('match_score')->values();
+    }
+
+    /**
+     * Returns only the top X products for the frontend to render.
+     */
+    #[Computed]
+    public function visibleProducts()
+    {
+        return $this->scoredProducts->take($this->displayLimit);
     }
 
     public function openProduct($slug)
@@ -92,27 +138,19 @@ class ProductCompare extends Component
             $this->selectedProductSlug = $product->slug;
             $this->category = $product->category;
         } elseif ($slug) {
-            // Load category by slug
             $this->category = Category::where('slug', $slug)->firstOrFail();
         } else {
             abort(404);
         }
 
-        // Load features for this category
         $this->features = Feature::where('category_id', $this->category->id)
             ->orderBy('name')
             ->get();
 
-        // Initialize weights to 50 (default)
         foreach ($this->features as $feature) {
             $this->weights[$feature->id] = 50;
         }
 
-        // Load filtered products and score them
-        $this->loadProducts();
-        
-        // ... (skipping irrelevant setup code, no worry I am replacing the full function properly right below)
-        
         if (session()->has('ai_initial_prompt')) {
             $this->userInput = session('ai_initial_prompt');
             $this->showAiChat = true;
@@ -120,64 +158,12 @@ class ProductCompare extends Component
         }
     }
 
-    /**
-     * React to filter changes.
-     */
-    public function updatedFilterBrand()
-    {
-        $this->loadProducts();
-    }
-
-    public function updatedFilterPrice()
-    {
-        $this->loadProducts();
-    }
-
-    /**
-     * Clear all filters.
-     */
     public function clearFilters()
     {
         $this->filterBrand = '';
         $this->filterPrice = '';
-        $this->loadProducts();
     }
 
-    /**
-     * Load products based on current category and filters.
-     */
-    public function loadProducts()
-    {
-        $query = Product::where('category_id', $this->category->id)
-            ->with(['brand', 'featureValues.feature']);
-
-        // Apply Brand Filter
-        $query->when($this->filterBrand, function ($q) {
-            $q->where('brand_id', $this->filterBrand);
-        });
-
-        // Apply Price Filter (Tiers)
-        if ($this->filterPrice) {
-            switch ($this->filterPrice) {
-                case '1':
-                    $query->where('price_tier', 1);
-                    break;
-                case '2':
-                    $query->where('price_tier', 2);
-                    break;
-                case '3':
-                    $query->where('price_tier', 3);
-                    break;
-            }
-        }
-
-        $this->products = $query->get();
-        $this->calculateMatchScores();
-    }
-
-    /**
-     * AI Concierge: Analyze user needs and set sliders intelligently.
-     */
     public function analyzeUserNeeds()
     {
         if (empty(trim($this->userInput))) {
@@ -188,7 +174,6 @@ class ProductCompare extends Component
         $this->showAiChat = true;
 
         try {
-            // Prepare feature list for AI
             $featureKeys = $this->features->mapWithKeys(function ($feature) {
                 return [$feature->id => [
                     'name' => $feature->name,
@@ -197,7 +182,6 @@ class ProductCompare extends Component
                 ]];
             })->toArray();
 
-            // Build the conversational history text
             $historyText = '';
             if (!empty($this->chatHistory)) {
                 $historyText = "\n\n--- PREVIOUS CONVERSATION HISTORY ---\n";
@@ -210,24 +194,12 @@ class ProductCompare extends Component
 
             $promptText = "You are an expert shopping assistant. The user wants to buy a product in the \"{$this->category->name}\" category. Here are the available feature sliders and their details:\n\n" . json_encode($featureKeys, JSON_PRETTY_PRINT) . "\n\nAdditionally, there are two universal sliders:\n- price_weight: Importance of budget (100 = very strict budget/cheap, 50 = neutral/balanced, 0 = budget irrelevant/premium)\n- amazon_rating_weight: Importance of customer reviews (100 = very important, 50 = neutral, 0 = irrelevant)\n{$historyText}\nThe user's NEW request is: \"{$this->userInput}\"\n\nDecide if you have enough information to set the slider weights. You MUST return ONLY a JSON object with this exact structure:\n{\n  \"status\": \"complete\" OR \"needs_clarification\",\n  \"message\": \"A short, friendly message explaining what you did, OR a short clarifying question asking about a specific missing feature. You MUST briefly mention how you handled price and rating based on the implicit context.\",\n  \"weights\": {\n    \"feature_id\": 0-100\n  },\n  \"price_weight\": 0-100,\n  \"amazon_rating_weight\": 0-100\n}\n\nIMPORTANT RULES:\n1. Use feature IDs as keys in the weights object.\n2. In our system, 50 is the NEUTRAL baseline.\n3. DO NOT just ignore price_weight and amazon_rating_weight if the user didn't explicitly say the words 'price' or 'rating'. You are an intelligence system: you MUST infer implicit preferences. For example, if someone says 'for a call center', durability (build quality) and price might be more important than premium features, or rating might be very important for reliability. Adjust price_weight and amazon_rating_weight away from 50 if the context strongly implies a preference, otherwise keep them at 50.\n4. RELATIVE WEIGHTING: setting all features to 90 is mathematically identical to setting them all to 50. You MUST create contrast! If you assign a high priority (>50) to certain features, you MUST forcefully DE-PRIORITIZE (<50) features that are less relevant to the user's specific context. If they are buying for a call center, lower the priority of audiophile features like Sound Quality to below 50 to emphasize the other features.\n5. If this is a follow-up request (based on history), ONLY adjust the weights that the user is talking about, leaving the others as they were implicitly negotiated before. But you still MUST output the complete object with all weights.\n6. Do not use markdown, just raw JSON.";
 
-            // Call Gemini API
             $apiKey = config('services.gemini.api_key');
             $response = Http::timeout(15)->post(
                 "https://generativelanguage.googleapis.com/v1beta/models/" . config('services.gemini.site_model') . ":generateContent?key={$apiKey}",
                 [
-                    'contents' => [
-                        [
-                            'parts' => [
-                                [
-                                    'text' => $promptText
-                                ]
-                            ]
-                        ]
-                    ],
-                    'generationConfig' => [
-                        'temperature' => 0.4,
-                        'maxOutputTokens' => 1200,
-                    ],
+                    'contents' => [['parts' => [['text' => $promptText]]]],
+                    'generationConfig' => ['temperature' => 0.4, 'maxOutputTokens' => 1200],
                 ]
             );
 
@@ -236,68 +208,31 @@ class ProductCompare extends Component
             }
 
             $result = $response->json();
-            
-            // Log finish reason to debug truncation
-            \Log::info('AI Concierge Finish Reason', [
-                'finishReason' => $result['candidates'][0]['finishReason'] ?? 'unknown',
-                'usageMetadata' => $result['usageMetadata'] ?? []
-            ]);
-            
             $content = $result['candidates'][0]['content']['parts'][0]['text'] ?? '';
-
-            // Strip markdown code blocks if present
             $content = preg_replace('/^```json\s*|\s*```$/m', '', trim($content));
             $content = trim($content);
-
-            // Log the cleaned content for debugging
-            \Log::info('AI Concierge Response', [
-                'raw_content' => $result['candidates'][0]['content']['parts'][0]['text'] ?? '',
-                'cleaned_content' => $content
-            ]);
-
-            // Parse JSON response
             $parsed = json_decode($content, true);
 
-            // Log parsed result
-            \Log::info('AI Concierge Parsed', ['parsed' => $parsed]);
-
             if (!isset($parsed['status']) || !isset($parsed['message'])) {
-                \Log::error('AI Concierge Invalid Format', [
-                    'content' => $content,
-                    'parsed' => $parsed,
-                    'json_error' => json_last_error_msg()
-                ]);
                 throw new \Exception('Could not understand the AI response. Please try adjusting sliders manually.');
             }
 
-            // Update AI message
             $this->aiMessage = $parsed['message'];
-
-            // Store conversation history
             $this->chatHistory[] = ['role' => 'user', 'content' => $this->userInput];
             $this->chatHistory[] = ['role' => 'ai', 'content' => $this->aiMessage];
 
-            // Inform frontend about the new AI message securely
             $this->dispatch('ai-message-received', message: $this->aiMessage);
+            $this->dispatch('ai_concierge_submitted', location: 'category_page', category: $this->category->name, query: $this->userInput);
 
-            // Dispatch AI Concierge Submitted event for PostHog
-            $this->dispatch('ai_concierge_submitted', 
-                location: 'category_page', 
-                category: $this->category->name, 
-                query: $this->userInput
-            );
-            
-            // Log to database
             SearchLog::create([
                 'type' => 'category_ai',
                 'query' => $this->userInput,
                 'category_name' => $this->category->name,
-                'results_count' => $this->products->count(), 
+                'results_count' => $this->scoredProducts->count(),
                 'user_id' => auth()->id(),
                 'response_summary' => $this->aiMessage,
             ]);
 
-            // Update weights if provided
             if (isset($parsed['weights']) && is_array($parsed['weights'])) {
                 foreach ($parsed['weights'] as $featureId => $weight) {
                     if (isset($this->weights[$featureId])) {
@@ -306,29 +241,21 @@ class ProductCompare extends Component
                 }
             }
 
-            // Update valid properties
             if (isset($parsed['price_weight'])) {
                 $this->priceWeight = max(0, min(100, (int)$parsed['price_weight']));
             }
             if (isset($parsed['amazon_rating_weight'])) {
                 $this->amazonRatingWeight = max(0, min(100, (int)$parsed['amazon_rating_weight']));
             }
-                
-            // Recalculate match scores with new weights
-            $this->calculateMatchScores();
 
-            // Sync the child header component sliders
-            $this->dispatch('ai-weights-updated', 
+            $this->dispatch(
+                'ai-weights-updated',
                 weights: $this->weights,
                 priceWeight: $this->priceWeight,
                 amazonRatingWeight: $this->amazonRatingWeight
             );
 
-            // Clear user input if complete, but we still retain chat history
-            // Actually, do not clear user input here because the logic below sets userInput = '' 
-            // We want the user to be able to continue typing follow-up questions.
             $this->userInput = '';
-
         } catch (\Exception $e) {
             $this->aiMessage = $e->getMessage();
             $this->dispatch('ai-message-received', message: $this->aiMessage);
@@ -337,66 +264,26 @@ class ProductCompare extends Component
         }
     }
 
-    /**
-     * Send user response to AI.
-     */
     public function sendMessage()
     {
         $this->analyzeUserNeeds();
     }
 
-    /**
-     * Calculate match scores for all products.
-     */
-    public function calculateMatchScores()
-    {
-        $scoringService = new ProductScoringService();
-
-        foreach ($this->products as $product) {
-            $result = $scoringService->calculateMatchScore(
-                $product,
-                $this->features,
-                $this->products, // Pass all products for dynamic normalization
-                $this->weights,
-                $this->amazonRatingWeight,
-                $this->priceWeight
-            );
-            
-            $this->matchScores[$product->id] = $result['score'];
-            $this->featureScores[$product->id] = $result['feature_scores'];
-        }
-
-        // Sort products by match score (descending)
-        $this->products = $this->products->sortByDesc(function ($product) {
-            return $this->matchScores[$product->id] ?? 0;
-        })->values();
-    }
-
-
-
-    /**
-     * Handle weight updates from ComparisonHeader.
-     */
     #[On('weights-updated')]
     public function handleWeightsUpdated($weights, $priceWeight, $amazonRatingWeight, $isFromAi = false)
     {
         $this->weights = $weights;
         $this->priceWeight = $priceWeight;
         $this->amazonRatingWeight = $amazonRatingWeight;
-        
-        // If a human manually changed a slider or preset, we should clear the AI conversation
+
         if (!$isFromAi) {
             $this->chatHistory = [];
             $this->aiMessage = '';
-            
-            // Dispatch event to clear the message on the frontend ComponentHeader
             $this->dispatch('ai-message-received', message: '');
         }
-
-        $this->calculateMatchScores();
     }
 
-    #[On('toggle-ai-chat')] 
+    #[On('toggle-ai-chat')]
     public function toggleAiChat()
     {
         $this->showAiChat = !$this->showAiChat;
@@ -410,17 +297,6 @@ class ProductCompare extends Component
         $this->analyzeUserNeeds();
     }
 
-    /**
-     * Called when any weight changes (real-time reactivity).
-     */
-    public function updatedWeights()
-    {
-        $this->calculateMatchScores();
-    }
-
-    /**
-     * Increase the number of displayed products.
-     */
     public function loadMore()
     {
         $this->displayLimit += 12;
@@ -430,13 +306,10 @@ class ProductCompare extends Component
     public function render()
     {
         if ($this->selectedProductSlug && $this->selectedProduct) {
-            // SINGLE PRODUCT SEO
             $metaTitle = "{$this->selectedProduct->name} - AI Review & Match Score";
-            
-            $metaDescription = $this->selectedProduct->ai_summary 
+            $metaDescription = $this->selectedProduct->ai_summary
                 ? \Illuminate\Support\Str::limit(strip_tags($this->selectedProduct->ai_summary), 150)
                 : "Read the comprehensive AI review and view the Match Score for the {$this->selectedProduct->brand->name} {$this->selectedProduct->name}.";
-                
             $canonicalUrl = route('product.show', ['product' => $this->selectedProduct->slug]);
 
             $schema = [
@@ -444,10 +317,7 @@ class ProductCompare extends Component
                 '@type' => 'Product',
                 'name' => $this->selectedProduct->name,
                 'description' => $this->selectedProduct->ai_summary ? strip_tags($this->selectedProduct->ai_summary) : $this->selectedProduct->name,
-                'brand' => [
-                    '@type' => 'Brand',
-                    'name' => $this->selectedProduct->brand->name
-                ]
+                'brand' => ['@type' => 'Brand', 'name' => $this->selectedProduct->brand->name]
             ];
 
             if ($this->selectedProduct->image_path) {
@@ -462,18 +332,17 @@ class ProductCompare extends Component
                 ];
             }
         } else {
-            // CATEGORY SEO
             $currentYear = date('Y');
             $metaTitle = "{$this->category->name} - Compare Best Models in {$currentYear} | pw2d";
-            
+
             $descriptionText = '';
             if (is_array($this->category->buying_guide) && !empty($this->category->buying_guide['how_to_decide'])) {
                 $descriptionText = strip_tags($this->category->buying_guide['how_to_decide']);
             }
-            $metaDescription = !empty($descriptionText) 
-                ? \Illuminate\Support\Str::limit($descriptionText, 150) 
+            $metaDescription = !empty($descriptionText)
+                ? \Illuminate\Support\Str::limit($descriptionText, 150)
                 : "Compare the absolute best {$this->category->name} on the market. Use our AI-driven sliders to find the perfect match for your exact needs.";
-                
+
             $canonicalUrl = route('category.show', ['slug' => $this->category->slug]);
 
             $schema = [
@@ -485,7 +354,8 @@ class ProductCompare extends Component
             ];
 
             $position = 1;
-            foreach ($this->products as $product) {
+            // WE NOW USE ONLY THE VISIBLE PRODUCTS FOR SCHEMA (GREAT FOR SEO!)
+            foreach ($this->visibleProducts as $product) {
                 $schema['itemListElement'][] = [
                     '@type' => 'ListItem',
                     'position' => $position,
