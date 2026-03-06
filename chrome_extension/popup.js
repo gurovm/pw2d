@@ -1,12 +1,18 @@
-const CATEGORY_API_URL = 'http://127.0.0.1:8003/api/categories';
-const IMPORT_API_URL = 'http://127.0.0.1:8003/api/product-import';
+const API_CONFIG = {
+    local: 'http://127.0.0.1:8003',
+    production: 'http://pw2d.com'
+};
+
 const EXTENSION_TOKEN = '626f897ea3ed362449c7c06625633db8a2e7405e88ec2cac8ad7152ea9d619f9'; // Must match .env CHROME_EXTENSION_KEY
 
 // State
+let currentEnv = 'local';
+let baseUrl = API_CONFIG.local;
 let categories = [];
 let selectedCategoryId = null;
 
 // DOM Elements
+const envSelect = document.getElementById('envSelect');
 const categorySelect = document.getElementById('categorySelect');
 const categorySearch = document.getElementById('categorySearch'); // New element
 const scrapeBtn = document.getElementById('scrapeBtn');
@@ -28,8 +34,40 @@ let scannedNextPageUrl = null;
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
-    await fetchCategories();
-    loadSavedCategory();
+    // Load saved environment first
+    chrome.storage.local.get(['env'], async (result) => {
+        if (result.env && API_CONFIG[result.env]) {
+            currentEnv = result.env;
+            baseUrl = API_CONFIG[result.env];
+        }
+        if (envSelect) envSelect.value = currentEnv;
+
+        await fetchCategories();
+        loadSavedCategory();
+    });
+
+    // Handle Environment Change
+    if (envSelect) {
+        envSelect.addEventListener('change', async (e) => {
+            currentEnv = e.target.value;
+            baseUrl = API_CONFIG[currentEnv];
+            chrome.storage.local.set({ env: currentEnv });
+
+            // Notify background script
+            chrome.runtime.sendMessage({
+                action: "UPDATE_ENV",
+                env: currentEnv
+            });
+
+            statusDiv.textContent = `Switched to ${currentEnv === 'local' ? 'Local' : 'Production'}.`;
+            statusDiv.className = 'success';
+            setTimeout(() => { if (statusDiv.textContent.includes('Switched')) statusDiv.textContent = ''; }, 3000);
+
+            // Fetch categories for new environment
+            categorySelect.innerHTML = '<option value="" disabled selected>Loading...</option>';
+            await fetchCategories();
+        });
+    }
 
     // Check if batch is already running
     chrome.runtime.sendMessage({ action: "GET_STATUS" }, (response) => {
@@ -93,7 +131,7 @@ if (startBatchBtn) {
         statusDiv.className = '';
 
         try {
-            const apiRes = await fetch(`http://127.0.0.1:8003/api/existing-asins?category_id=${selectedCategoryId}`, {
+            const apiRes = await fetch(`${baseUrl}/api/existing-asins?category_id=${selectedCategoryId}`, {
                 headers: { 'X-Extension-Token': EXTENSION_TOKEN },
             });
             const data = await apiRes.json();
@@ -220,7 +258,7 @@ if (categorySearch) {
 // Fetch Categories
 async function fetchCategories() {
     try {
-        const response = await fetch(CATEGORY_API_URL, {
+        const response = await fetch(`${baseUrl}/api/categories`, {
             headers: { 'X-Extension-Token': EXTENSION_TOKEN },
         });
         const data = await response.json();
@@ -327,7 +365,7 @@ scrapeBtn.addEventListener('click', async () => {
             statusDiv.textContent = 'Sending to PW2D...';
 
             try {
-                const apiResponse = await fetch(IMPORT_API_URL, {
+                const apiResponse = await fetch(`${baseUrl}/api/product-import`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',

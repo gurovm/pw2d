@@ -95,7 +95,7 @@ class EditCategory extends EditRecord
                         throw new \Exception('GEMINI_API_KEY is not set in your .env file.');
                     }
 
-                    $imageModel = env('AGENT_IMAGE_MODEL', 'gemini-2.5-flash-preview-image-generation');
+                    $imageModel = env('AGENT_IMAGE_MODEL', 'gemini-2.5-flash-image');
                     $response = Http::timeout(120)->withHeaders([
                         'Content-Type' => 'application/json',
                     ])->post('https://generativelanguage.googleapis.com/v1beta/models/' . $imageModel . ':generateContent?key=' . $apiKey, [

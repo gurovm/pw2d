@@ -8,12 +8,33 @@ let totalCount = 0;
 let currentTabId = null;
 let nextPageUrl = null;
 
-const API_URL = 'http://127.0.0.1:8003/api/product-import';
+const API_CONFIG = {
+    local: 'http://127.0.0.1:8003',
+    production: 'http://pw2d.com'
+};
+let currentEnv = 'local';
+let baseUrl = API_CONFIG.local;
+
+// Initialize from storage
+chrome.storage.local.get(['env'], (result) => {
+    if (result.env && API_CONFIG[result.env]) {
+        currentEnv = result.env;
+        baseUrl = API_CONFIG[result.env];
+    }
+});
+
 const EXTENSION_TOKEN = '626f897ea3ed362449c7c06625633db8a2e7405e88ec2cac8ad7152ea9d619f9'; // Must match .env CHROME_EXTENSION_KEY
 
 // Listen for messages from Popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === "START_BATCH") {
+    if (request.action === "UPDATE_ENV") {
+        if (request.env && API_CONFIG[request.env]) {
+            currentEnv = request.env;
+            baseUrl = API_CONFIG[request.env];
+        }
+        sendResponse({ success: true });
+        return true;
+    } else if (request.action === "START_BATCH") {
         startBatch(request.urls, request.categoryId, request.nextPageUrl);
         sendResponse({ success: true, message: "Batch started" });
     } else if (request.action === "STOP_BATCH") {
@@ -188,7 +209,7 @@ async function handleScrapeComplete(payload) {
 
     try {
         // 4. Upload to API
-        const response = await fetch(API_URL, {
+        const response = await fetch(`${baseUrl}/api/product-import`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -297,7 +318,9 @@ function scanNextPage(tabId) {
         broadcastStatus(`Filtering existing products...`);
         try {
             // Check existing ASINs
-            const apiRes = await fetch(`http://127.0.0.1:8003/api/existing-asins?category_id=${currentCategoryId}`);
+            const apiRes = await fetch(`${baseUrl}/api/existing-asins?category_id=${currentCategoryId}`, {
+                headers: { 'X-Extension-Token': EXTENSION_TOKEN }
+            });
             const data = await apiRes.json();
 
             let existingAsins = [];

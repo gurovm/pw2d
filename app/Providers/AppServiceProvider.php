@@ -19,6 +19,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        \Illuminate\Support\Facades\Gate::policy(\App\Models\User::class, \App\Policies\UserPolicy::class);
+
         \App\Models\Feature::observe(\App\Observers\FeatureObserver::class);
         \App\Models\Category::observe(\App\Observers\CategoryObserver::class);
     }
