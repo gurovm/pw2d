@@ -9,22 +9,49 @@ use Illuminate\Support\Collection;
 class ProductScoringService
 {
     /**
+     * Score all products at once, pre-computing feature ranges a single time.
+     * This is O(N×F) instead of the naive O(N²×F) approach.
+     */
+    public function scoreAllProducts(
+        Collection $products,
+        Collection $features,
+        array $weights,
+        ?float $amazonRatingWeight = 50,
+        ?float $priceWeight = 50
+    ): Collection {
+        // Pre-compute ranges for all features once (not once per product)
+        $ranges = [];
+        foreach ($features as $feature) {
+            $ranges[$feature->id] = $this->calculateFeatureRange($feature, $products);
+        }
+
+        return $products->map(function ($product) use ($features, $weights, $amazonRatingWeight, $priceWeight, $ranges) {
+            $result = $this->calculateMatchScore($product, $features, [], $weights, $amazonRatingWeight, $priceWeight, $ranges);
+            $product->match_score = $result['score'];
+            $product->feature_scores = $result['feature_scores'];
+            return $product;
+        });
+    }
+
+    /**
      * Calculate Match Score for a product based on feature weights.
      *
      * @param Product $product
      * @param Collection $features
-     * @param Collection $products All products being compared (for dynamic normalization)
+     * @param Collection $products All products being compared (for dynamic normalization) — pass [] when using pre-computed $ranges
      * @param array $weights Feature weights (feature_id => weight 0-100)
      * @param float|null $amazonRatingWeight Weight for Amazon rating (0-100)
+     * @param array $precomputedRanges Optional pre-computed ranges keyed by feature_id
      * @return float Match Score (0-100)
      */
     public function calculateMatchScore(
         Product $product,
         Collection $features,
-        Collection $products,
+        Collection|array $products,
         array $weights,
         ?float $amazonRatingWeight = 50,
-        ?float $priceWeight = 50
+        ?float $priceWeight = 50,
+        array $precomputedRanges = []
     ): array {
         $totalWeightedScore = 0;
         $totalWeight = 0;
@@ -33,7 +60,7 @@ class ProductScoringService
         // Calculate scores for each feature
         foreach ($features as $feature) {
             $weight = $weights[$feature->id] ?? 50; // Default weight: 50
-            
+
             // Get the product's raw value for this feature
             $featureValue = $product->featureValues
                 ->where('feature_id', $feature->id)
@@ -43,12 +70,13 @@ class ProductScoringService
                 continue; // Skip if product doesn't have this feature
             }
 
-            // Normalize the raw value to 0-100 scale (dynamically)
-            $normalizedScore = $this->normalizeFeatureValue(
-                $featureValue->raw_value,
-                $feature,
-                $products
-            );
+            // Use pre-computed range if available, otherwise compute dynamically
+            if (isset($precomputedRanges[$feature->id])) {
+                $range = $precomputedRanges[$feature->id];
+                $normalizedScore = $this->normalizeWithRange($featureValue->raw_value, $feature, $range['min'], $range['max']);
+            } else {
+                $normalizedScore = $this->normalizeFeatureValue($featureValue->raw_value, $feature, collect($products));
+            }
             $featureScores[$feature->id] = round($normalizedScore, 1);
 
             // Apply weight
@@ -88,35 +116,27 @@ class ProductScoringService
 
     /**
      * Normalize a feature value to 0-100 scale using dynamic min/max from products.
-     *
-     * @param float $rawValue
-     * @param Feature $feature
-     * @param Collection $products All products being compared
-     * @return float Normalized score (0-100)
      */
     protected function normalizeFeatureValue(float $rawValue, Feature $feature, Collection $products): float
     {
-        // Dynamically calculate min and max from actual product data
         $range = $this->calculateFeatureRange($feature, $products);
-        $min = $range['min'];
-        $max = $range['max'];
+        return $this->normalizeWithRange($rawValue, $feature, $range['min'], $range['max']);
+    }
 
-        // Edge case: if all products have the same value (or only one product)
-        // Return 50 to avoid division by zero
+    /**
+     * Normalize a value given pre-computed min/max bounds.
+     */
+    protected function normalizeWithRange(float $rawValue, Feature $feature, float $min, float $max): float
+    {
         if ($max === $min) {
             return 50;
         }
 
-        // Clamp value to min-max range
         $clampedValue = max($min, min($max, $rawValue));
 
         if ($feature->is_higher_better) {
-            // Higher is better: direct normalization
-            // Formula: (value - min) / (max - min) * 100
             return (($clampedValue - $min) / ($max - $min)) * 100;
         } else {
-            // Lower is better: inverse normalization
-            // Formula: (max - value) / (max - min) * 100
             return (($max - $clampedValue) / ($max - $min)) * 100;
         }
     }

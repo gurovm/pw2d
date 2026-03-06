@@ -7,6 +7,7 @@ use App\Models\Feature;
 use App\Models\Product;
 use App\Models\SearchLog;
 use App\Services\ProductScoringService;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\On;
@@ -78,37 +79,34 @@ class ProductCompare extends Component
     #[Computed]
     public function scoredProducts()
     {
-        $query = Product::where('category_id', $this->category->id)
-            ->with(['brand', 'featureValues.feature']);
+        // Cache the DB query result for 90 seconds keyed by category + filters.
+        // Scoring (weights) still happens fresh every render, but the expensive
+        // DB round-trip with eager loads is skipped on every slider interaction.
+        $cacheKey = "products:cat{$this->category->id}:b{$this->filterBrand}:p{$this->filterPrice}";
+        $products = Cache::remember($cacheKey, 90, function () {
+            $query = Product::where('category_id', $this->category->id)
+                ->with(['brand', 'featureValues.feature']);
 
-        if ($this->filterBrand) {
-            $query->where('brand_id', $this->filterBrand);
-        }
+            if ($this->filterBrand) {
+                $query->where('brand_id', $this->filterBrand);
+            }
 
-        if ($this->filterPrice) {
-            $query->where('price_tier', $this->filterPrice);
-        }
+            if ($this->filterPrice) {
+                $query->where('price_tier', $this->filterPrice);
+            }
 
-        $products = $query->get();
-        $scoringService = new ProductScoringService();
-
-        // Calculate scores and map them directly onto the objects
-        $scored = $products->map(function ($product) use ($products, $scoringService) {
-            $result = $scoringService->calculateMatchScore(
-                $product,
-                $this->features,
-                $products, // Pass all products for dynamic normalization
-                $this->weights,
-                $this->amazonRatingWeight,
-                $this->priceWeight
-            );
-
-            // Attach dynamically for the view
-            $product->match_score = $result['score'];
-            $product->feature_scores = $result['feature_scores'];
-
-            return $product;
+            return $query->get();
         });
+
+        // scoreAllProducts pre-computes feature ranges once (O(N×F) not O(N²×F))
+        $scoringService = new ProductScoringService();
+        $scored = $scoringService->scoreAllProducts(
+            $products,
+            $this->features,
+            $this->weights,
+            $this->amazonRatingWeight,
+            $this->priceWeight
+        );
 
         return $scored->sortByDesc('match_score')->values();
     }
