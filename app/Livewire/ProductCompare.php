@@ -7,7 +7,6 @@ use App\Models\Feature;
 use App\Models\Product;
 use App\Models\SearchLog;
 use App\Services\ProductScoringService;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\On;
@@ -76,48 +75,55 @@ class ProductCompare extends Component
      * sorts them, and attaches the scores directly to the product object.
      * It is NEVER sent to the frontend state payload.
      */
+    /**
+     * Fetch and score ALL products using a lightweight query (no brand/feature joins).
+     * We only need 4 columns + raw feature values for scoring — no need to JOIN brands
+     * or eagerly load Feature models for 200+ products.
+     */
     #[Computed]
     public function scoredProducts()
     {
-        // Cache the DB query result for 90 seconds keyed by category + filters.
-        // Scoring (weights) still happens fresh every render, but the expensive
-        // DB round-trip with eager loads is skipped on every slider interaction.
-        $cacheKey = "products:cat{$this->category->id}:b{$this->filterBrand}:p{$this->filterPrice}";
-        $products = Cache::remember($cacheKey, 90, function () {
-            $query = Product::where('category_id', $this->category->id)
-                ->with(['brand', 'featureValues.feature']);
+        $products = Product::where('category_id', $this->category->id)
+            ->select(['id', 'brand_id', 'amazon_rating', 'price_tier'])
+            ->with(['featureValues:id,product_id,feature_id,raw_value'])
+            ->when($this->filterBrand, fn($q) => $q->where('brand_id', $this->filterBrand))
+            ->when($this->filterPrice, fn($q) => $q->where('price_tier', $this->filterPrice))
+            ->get();
 
-            if ($this->filterBrand) {
-                $query->where('brand_id', $this->filterBrand);
-            }
-
-            if ($this->filterPrice) {
-                $query->where('price_tier', $this->filterPrice);
-            }
-
-            return $query->get();
-        });
-
-        // scoreAllProducts pre-computes feature ranges once (O(N×F) not O(N²×F))
         $scoringService = new ProductScoringService();
-        $scored = $scoringService->scoreAllProducts(
+        return $scoringService->scoreAllProducts(
             $products,
             $this->features,
             $this->weights,
             $this->amazonRatingWeight,
             $this->priceWeight
-        );
-
-        return $scored->sortByDesc('match_score')->values();
+        )->sortByDesc('match_score')->values();
     }
 
     /**
-     * Returns only the top X products for the frontend to render.
+     * Returns only the top X products with full data (brand, feature values + names)
+     * for rendering. We fetch full data for ONLY these products, not all 200+.
      */
     #[Computed]
     public function visibleProducts()
     {
-        return $this->scoredProducts->take($this->displayLimit);
+        $topScored = $this->scoredProducts->take($this->displayLimit);
+        $topIds = $topScored->pluck('id');
+        $scoreMap = $topScored->keyBy('id');
+
+        // Full data query for only the visible products
+        $fullProducts = Product::whereIn('id', $topIds)
+            ->with(['brand', 'featureValues.feature'])
+            ->get()
+            ->keyBy('id');
+
+        // Restore the sorted order and attach scores
+        return $topIds->map(function ($id) use ($fullProducts, $scoreMap) {
+            $product = $fullProducts[$id];
+            $product->match_score = $scoreMap[$id]->match_score;
+            $product->feature_scores = $scoreMap[$id]->feature_scores;
+            return $product;
+        });
     }
 
     public function openProduct($slug)
