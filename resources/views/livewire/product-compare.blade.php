@@ -475,20 +475,24 @@
                                     
                                     $featureValueObj = $this->selectedProduct->featureValues->where('feature_id', $feature->id)->first();
                                     $rawValue = $featureValueObj ? $featureValueObj->raw_value : '';
-                                    
+                                    $explanation = $featureValueObj ? $featureValueObj->explanation : null;
+
                                     // Calculate inline hex colors for bulletproof rendering outside Tailwind's JIT compiler edge-cases
                                     $hexColor = $normalizedScore >= 80 ? '#10b981' : ($normalizedScore >= 60 ? '#eab308' : '#f43f5e');
                                 @endphp
-                                
+
                                 <div class="group">
                                     <div class="flex justify-between items-baseline mb-2">
                                         <span class="text-sm font-semibold text-gray-700">{{ $feature->name }}</span>
                                         <span class="text-sm font-bold text-gray-900">{{ $rawValue }}<span class="text-gray-400 font-medium text-xs ml-0.5">{{ $feature->unit }}</span></span>
                                     </div>
                                     <div class="w-full bg-gray-100 h-2 rounded-full overflow-hidden">
-                                        <div class="h-full rounded-full transition-all duration-700 ease-out shadow-sm" 
+                                        <div class="h-full rounded-full transition-all duration-700 ease-out shadow-sm"
                                              style="width: {{ $normalizedScore }}%; background-color: {{ $hexColor }};"></div>
                                     </div>
+                                    @if($explanation)
+                                        <p class="text-sm text-gray-600 italic border-l-2 border-gray-200 pl-3 mt-2">{{ $explanation }}</p>
+                                    @endif
                                 </div>
                             @endforeach
                         </div>

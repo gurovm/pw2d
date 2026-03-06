@@ -11,6 +11,7 @@ class ProductFeatureValue extends Model
         'product_id',
         'feature_id',
         'raw_value',
+        'explanation',
     ];
 
     protected $casts = [

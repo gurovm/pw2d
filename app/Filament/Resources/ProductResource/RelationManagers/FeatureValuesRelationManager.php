@@ -25,11 +25,9 @@ class FeatureValuesRelationManager extends RelationManager
                 Forms\Components\Select::make('feature_id')
                     ->label('Feature')
                     ->options(function () {
-                        // Get all categories this product belongs to
-                        $categoryIds = $this->getOwnerRecord()->categories()->pluck('categories.id');
-                        
-                        // Get all features for those categories
-                        return Feature::whereIn('category_id', $categoryIds)
+                        $categoryId = $this->getOwnerRecord()->category_id;
+
+                        return Feature::where('category_id', $categoryId)
                             ->with('category')
                             ->get()
                             ->mapWithKeys(function ($feature) {
@@ -41,7 +39,7 @@ class FeatureValuesRelationManager extends RelationManager
                     })
                     ->required()
                     ->searchable()
-                    ->helperText('Only features from the product\'s categories are shown'),
+                    ->helperText('Only features from the product\'s category are shown'),
                 
                 Forms\Components\TextInput::make('raw_value')
                     ->label('Value')
@@ -75,7 +73,13 @@ class FeatureValuesRelationManager extends RelationManager
                         $unit = $record->feature->unit ?? '';
                         return $state . ($unit ? " {$unit}" : '');
                     }),
-                
+
+                Tables\Columns\TextColumn::make('explanation')
+                    ->label('AI Reason')
+                    ->placeholder('—')
+                    ->wrap()
+                    ->limit(80),
+
                 Tables\Columns\IconColumn::make('feature.is_higher_better')
                     ->label('Direction')
                     ->boolean()
