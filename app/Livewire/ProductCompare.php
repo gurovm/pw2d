@@ -7,6 +7,7 @@ use App\Models\Feature;
 use App\Models\Product;
 use App\Models\SearchLog;
 use App\Services\ProductScoringService;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\On;
@@ -83,12 +84,18 @@ class ProductCompare extends Component
     #[Computed]
     public function scoredProducts()
     {
-        $products = Product::where('category_id', $this->category->id)
-            ->select(['id', 'brand_id', 'amazon_rating', 'price_tier'])
-            ->with(['featureValues:id,product_id,feature_id,raw_value'])
-            ->when($this->filterBrand, fn($q) => $q->where('brand_id', $this->filterBrand))
-            ->when($this->filterPrice, fn($q) => $q->where('price_tier', $this->filterPrice))
-            ->get();
+        // Cache the raw products+featureValues in Redis (90s TTL).
+        // Scoring still runs fresh on every render (weights change), but the DB
+        // round-trip is eliminated on all subsequent slider interactions.
+        $cacheKey = "products:cat{$this->category->id}:b{$this->filterBrand}:p{$this->filterPrice}";
+        $products = Cache::remember($cacheKey, 90, function () {
+            return Product::where('category_id', $this->category->id)
+                ->select(['id', 'brand_id', 'amazon_rating', 'price_tier'])
+                ->with(['featureValues:id,product_id,feature_id,raw_value'])
+                ->when($this->filterBrand, fn($q) => $q->where('brand_id', $this->filterBrand))
+                ->when($this->filterPrice, fn($q) => $q->where('price_tier', $this->filterPrice))
+                ->get();
+        });
 
         $scoringService = new ProductScoringService();
         return $scoringService->scoreAllProducts(
