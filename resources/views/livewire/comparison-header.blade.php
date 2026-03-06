@@ -86,52 +86,65 @@
                     Drag the sliders to set your priorities. Products are re-ranked instantly based on what matters most <b>to you</b>.
                 </div>
 
-                <div class="space-y-5">
+                {{-- Alpine.js owns slider state for instant display; Livewire is only notified on mouseup (one round-trip per gesture, not per pixel) --}}
+                <div class="space-y-5"
+                     x-data="{
+                         w: @js($weights),
+                         price: {{ (int) $priceWeight }},
+                         rating: {{ (int) $amazonRatingWeight }},
+                         fire() {
+                             Livewire.dispatch('weights-updated', { weights: this.w, priceWeight: this.price, amazonRatingWeight: this.rating });
+                         }
+                     }"
+                     @alpine-weights-sync.window="w = { ...$event.detail.weights }; price = $event.detail.priceWeight; rating = $event.detail.amazonRatingWeight">
+
                     <!-- Price Slider -->
                     <div>
                         <div class="flex justify-between items-center mb-2">
                             <span class="text-sm font-semibold text-gray-700">Price</span>
-                            <span class="text-xs font-bold px-2 py-0.5 rounded-full" 
-                                  style="background-color: hsl({{ $priceWeight * 1.2 }}, 85%, 93%); color: hsl({{ $priceWeight * 1.2 }}, 85%, 30%);">{{ $priceWeight }}%</span>
+                            <span class="text-xs font-bold px-2 py-0.5 rounded-full"
+                                  :style="`background-color: hsl(${price * 1.2}, 85%, 93%); color: hsl(${price * 1.2}, 85%, 30%)`"
+                                  x-text="price + '%'"></span>
                         </div>
-                        <input type="range" min="0" max="100" wire:model.live="priceWeight"
-                               @change="if(typeof posthog !== 'undefined') posthog.capture('sliders_manually_adjusted', { category: '{{ addslashes($categoryName) }}', feature: 'Price' })"
+                        <input type="range" min="0" max="100"
+                               x-model.number="price"
+                               @change="fire(); if(typeof posthog !== 'undefined') posthog.capture('sliders_manually_adjusted', { category: '{{ addslashes($categoryName) }}', feature: 'Price' })"
                                class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600 focus:outline-none"
-                               style="accent-color: hsl({{ $priceWeight * 1.2 }}, 85%, 45%)">
+                               :style="`accent-color: hsl(${price * 1.2}, 85%, 45%)`">
                     </div>
 
                     <!-- Rating Slider -->
                     <div>
                         <div class="flex justify-between items-center mb-2">
                             <span class="text-sm font-semibold text-gray-700">Amazon Rating</span>
-                            <span class="text-xs font-bold px-2 py-0.5 rounded-full" 
-                                  style="background-color: hsl({{ $amazonRatingWeight * 1.2 }}, 85%, 93%); color: hsl({{ $amazonRatingWeight * 1.2 }}, 85%, 30%);">{{ $amazonRatingWeight }}%</span>
+                            <span class="text-xs font-bold px-2 py-0.5 rounded-full"
+                                  :style="`background-color: hsl(${rating * 1.2}, 85%, 93%); color: hsl(${rating * 1.2}, 85%, 30%)`"
+                                  x-text="rating + '%'"></span>
                         </div>
-                        <input type="range" min="0" max="100" wire:model.live="amazonRatingWeight"
-                               @change="if(typeof posthog !== 'undefined') posthog.capture('sliders_manually_adjusted', { category: '{{ addslashes($categoryName) }}', feature: 'Amazon Rating' })"
+                        <input type="range" min="0" max="100"
+                               x-model.number="rating"
+                               @change="fire(); if(typeof posthog !== 'undefined') posthog.capture('sliders_manually_adjusted', { category: '{{ addslashes($categoryName) }}', feature: 'Amazon Rating' })"
                                class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                               style="accent-color: hsl({{ $amazonRatingWeight * 1.2 }}, 85%, 45%)">
+                               :style="`accent-color: hsl(${rating * 1.2}, 85%, 45%)`">
                     </div>
 
                     <div class="h-px bg-gray-100"></div>
 
                     <!-- Category Features -->
                     @foreach($features as $feature)
-                        @php
-                            $val = $weights[$feature->id] ?? 50;
-                            $hue = $val * 1.2;
-                            $hslColor = "hsl({$hue}, 85%, 45%)";
-                        @endphp
                         <div>
                             <div class="flex justify-between items-center mb-2">
                                 <span class="text-sm font-semibold text-gray-700">{{ $feature->label ?? $feature->name }}</span>
-                                <span class="text-xs font-bold px-2 py-0.5 rounded-full" 
-                                      style="background-color: hsl({{ $hue }}, 85%, 93%); color: hsl({{ $hue }}, 85%, 30%);">{{ $val }}%</span>
+                                <span class="text-xs font-bold px-2 py-0.5 rounded-full"
+                                      :style="`background-color: hsl(${w[{{ $feature->id }}] * 1.2}, 85%, 93%); color: hsl(${w[{{ $feature->id }}] * 1.2}, 85%, 30%)`"
+                                      x-text="w[{{ $feature->id }}] + '%'"></span>
                             </div>
-                            <input type="range" min="0" max="100" wire:model.live="weights.{{ $feature->id }}"
-                                   @change="if(typeof posthog !== 'undefined') posthog.capture('sliders_manually_adjusted', { category: '{{ addslashes($categoryName) }}', feature: '{{ addslashes($feature->name) }}' })"
+                            <input type="range" min="0" max="100"
+                                   :value="w[{{ $feature->id }}]"
+                                   @input="w[{{ $feature->id }}] = parseInt($event.target.value)"
+                                   @change="fire(); if(typeof posthog !== 'undefined') posthog.capture('sliders_manually_adjusted', { category: '{{ addslashes($categoryName) }}', feature: '{{ addslashes($feature->name) }}' })"
                                    class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                                   style="accent-color: {{ $hslColor }}">
+                                   :style="`accent-color: hsl(${w[{{ $feature->id }}] * 1.2}, 85%, 45%)`">
                         </div>
                     @endforeach
                 </div>

@@ -24,12 +24,19 @@ class ComparisonHeader extends Component
         $this->weights = $weights;
         $this->priceWeight = $priceWeight;
         $this->amazonRatingWeight = $amazonRatingWeight;
-        
-        $this->dispatch('weights-updated', 
-            weights: $this->weights, 
-            priceWeight: $this->priceWeight, 
+
+        $this->dispatch('weights-updated',
+            weights: $this->weights,
+            priceWeight: $this->priceWeight,
             amazonRatingWeight: $this->amazonRatingWeight,
             isFromAi: true
+        );
+
+        // Sync Alpine.js slider positions (they own visual state independently of Livewire)
+        $this->dispatch('alpine-weights-sync',
+            weights: $this->weights,
+            priceWeight: $this->priceWeight,
+            amazonRatingWeight: $this->amazonRatingWeight
         );
     }
     
@@ -77,9 +84,16 @@ class ComparisonHeader extends Component
         }
         
         // Dispatch event to recalculate Match Scores and animate the grid
-        $this->dispatch('weights-updated', 
-            weights: $this->weights, 
-            priceWeight: $this->priceWeight, 
+        $this->dispatch('weights-updated',
+            weights: $this->weights,
+            priceWeight: $this->priceWeight,
+            amazonRatingWeight: $this->amazonRatingWeight
+        );
+
+        // Sync Alpine.js slider positions to the preset values
+        $this->dispatch('alpine-weights-sync',
+            weights: $this->weights,
+            priceWeight: $this->priceWeight,
             amazonRatingWeight: $this->amazonRatingWeight
         );
     }
