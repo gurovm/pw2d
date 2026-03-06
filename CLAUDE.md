@@ -38,3 +38,14 @@ Pw2D is a modern affiliate/recommendation platform targeted at the US market. It
 - Use Laravel's built-in testing tools (Pest or PHPUnit).
 - Tests must cover the "happy path" as well as edge cases and error handling.
 - Run `php artisan test` locally to verify functionality before completing a task.
+## 7. Chrome Extension Integration
+- **Location:** The source code for the extension is located in the `/chrome_extension` directory (Manifest V3).
+- **Purpose:** Scrapes Amazon products (single and auto-paginated batch mode), extracts raw text, hi-res images, and ASINs, and pushes them to the Laravel backend.
+- **Authentication:** The extension authenticates API requests using the `X-Extension-Token` header.
+- **API Dependencies:** The backend MUST strictly maintain and support the following API endpoints:
+  1. `GET /api/categories`
+  2. `GET /api/existing-asins?category_id={id}`
+  3. `POST /api/product-import`
+- **Payload Structure:** The `POST /api/product-import` endpoint MUST accept the following JSON keys exactly as written:
+  `{ "raw_text": "...", "image_url": "...", "product_url": "...", "external_id": "...", "category_id": "..." }`
+- **Important Rule:** NEVER rename these API fields, change the token header name, or alter the endpoint URLs in the backend without simultaneously updating the extension files (`popup.js` and `background.js`).

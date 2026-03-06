@@ -10,7 +10,7 @@ let nextPageUrl = null;
 
 const API_CONFIG = {
     local: 'http://127.0.0.1:8003',
-    production: 'http://pw2d.com'
+    production: 'https://pw2d.com'
 };
 let currentEnv = 'local';
 let baseUrl = API_CONFIG.local;

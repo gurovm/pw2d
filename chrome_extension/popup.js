@@ -1,6 +1,6 @@
 const API_CONFIG = {
     local: 'http://127.0.0.1:8003',
-    production: 'http://pw2d.com'
+    production: 'https://pw2d.com'
 };
 
 const EXTENSION_TOKEN = '626f897ea3ed362449c7c06625633db8a2e7405e88ec2cac8ad7152ea9d619f9'; // Must match .env CHROME_EXTENSION_KEY
