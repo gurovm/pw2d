@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\SitemapController;
 use App\Livewire\Home;
 use App\Livewire\ProductCompare;
 use Illuminate\Support\Facades\Route;
@@ -12,6 +13,9 @@ Route::get('/compare/{slug}', ProductCompare::class)->name('category.show');
 
 // Product Detail URL (Fallback for Modal)
 Route::get('/product/{product:slug}', ProductCompare::class)->name('product.show');
+
+// Sitemap
+Route::get('/sitemap.xml', [SitemapController::class, 'index'])->name('sitemap');
 
 // Static Pages
 Route::view('/about', 'pages.about')->name('about');
