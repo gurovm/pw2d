@@ -81,6 +81,97 @@ function extractNextPageUrl() {
 
 // ── NEW: Bulk SERP extraction (returns structured product data) ─
 
+/**
+ * Extract price from a product card element.
+ * Tries four strategies in order, returns null if all fail.
+ */
+function extractPrice(el) {
+    try {
+        // 1. .a-price .a-offscreen — most reliable, already formatted "$54.99"
+        const offscreen = el.querySelector('.a-price .a-offscreen');
+        if (offscreen) {
+            const p = parseFloat(offscreen.innerText.replace(/[^0-9.]/g, ''));
+            if (p > 0) return p;
+        }
+
+        // 2. Whole + fraction parts (e.g. "54" + "99")
+        const whole    = el.querySelector('.a-price-whole');
+        const fraction = el.querySelector('.a-price-fraction');
+        if (whole) {
+            const w = whole.innerText.replace(/[^0-9]/g, '');
+            const f = fraction ? fraction.innerText.replace(/[^0-9]/g, '').padEnd(2, '0') : '00';
+            const p = parseFloat(`${w}.${f}`);
+            if (p > 0) return p;
+        }
+
+        // 3. Any element whose text contains a "$" price (e.g. spans like "$54.99")
+        const allEls = el.querySelectorAll('span, div');
+        for (const s of allEls) {
+            if (s.children.length > 0) continue; // leaf nodes only
+            const text = s.innerText.trim();
+            if (/^\$[\d,]+(\.\d{1,2})?$/.test(text)) {
+                const p = parseFloat(text.replace(/[^0-9.]/g, ''));
+                if (p > 0) return p;
+            }
+        }
+    } catch (e) {}
+
+    return null;
+}
+
+/**
+ * Extract reviews count from a product card element.
+ * Tries four strategies in order, returns 0 if all fail.
+ */
+function extractReviewsCount(el) {
+    try {
+        // 1. aria-label="309 ratings" or "1,234 ratings" on star/review link elements
+        const ratingEls = el.querySelectorAll('[aria-label*="rating"]');
+        for (const r of ratingEls) {
+            const label = r.getAttribute('aria-label');
+            const m = label.match(/^([\d,]+)\s+rating/i);
+            if (m) {
+                const n = parseInt(m[1].replace(/,/g, ''));
+                if (n > 0) return n;
+            }
+        }
+
+        // 2. Text that looks like "(1,234)" inside review count links/spans
+        const reviewLinks = el.querySelectorAll(
+            '.a-size-small .a-link-normal, .s-underline-text, .a-size-base .a-link-normal'
+        );
+        for (const r of reviewLinks) {
+            const text = r.innerText.trim();
+            // Matches "(1,234)" or "1,234"
+            const m = text.match(/^\(?([\d,]+)\)?$/);
+            if (m) {
+                const n = parseInt(m[1].replace(/,/g, ''));
+                if (n > 0) return n;
+            }
+        }
+
+        // 3. data-rt JSON on carousel cards (e.g. {"rt":"309","c":"309"})
+        const rtSpan = el.querySelector('span[data-rt]');
+        if (rtSpan) {
+            const rt = JSON.parse(rtSpan.getAttribute('data-rt') || '{}');
+            const n = parseInt(rt.rt || rt.c || 0);
+            if (n > 0) return n;
+        }
+
+        // 4. aria-label that is purely a number (e.g. aria-label="1234")
+        const allLabeled = el.querySelectorAll('[aria-label]');
+        for (const s of allLabeled) {
+            const label = s.getAttribute('aria-label').replace(/,/g, '');
+            if (/^\d{2,}$/.test(label)) { // at least 2 digits to avoid rating "5"
+                const n = parseInt(label);
+                if (n > 0) return n;
+            }
+        }
+    } catch (e) {}
+
+    return 0;
+}
+
 function extractSerpProducts() {
     const seen  = new Set();
     const products = [];
@@ -107,22 +198,7 @@ function extractSerpProducts() {
             if (!title) return; // no usable title — skip
 
             // ── Price ─────────────────────────────────────────
-            let price = null;
-            try {
-                const offscreen = el.querySelector('.a-price .a-offscreen');
-                if (offscreen) {
-                    price = parseFloat(offscreen.innerText.replace(/[^0-9.]/g, '')) || null;
-                }
-                if (!price) {
-                    const whole    = el.querySelector('.a-price .a-price-whole');
-                    const fraction = el.querySelector('.a-price .a-price-fraction');
-                    if (whole) {
-                        const w = whole.innerText.replace(/[^0-9]/g, '');
-                        const f = fraction ? fraction.innerText.replace(/[^0-9]/g, '') : '00';
-                        price = parseFloat(`${w}.${f}`) || null;
-                    }
-                }
-            } catch (e) {}
+            const price = extractPrice(el);
 
             // ── Rating ────────────────────────────────────────
             let rating = null;
@@ -144,26 +220,7 @@ function extractSerpProducts() {
             } catch (e) {}
 
             // ── Reviews count ─────────────────────────────────
-            let reviews_count = null;
-            try {
-                // Carousel cards store it in data-rt JSON
-                const rtSpan = el.querySelector('span[data-rt]');
-                if (rtSpan) {
-                    const rt = JSON.parse(rtSpan.getAttribute('data-rt') || '{}');
-                    reviews_count = parseInt(rt.rt || rt.c || 0) || null;
-                }
-                // Standard SERP: aria-label that is purely numeric (e.g. "1,234")
-                if (!reviews_count) {
-                    el.querySelectorAll('[aria-label]').forEach(span => {
-                        if (reviews_count) return;
-                        const label = span.getAttribute('aria-label').replace(/,/g, '');
-                        if (/^\d+$/.test(label)) {
-                            const n = parseInt(label);
-                            if (n > 0) reviews_count = n;
-                        }
-                    });
-                }
-            } catch (e) {}
+            const reviews_count = extractReviewsCount(el);
 
             // ── Image URL (hi-res) ────────────────────────────
             let image_url = null;
