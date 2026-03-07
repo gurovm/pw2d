@@ -372,11 +372,11 @@
                                     View on Amazon →
                                 </a>
                             @endif
-                        </div> @endforeach <
-                                                /div>
+                        </div> @endforeach
+                        </div>
 
-                                                @if($this->scoredProducts->count() > $displayLimit) <
-                                                div class ="mt-12 flex justify-center pb-8">
+                        @if($this->scoredProducts->count() > $displayLimit)
+                        <div class="mt-12 flex justify-center pb-8">
                                         <button wire:click="loadMore"
                                                 class="px-8 py-3 bg-white border border-gray-200 rounded-full text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 hover:shadow-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-gray-200">
                                                 Show More Matches
