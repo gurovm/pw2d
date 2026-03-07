@@ -88,8 +88,12 @@ class Product extends Model
     {
         return Attribute::make(
             get: function (string|null $value) {
+                // Fall back to constructing the URL from the ASIN if no explicit URL is stored
                 if (!$value) {
-                    return null;
+                    if (empty($this->external_id)) {
+                        return null;
+                    }
+                    $value = 'https://www.amazon.com/dp/' . $this->external_id;
                 }
 
                 $tag = config('services.amazon.affiliate_tag');
