@@ -12,6 +12,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class ProcessPendingProduct implements ShouldQueue
@@ -138,6 +139,9 @@ class ProcessPendingProduct implements ShouldQueue
                 }
             }
 
+            // Download and store the product image locally (non-fatal — wrapped in its own try/catch)
+            $this->downloadAndStoreImage($product, $parsed['brand'], $parsed['name']);
+
             Log::info('ProcessPendingProduct: completed', [
                 'product_id' => $product->id,
                 'name'       => $product->name,
@@ -154,6 +158,77 @@ class ProcessPendingProduct implements ShouldQueue
             } else {
                 throw $e; // Trigger queue retry with backoff
             }
+        }
+    }
+
+    /**
+     * Download the product image from Amazon and store it locally.
+     * Failures are logged but never propagate — a missing image must not abort the AI job.
+     *
+     * Filename format: {brand-slug-max-4-words}-{asin}.{ext}
+     * Example: razer-seiren-mini-usb-B0D3MB36XV.jpg
+     */
+    private function downloadAndStoreImage(Product $product, string $brandName, string $productName): void
+    {
+        $imageUrl = $product->external_image_path;
+
+        if (empty($imageUrl)) {
+            return;
+        }
+
+        try {
+            // SSRF protection: only allow known Amazon CDN domains
+            $host = parse_url($imageUrl, PHP_URL_HOST);
+            $allowedHosts = [
+                'm.media-amazon.com',
+                'images-na.ssl-images-amazon.com',
+                'images-eu.ssl-images-amazon.com',
+                'images-fe.ssl-images-amazon.com',
+            ];
+            if (!in_array($host, $allowedHosts)) {
+                Log::warning('ProcessPendingProduct: image host not allowed', ['host' => $host]);
+                return;
+            }
+
+            $response = Http::timeout(15)->get($imageUrl);
+
+            if (!$response->successful()) {
+                Log::warning('ProcessPendingProduct: image download failed', ['status' => $response->status(), 'url' => $imageUrl]);
+                return;
+            }
+
+            $contentType = $response->header('Content-Type');
+            if (!str_starts_with($contentType, 'image/')) {
+                Log::warning('ProcessPendingProduct: URL did not return an image', ['content_type' => $contentType]);
+                return;
+            }
+
+            $extension = match (true) {
+                str_contains($contentType, 'png')  => 'png',
+                str_contains($contentType, 'webp') => 'webp',
+                default                            => 'jpg',
+            };
+
+            // Build a short, meaningful filename from brand + first words of product name
+            $allWords  = array_filter(explode(' ', "{$brandName} {$productName}"));
+            $slugWords = array_slice($allWords, 0, 4);
+            $stem      = Str::slug(implode(' ', $slugWords));
+            $asin      = $product->external_id ?? Str::random(10);
+            $filename  = "{$stem}-{$asin}.{$extension}";
+            $path      = "products/images/{$filename}";
+
+            Storage::disk('public')->put($path, $response->body());
+
+            $product->update(['image_path' => $path]);
+
+            Log::info('ProcessPendingProduct: image stored', ['path' => $path]);
+
+        } catch (\Exception $e) {
+            Log::warning('ProcessPendingProduct: image download skipped', [
+                'product_id' => $product->id,
+                'url'        => $imageUrl,
+                'error'      => $e->getMessage(),
+            ]);
         }
     }
 }
