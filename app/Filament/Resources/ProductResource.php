@@ -34,7 +34,6 @@ class ProductResource extends Resource
                             ->relationship('brand', 'name')
                             ->searchable()
                             ->preload()
-                            ->required()
                             ->createOptionForm([
                                 Forms\Components\TextInput::make('name')
                                     ->required()
@@ -82,6 +81,15 @@ class ProductResource extends Resource
                     ])
                     ->columns(1),
                 
+                Forms\Components\Section::make('Visibility')
+                    ->schema([
+                        Forms\Components\Toggle::make('is_ignored')
+                            ->label('Ignored (Accessory / Not a main device)')
+                            ->helperText('When enabled, this product is hidden from the site, search, and sitemap. The ASIN is still kept to prevent re-scanning.')
+                            ->default(false)
+                            ->columnSpanFull(),
+                    ]),
+
                 Forms\Components\Section::make('Amazon Rating (Virtual Feature)')
                     ->description('This will appear as the "Wisdom of the Crowds" slider on the frontend')
                     ->schema([
@@ -130,6 +138,15 @@ class ProductResource extends Resource
                     ->sortable()
                     ->searchable(),
                 
+                Tables\Columns\IconColumn::make('is_ignored')
+                    ->label('Ignored')
+                    ->boolean()
+                    ->trueIcon('heroicon-o-eye-slash')
+                    ->falseIcon('heroicon-o-eye')
+                    ->trueColor('danger')
+                    ->falseColor('success')
+                    ->sortable(),
+
                 Tables\Columns\TextColumn::make('amazon_rating')
                     ->label('Rating')
                     ->numeric(decimalPlaces: 1)
@@ -158,6 +175,12 @@ class ProductResource extends Resource
                     ->relationship('category', 'name')
                     ->searchable()
                     ->preload(),
+
+                Tables\Filters\TernaryFilter::make('is_ignored')
+                    ->label('Ignored')
+                    ->placeholder('All products')
+                    ->trueLabel('Ignored only')
+                    ->falseLabel('Visible only'),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
