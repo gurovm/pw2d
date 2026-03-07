@@ -1,5 +1,14 @@
-<div 
-    x-data="{ showPreferences: false }" 
+<div
+    x-data="{ showPreferences: false, teaser: false }"
+    x-init="
+        if (!localStorage.getItem('pw2d_customize_seen')) {
+            showPreferences = true;
+            localStorage.setItem('pw2d_customize_seen', '1');
+        } else {
+            teaser = true;
+            setTimeout(() => teaser = false, 3500);
+        }
+    "
     @keyup.escape.window="showPreferences = false"
 >
     @php $categoryName = \App\Models\Category::find($categoryId)->name ?? 'Unknown Category'; @endphp
@@ -25,12 +34,21 @@
         </div>
 
         <!-- FAB Button -->
-        <button 
-            @click="showPreferences = true; showTip = false; if(typeof posthog !== 'undefined') posthog.capture('customize_modal_opened', { category: '{{ addslashes($categoryName) }}' });"
-            class="w-14 h-14 md:w-16 md:h-16 rounded-2xl bg-[#7C3AED] text-white flex items-center justify-center shadow-[0_8px_24px_rgba(124,58,237,0.4)] hover:scale-110 hover:bg-[#6D28D9] active:scale-95 transition-all duration-300 cursor-pointer"
-        >
-            <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-        </button>
+        <div class="relative">
+            <!-- Teaser ping ring (returning visitors) -->
+            <span
+                x-show="teaser && !showPreferences"
+                class="absolute inset-0 rounded-2xl bg-[#7C3AED] animate-ping opacity-30 pointer-events-none"
+                style="display:none;"
+            ></span>
+            <button
+                @click="showPreferences = true; teaser = false; showTip = false; if(typeof posthog !== 'undefined') posthog.capture('customize_modal_opened', { category: '{{ addslashes($categoryName) }}' });"
+                :class="teaser && !showPreferences ? 'animate-bounce' : ''"
+                class="w-14 h-14 md:w-16 md:h-16 rounded-2xl bg-[#7C3AED] text-white flex items-center justify-center shadow-[0_8px_24px_rgba(124,58,237,0.4)] hover:scale-110 hover:bg-[#6D28D9] active:scale-95 transition-all duration-300 cursor-pointer"
+            >
+                <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+            </button>
+        </div>
     </div>
 
     <!-- ═══════════════════════════════════════════════════════ -->
