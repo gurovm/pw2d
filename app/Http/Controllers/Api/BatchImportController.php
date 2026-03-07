@@ -50,7 +50,7 @@ class BatchImportController extends Controller
                         'category_id' => $category->id,
                     ],
                     [
-                        'name'                 => Str::limit($p['title'], 255),
+                        'name'                 => mb_substr($p['title'], 0, 255),
                         'slug'                 => Str::slug(Str::limit($p['title'], 80)) . '-' . strtolower($p['asin']),
                         'external_image_path'  => $p['image_url'] ?? null,
                         'amazon_rating'        => $p['rating'] ?? null,

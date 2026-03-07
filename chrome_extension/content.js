@@ -184,11 +184,24 @@ function extractSerpProducts() {
 
             // ── Title (fallback chain) ────────────────────────
             let title = null;
-            const h2 = el.querySelector('h2');
-            if (h2) title = h2.innerText.trim();
-
+            // Prefer the hidden full-text span Amazon includes for screen readers
+            // (avoids the duplicated text that results from reading h2.innerText
+            //  when both .a-truncate-full and .a-truncate-cut are present)
+            const fullSpan = el.querySelector('h2 .a-truncate-full');
+            if (fullSpan) {
+                title = fullSpan.textContent.trim();
+            }
             if (!title) {
-                const trunc = el.querySelector('.a-truncate-full, .a-size-base-plus, .a-size-medium');
+                const h2 = el.querySelector('h2');
+                if (h2) {
+                    // Strip any hidden child spans to avoid duplication
+                    const clone = h2.cloneNode(true);
+                    clone.querySelectorAll('.a-truncate-full').forEach(s => s.remove());
+                    title = clone.innerText.trim();
+                }
+            }
+            if (!title) {
+                const trunc = el.querySelector('.a-size-base-plus, .a-size-medium');
                 if (trunc) title = trunc.innerText.trim();
             }
             if (!title) {
