@@ -31,6 +31,7 @@ const autoNextPageCheck = document.getElementById('autoNextPageCheck');
 
 let scannedUrls = [];
 let scannedNextPageUrl = null;
+let extractedProducts = []; // Bulk SERP extraction results
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
@@ -77,103 +78,101 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 });
 
-// Scan Page Button
+// Scan Page Button — extracts full product data directly from current SERP
 if (scanPageBtn) {
     scanPageBtn.addEventListener('click', async () => {
         statusDiv.textContent = 'Scanning page...';
         statusDiv.className = '';
+        extractedProducts = [];
 
         try {
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
             if (!tab) return;
 
-            chrome.tabs.sendMessage(tab.id, { action: "SCAN_PAGE" }, (response) => {
-                if (chrome.runtime.lastError || !response || !response.success) {
-                    showError('Could not scan page. Is this an Amazon listing?');
+            chrome.tabs.sendMessage(tab.id, { action: 'EXTRACT_SERP_PRODUCTS' }, (res) => {
+                if (chrome.runtime.lastError || !res || !res.success) {
+                    showError('Could not scan page. Make sure you are on an Amazon search results page.');
                     return;
                 }
 
-                scannedUrls = response.links;
-                scannedNextPageUrl = response.nextPageUrl; // Store the next page URL
-
-                foundCountSpan.textContent = scannedUrls.length;
-
-                if (scannedNextPageUrl) {
-                    foundCountSpan.textContent += ' (Next page detected)';
-                }
-
+                extractedProducts = res.products || [];
+                foundCountSpan.textContent = extractedProducts.length;
                 batchControls.style.display = 'block';
                 statusDiv.textContent = '';
+                startBatchBtn.disabled = extractedProducts.length === 0;
 
-                if (scannedUrls.length > 0) {
-                    startBatchBtn.disabled = false;
-                } else {
-                    startBatchBtn.disabled = true;
+                if (extractedProducts.length === 0) {
+                    showError('No products found on this page.');
                 }
             });
         } catch (e) {
-            console.error(e);
+            showError('Error: ' + e.message);
         }
     });
 }
 
-// Start Batch Button
+// Send to Server Button — filters existing ASINs then POSTs bulk to batch-import
 if (startBatchBtn) {
     startBatchBtn.addEventListener('click', async () => {
         if (!selectedCategoryId) {
             showError('Please select a category first.');
             return;
         }
-
-        if (scannedUrls.length === 0) return;
+        if (!extractedProducts.length) return;
 
         statusDiv.textContent = 'Checking existing products...';
         statusDiv.className = '';
+        startBatchBtn.disabled = true;
 
         try {
-            const apiRes = await fetch(`${baseUrl}/api/existing-asins?category_id=${selectedCategoryId}`, {
+            // Fetch already-imported ASINs for this category
+            const asinRes = await fetch(`${baseUrl}/api/existing-asins?category_id=${selectedCategoryId}`, {
                 headers: { 'X-Extension-Token': EXTENSION_TOKEN },
             });
-            const data = await apiRes.json();
+            const asinData = await asinRes.json();
+            const existingAsins = (asinData.success && asinData.asins) ? asinData.asins : [];
 
-            let existingAsins = [];
-            if (data.success && data.asins) {
-                existingAsins = data.asins;
+            const newProducts = extractedProducts.filter(p => !existingAsins.includes(p.asin));
+            const skipped     = extractedProducts.length - newProducts.length;
+
+            if (newProducts.length === 0) {
+                statusDiv.textContent = `All ${skipped} products already exist in this category.`;
+                statusDiv.className = 'success';
+                startBatchBtn.disabled = false;
+                return;
             }
 
-            const newUrls = scannedUrls.filter(url => {
-                const match = url.match(/(?:\/dp\/|\/gp\/product\/)(B[0-9A-Z]{9})/);
-                if (match && match[1]) {
-                    return !existingAsins.includes(match[1]);
-                }
-                return true;
+            statusDiv.textContent = `Sending ${newProducts.length} products to server...`;
+
+            const batchRes = await fetch(`${baseUrl}/api/products/batch-import`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-Extension-Token': EXTENSION_TOKEN,
+                },
+                body: JSON.stringify({
+                    category_id: selectedCategoryId,
+                    products: newProducts,
+                }),
             });
 
-            const skippedCount = scannedUrls.length - newUrls.length;
+            const result = await batchRes.json();
 
-            if (newUrls.length === 0) {
-                if (!autoNextPageCheck.checked || !scannedNextPageUrl) {
-                    statusDiv.textContent = `All ${skippedCount} products already exist in this category.`;
-                    statusDiv.className = 'success';
-                    return;
-                }
-                statusDiv.textContent = `All ${skippedCount} existing. Moving to next page...`;
-            } else if (skippedCount > 0) {
-                statusDiv.textContent = `Skipped ${skippedCount} existing. Starting...`;
+            if (batchRes.ok && result.success) {
+                const skipNote = skipped > 0 ? ` (${skipped} already existed, skipped)` : '';
+                statusDiv.textContent = `Successfully sent ${result.saved} products to the server. Marked as pending_ai.${skipNote}`;
+                statusDiv.className = 'success';
+                batchControls.style.display = 'none';
+                extractedProducts = [];
+            } else {
+                showError('API Error: ' + (result.message || 'Unknown error'));
+                startBatchBtn.disabled = false;
             }
-
-            chrome.runtime.sendMessage({
-                action: "START_BATCH",
-                urls: newUrls,
-                categoryId: selectedCategoryId,
-                nextPageUrl: autoNextPageCheck.checked ? scannedNextPageUrl : null // Pass next page mode to background
-            }, (response) => {
-                showBatchProgress(0, newUrls.length);
-            });
 
         } catch (e) {
-            showError('Failed to check existing products.');
-            console.error(e);
+            showError('Network Error: ' + e.message);
+            startBatchBtn.disabled = false;
         }
     });
 }

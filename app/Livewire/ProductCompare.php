@@ -91,6 +91,7 @@ class ProductCompare extends Component
         $rawData = Cache::remember($cacheKey, 90, function () {
             return Product::where('category_id', $this->category->id)
                 ->where('is_ignored', false)
+                ->whereNull('status') // exclude pending_ai / failed (not yet fully scored)
                 ->select(['id', 'brand_id', 'amazon_rating', 'price_tier'])
                 ->with(['featureValues:id,product_id,feature_id,raw_value'])
                 ->when($this->filterBrand, fn($q) => $q->where('brand_id', $this->filterBrand))

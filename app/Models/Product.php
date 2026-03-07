@@ -37,6 +37,7 @@ class Product extends Model
         'amazon_rating',
         'amazon_reviews_count',
         'is_ignored',
+        'status',
     ];
 
     protected $casts = [
