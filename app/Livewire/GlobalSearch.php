@@ -61,10 +61,13 @@ class GlobalSearch extends Component
             ->limit(5)
             ->get();
 
-        $products = Product::with('category') // Use correct relationship name
-            ->where('name', 'like', "%{$this->search}%")
-            ->orWhereHas('brand', function ($query) {
-                $query->where('name', 'like', "%{$this->search}%");
+        $products = Product::with('category')
+            ->where('is_ignored', false)
+            ->where(function ($query) {
+                $query->where('name', 'like', "%{$this->search}%")
+                    ->orWhereHas('brand', function ($q) {
+                        $q->where('name', 'like', "%{$this->search}%");
+                    });
             })
             ->limit(5)
             ->get();

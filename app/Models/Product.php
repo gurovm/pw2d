@@ -36,12 +36,14 @@ class Product extends Model
         'price_tier',
         'amazon_rating',
         'amazon_reviews_count',
+        'is_ignored',
     ];
 
     protected $casts = [
         'price_tier' => 'integer',
         'amazon_rating' => 'float',
         'amazon_reviews_count' => 'integer',
+        'is_ignored' => 'boolean',
     ];
 
     /**

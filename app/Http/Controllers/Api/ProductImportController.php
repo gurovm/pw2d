@@ -107,6 +107,7 @@ Here are the specific features you need to score:\n\n"
                 . "Return ONLY a valid JSON object in this EXACT format (notice every feature is an OBJECT, not a number):\n"
                 . '{"name": "Clean Product Name", "brand": "Brand Name", "ai_summary": "Brutal 2-sentence summary...", "price_tier": 2, "amazon_rating": 4.8, "amazon_reviews_count": 1500, "features": {"price": 149.99, "Feature_Name_1": {"score": 85, "reason": "Solid metal construction but slightly heavy."}, "Feature_Name_2": {"score": 42, "reason": "Budget driver delivers flat, tinny audio."}, "Feature_Name_3": null}}'
                 . "\n\nIMPORTANT: Do not use markdown or code blocks. Just raw JSON.\n\n"
+                . ' CRITICAL RULE: Check if the product is an accessory, mount, cable, replacement part, or stand. If it is NOT a main device for this category, you MUST NOT score the features. Instead, return EXACTLY this JSON structure: {"status": "ignored", "reason": "This is an accessory, not a main\n'
                 . "Raw product text:\n" . $validated['raw_text'];
 
             // Call Gemini API
@@ -166,6 +167,36 @@ Here are the specific features you need to score:\n\n"
 
             // Parse JSON response
             $parsed = json_decode($content, true);
+
+            // Handle accessories / non-main-device response from AI
+            if (($parsed['status'] ?? null) === 'ignored') {
+                $externalId = $request->input('external_id');
+                $categoryId = $category->id;
+
+                // Save a stub record so this ASIN is never re-scanned
+                if ($externalId) {
+                    Product::updateOrCreate(
+                        ['external_id' => $externalId, 'category_id' => $categoryId],
+                        [
+                            'is_ignored'  => true,
+                            'name'        => 'Ignored: ' . $externalId,
+                            'slug'        => 'ignored-' . Str::slug($externalId) . '-' . Str::random(4),
+                            'brand_id'    => null,
+                        ]
+                    );
+                }
+
+                Log::info('AI Import - Product ignored as accessory', [
+                    'external_id' => $externalId,
+                    'reason'      => $parsed['reason'] ?? 'no reason given',
+                ]);
+
+                return response()->json([
+                    'success' => true,
+                    'action'  => 'ignored',
+                    'reason'  => $parsed['reason'] ?? 'Identified as an accessory or non-main device.',
+                ]);
+            }
 
             Log::debug('AI Import - Raw feature values', ['features' => $parsed['features'] ?? []]);
 

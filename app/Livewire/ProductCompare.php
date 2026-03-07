@@ -90,6 +90,7 @@ class ProductCompare extends Component
         $cacheKey = "products:cat{$this->category->id}:b{$this->filterBrand}:p{$this->filterPrice}";
         $rawData = Cache::remember($cacheKey, 90, function () {
             return Product::where('category_id', $this->category->id)
+                ->where('is_ignored', false)
                 ->select(['id', 'brand_id', 'amazon_rating', 'price_tier'])
                 ->with(['featureValues:id,product_id,feature_id,raw_value'])
                 ->when($this->filterBrand, fn($q) => $q->where('brand_id', $this->filterBrand))
@@ -172,6 +173,9 @@ class ProductCompare extends Component
     public function mount($slug = null, ?Product $product = null)
     {
         if ($product && $product->exists) {
+            if ($product->is_ignored) {
+                abort(404);
+            }
             $this->selectedProductSlug = $product->slug;
             $this->category = $product->category;
         } elseif ($slug) {
