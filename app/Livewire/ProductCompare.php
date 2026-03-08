@@ -17,6 +17,7 @@ use Livewire\Component;
 class ProductCompare extends Component
 {
     public $category;
+    public $subcategories; // Child categories (if this is a parent category)
     public $features; // Keeping this public is fine as it's a small collection
 
     // Feature weights (feature_id => weight 0-100)
@@ -183,6 +184,14 @@ class ProductCompare extends Component
             $this->category = Category::where('slug', $slug)->firstOrFail();
         } else {
             abort(404);
+        }
+
+        $this->subcategories = $this->category->children()->withCount('products')->get();
+
+        // If this is a parent category, skip loading features/weights
+        if ($this->subcategories->isNotEmpty()) {
+            $this->features = collect();
+            return;
         }
 
         $this->features = Feature::where('category_id', $this->category->id)
@@ -373,6 +382,19 @@ class ProductCompare extends Component
                     'reviewCount' => $this->selectedProduct->amazon_reviews_count
                 ];
             }
+        } elseif ($this->subcategories->isNotEmpty()) {
+            $currentYear = date('Y');
+            $metaTitle = "{$this->category->name} - Browse Categories | pw2d";
+            $metaDescription = $this->category->description
+                ? \Illuminate\Support\Str::limit($this->category->description, 150)
+                : "Browse all {$this->category->name} subcategories and find the best products for your needs.";
+            $canonicalUrl = route('category.show', ['slug' => $this->category->slug]);
+            $schema = [
+                '@context' => 'https://schema.org/',
+                '@type' => 'CollectionPage',
+                'name' => $this->category->name,
+                'description' => $metaDescription,
+            ];
         } else {
             $currentYear = date('Y');
             $metaTitle = "{$this->category->name} - Compare Best Models in {$currentYear} | pw2d";

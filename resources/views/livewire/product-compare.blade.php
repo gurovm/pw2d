@@ -1,4 +1,40 @@
 <div>
+    @if($subcategories->isNotEmpty())
+        {{-- Parent category: show subcategory grid, no comparison UI --}}
+        <div class="bg-gradient-to-br from-gray-50 to-white min-h-screen">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+                <div class="mb-8">
+                    <div class="section-label">{{ $category->name }}</div>
+                    <h1 class="section-title">Browse Categories</h1>
+                    @if($category->description)
+                        <p class="text-slate-500 mt-2 max-w-2xl">{{ $category->description }}</p>
+                    @endif
+                </div>
+                <div class="categories-grid">
+                    @foreach($subcategories as $sub)
+                        <a href="{{ route('category.show', $sub->slug) }}" wire:navigate class="cat-card">
+                            <div class="cat-img">
+                                @if($sub->image)
+                                    <img src="{{ Storage::url($sub->image) }}" alt="{{ $sub->name }}">
+                                @else
+                                    <div class="w-full h-full bg-gradient-to-br from-blue-600 to-blue-800"></div>
+                                @endif
+                            </div>
+                            <div class="cat-body">
+                                <h3>{{ $sub->name }}</h3>
+                                <p class="text-slate-500 text-sm mb-4 line-clamp-2">{{ $sub->description ?? 'Compare top products in ' . strtolower($sub->name) . ' based on your personal priorities.' }}</p>
+                                <div class="cat-meta mt-auto">
+                                    <span class="cat-count">Top {{ $sub->products_count }} Picks</span>
+                                    <div class="cat-arrow">→</div>
+                                </div>
+                            </div>
+                        </a>
+                    @endforeach
+                </div>
+            </div>
+        </div>
+    @else
+        {{-- Leaf category: show full comparison UI --}}
         <div class="bg-gradient-to-br from-gray-50 to-white min-h-screen">
                 <livewire:comparison-header :features="$features" :weights="$weights" :priceWeight="$priceWeight" :amazonRatingWeight="$amazonRatingWeight"
                         :categoryId="$category->id" :autoOpen="!$selectedProductSlug" />
@@ -678,4 +714,6 @@
                         });
                 });
         </script>
+        </div>{{-- end comparison UI bg-div --}}
+    @endif{{-- end @else (leaf category) --}}
 </div>
