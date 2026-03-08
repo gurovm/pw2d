@@ -1,14 +1,63 @@
 <div>
     @if($subcategories->isNotEmpty())
-        {{-- Parent category: show subcategory grid, no comparison UI --}}
+        {{-- Parent category: AI search + subcategory grid, no comparison UI --}}
         <div class="bg-gradient-to-br from-gray-50 to-white min-h-screen">
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-                <div class="mb-8">
-                    <div class="section-label">{{ $category->name }}</div>
-                    <h1 class="section-title">Browse Categories</h1>
-                    @if($category->description)
-                        <p class="text-slate-500 mt-2 max-w-2xl">{{ $category->description }}</p>
+            {{-- Hero search section --}}
+            <section class="hero">
+                <div class="hero-glow"></div>
+                <div class="hero-dots"></div>
+                <div class="hero-eyebrow">✦ {{ $category->name }}</div>
+                <h1>Find Your <span>Perfect Match</span></h1>
+                @if($category->description)
+                    <p class="hero-sub">{{ $category->description }}</p>
+                @else
+                    <p class="hero-sub">Not sure where to start? Describe what you need and our AI will find the right category for you.</p>
+                @endif
+
+                <form wire:submit.prevent="searchCategory" class="search-wrapper">
+                    <div class="search-shadow"></div>
+                    <div class="search-box">
+                        <span class="search-ai-badge">AI Search</span>
+                        <input
+                            type="text"
+                            wire:model="searchQuery"
+                            placeholder="Describe what you need..."
+                            autocomplete="off"
+                            :disabled="$wire.isSearching"
+                        >
+                        <button type="submit" class="search-btn" wire:loading.attr="disabled">
+                            <div wire:loading.remove wire:target="searchCategory">Find My Gear</div>
+                            <div wire:loading wire:target="searchCategory" class="flex items-center gap-2">
+                                <svg class="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Searching...
+                            </div>
+                        </button>
+                    </div>
+
+                    @if($searchError && !$isSearching)
+                        <div class="mt-4 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start text-left shadow-sm relative z-10 w-full animate-fade-in-up">
+                            <svg class="w-5 h-5 text-red-500 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            <p class="text-sm text-red-700 leading-relaxed">{{ $searchError }}</p>
+                        </div>
                     @endif
+
+                    <div wire:loading wire:target="searchCategory" class="mt-4 p-4 bg-indigo-50/70 border border-indigo-100/50 rounded-xl text-left shadow-sm flex items-center gap-3 w-full relative z-10">
+                        <svg class="animate-spin h-5 w-5 text-indigo-500 shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                        <p class="animate-pulse font-medium text-indigo-800 text-sm">Analyzing your request...</p>
+                    </div>
+                </form>
+            </section>
+
+            {{-- Subcategory grid --}}
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12">
+                <div class="mb-8">
+                    <div class="section-label">Or browse manually</div>
+                    <h2 class="section-title">{{ $category->name }} Categories</h2>
                 </div>
                 <div class="categories-grid">
                     @foreach($subcategories as $sub)
