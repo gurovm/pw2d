@@ -40,8 +40,13 @@ class ProcessPendingProduct implements ShouldQueue
             return;
         }
 
+        // Log a warning if status is not pending_ai (e.g., already processed by a duplicate job),
+        // but continue anyway — the database queue prevents duplicate job execution.
         if ($product->status !== 'pending_ai') {
-            return; // Already processed or manually cleared
+            Log::warning('ProcessPendingProduct: unexpected status, processing anyway', [
+                'product_id' => $this->productId,
+                'status'     => $product->status,
+            ]);
         }
 
         try {
