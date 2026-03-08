@@ -125,24 +125,31 @@ function extractPrice(el) {
  */
 function extractReviewsCount(el) {
     try {
-        // 1. aria-label="309 ratings" or "1,234 ratings" on star/review link elements
+        // 1. aria-label containing "N ratings" anywhere in the string
+        // Handles: "2,567 ratings", "4.3 out of 5 stars 2,567 ratings", etc.
         const ratingEls = el.querySelectorAll('[aria-label*="rating"]');
         for (const r of ratingEls) {
             const label = r.getAttribute('aria-label');
-            const m = label.match(/^([\d,]+)\s+rating/i);
+            const m = label.match(/([\d,]+)\s+ratings?/i);
             if (m) {
                 const n = parseInt(m[1].replace(/,/g, ''));
                 if (n > 0) return n;
             }
         }
 
-        // 2. Text that looks like "(1,234)" inside review count links/spans
+        // 2. data-csa-c-ratings attribute (newer Amazon SERP cards)
+        const csaEl = el.querySelector('[data-csa-c-ratings]');
+        if (csaEl) {
+            const n = parseInt(csaEl.getAttribute('data-csa-c-ratings').replace(/,/g, ''));
+            if (n > 0) return n;
+        }
+
+        // 3. Text that looks like "(1,234)" or "1,234" inside review count links/spans
         const reviewLinks = el.querySelectorAll(
             '.a-size-small .a-link-normal, .s-underline-text, .a-size-base .a-link-normal'
         );
         for (const r of reviewLinks) {
             const text = r.innerText.trim();
-            // Matches "(1,234)" or "1,234"
             const m = text.match(/^\(?([\d,]+)\)?$/);
             if (m) {
                 const n = parseInt(m[1].replace(/,/g, ''));
@@ -150,7 +157,7 @@ function extractReviewsCount(el) {
             }
         }
 
-        // 3. data-rt JSON on carousel cards (e.g. {"rt":"309","c":"309"})
+        // 4. data-rt JSON on carousel cards (e.g. {"rt":"309","c":"309"})
         const rtSpan = el.querySelector('span[data-rt]');
         if (rtSpan) {
             const rt = JSON.parse(rtSpan.getAttribute('data-rt') || '{}');
@@ -158,13 +165,13 @@ function extractReviewsCount(el) {
             if (n > 0) return n;
         }
 
-        // 4. aria-label that is purely a number (e.g. aria-label="1234")
+        // 5. aria-label that is purely a number ≥ 10 (avoids mistaking the star rating digit)
         const allLabeled = el.querySelectorAll('[aria-label]');
         for (const s of allLabeled) {
             const label = s.getAttribute('aria-label').replace(/,/g, '');
-            if (/^\d{2,}$/.test(label)) { // at least 2 digits to avoid rating "5"
+            if (/^\d{2,}$/.test(label)) {
                 const n = parseInt(label);
-                if (n > 0) return n;
+                if (n >= 10) return n;
             }
         }
     } catch (e) {}

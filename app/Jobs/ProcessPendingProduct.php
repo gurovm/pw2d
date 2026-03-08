@@ -91,13 +91,21 @@ class ProcessPendingProduct implements ShouldQueue
                 . "- Resolve umbrella brands: '512 Audio by Warm Audio' → 'Warm Audio'.\n"
                 . "- Always use the parent consumer brand, not the Amazon storefront name.\n"
                 . "- Capitalize correctly: 'FIFINE' → 'Fifine', 'MAONO' → 'Maono', 'TONOR' → 'Tonor'.\n\n"
+                . "=== STAGE 2.5: NAME NORMALIZATION (derive the 'name' field) ===\n\n"
+                . "The raw Amazon title is verbose marketing copy. You MUST produce a clean, short product name:\n"
+                . "- Keep ONLY: Brand + Model name + essential differentiator (e.g. color or size variant if it's the main SKU distinction).\n"
+                . "- STRIP everything after a comma or slash in the title that lists specs or compatibility:\n"
+                . "  'Hollyland Lark M2 Wireless Microphone for iPhone/Camera/Android/PC, 48kHz/24-bit...' → 'Hollyland Lark M2'\n"
+                . "- STRIP parenthetical variant/bundle info entirely: '(Black, with Camera RX + USB-C RX)' → remove.\n"
+                . "- STRIP marketing adjectives that are not part of the official model name: 'High Fidelity', 'Premium', 'Professional'.\n"
+                . "- Maximum 60 characters. When in doubt, use only Brand + Model (e.g. 'Sony WH-1000XM5', 'Shure MV7+', 'Rode NT-USB Mini').\n\n"
                 . "=== STAGE 3: SCORING RULES ===\n\n"
                 . "1. WORLD KNOWLEDGE OVERRIDES EVERYTHING: Base scores on your internal knowledge of this specific model.\n"
                 . "2. ABSOLUTE SCORING (1-100): 50 = average/mediocre. Budget brands CANNOT score 80+ on quality features.\n"
                 . "3. STRICT TRADE-OFFS: Create contrast. If a feature is irrelevant or bad, score it 20-40.\n"
                 . "4. OBSCURE PRODUCTS: If you don't recognise the model, infer from brand tier + price. Default to 40-50.\n\n"
                 . "Return ONLY a valid JSON object in this EXACT format (no markdown, no code blocks):\n"
-                . '{"name": "Clean Product Name", "brand": "Normalized Brand Name", "ai_summary": "Brutal 2-sentence summary.", '
+                . '{"name": "Brand Model", "brand": "Normalized Brand Name", "ai_summary": "Brutal 2-sentence summary.", '
                 . '"price_tier": 2, "amazon_rating": null, "amazon_reviews_count": null, '
                 . '"features": {"Feature_Name": {"score": 75, "reason": "One sentence."}, "Other_Feature": null}}';
 
