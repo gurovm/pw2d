@@ -460,7 +460,7 @@ class ProductCompare extends Component
             $metaTitle = "{$this->selectedProduct->name} - AI Review & Match Score";
             $metaDescription = $this->selectedProduct->ai_summary
                 ? \Illuminate\Support\Str::limit(strip_tags($this->selectedProduct->ai_summary), 150)
-                : "Read the comprehensive AI review and view the Match Score for the {$this->selectedProduct->brand->name} {$this->selectedProduct->name}.";
+                : "Read the comprehensive AI review and view the Match Score for the {$this->selectedProduct->name}.";
             $canonicalUrl = route('product.show', ['product' => $this->selectedProduct->slug]);
 
             $schema = [
@@ -468,7 +468,7 @@ class ProductCompare extends Component
                 '@type' => 'Product',
                 'name' => $this->selectedProduct->name,
                 'description' => $this->selectedProduct->ai_summary ? strip_tags($this->selectedProduct->ai_summary) : $this->selectedProduct->name,
-                'brand' => ['@type' => 'Brand', 'name' => $this->selectedProduct->brand->name]
+                'brand' => ['@type' => 'Brand', 'name' => $this->selectedProduct->brand?->name ?? '']
             ];
 
             if ($this->selectedProduct->image_path) {

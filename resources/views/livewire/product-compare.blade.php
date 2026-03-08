@@ -402,7 +402,7 @@
 
                             <div class="p-2.5 md:p-4 flex-1 flex flex-col">
                                 <div class="flex justify-between items-center mb-1.5">
-                                    <p class="text-[10px] md:text-xs font-bold text-amber-700 uppercase tracking-wider">{{ $product->brand->name }}</p>
+                                    <p class="text-[10px] md:text-xs font-bold text-amber-700 uppercase tracking-wider">{{ $product->brand?->name }}</p>
                                     @if ($product->amazon_rating)
                                         <div class="flex items-center gap-0.5 text-[10px] md:text-xs font-bold text-gray-600">
                                             <span class="text-amber-500">★</span> {{ number_format($product->amazon_rating, 1) }}
@@ -591,7 +591,7 @@
 
                                         <div class="flex items-center space-x-3 mb-3 md:mb-4">
                                                 <span
-                                                        class="px-3 py-1 bg-gray-100 text-gray-800 text-xs font-bold uppercase tracking-widest rounded-full">{{ $this->selectedProduct->brand->name }}</span>
+                                                        class="px-3 py-1 bg-gray-100 text-gray-800 text-xs font-bold uppercase tracking-widest rounded-full">{{ $this->selectedProduct->brand?->name }}</span>
                                                 @if ($this->selectedProduct->amazon_rating)
                                                         <div
                                                                 class="flex items-center text-sm font-semibold text-gray-700 shrink-0">
