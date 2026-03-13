@@ -49,23 +49,24 @@ class BatchImportController extends Controller
             ->get(['id', 'external_id'])
             ->keyBy('external_id');
 
-        $created  = 0;
-        $refreshed = 0;
+        $created     = 0;
+        $refreshed   = 0;
+        $refreshRows = [];
+        $now         = now();
 
         foreach ($validated['products'] as $p) {
             try {
                 $existing = $existingMap->get($p['asin']);
 
                 if ($existing) {
-                    // Scenario B: Existing product — silently refresh lightweight data only.
-                    // Do NOT change status or dispatch AI job.
-                    // Use DB::table() to bypass $fillable guard on older model versions.
-                    DB::table('products')->where('id', $existing->id)->update([
+                    // Scenario B: Existing product — collect for a single batch UPDATE below.
+                    $refreshRows[] = [
+                        'id'                   => $existing->id,
                         'scraped_price'        => $p['price'] ?? null,
                         'amazon_rating'        => $p['rating'] ?? null,
                         'amazon_reviews_count' => $p['reviews_count'] ?? 0,
-                        'updated_at'           => now(),
-                    ]);
+                        'updated_at'           => $now,
+                    ];
                     $refreshed++;
                 } else {
                     // Scenario A: New product — create stub and queue for AI scoring.
@@ -92,6 +93,15 @@ class BatchImportController extends Controller
                     'error' => $e->getMessage(),
                 ]);
             }
+        }
+
+        // Single batch upsert for all refreshed products — avoids N individual UPDATE queries.
+        if (!empty($refreshRows)) {
+            DB::table('products')->upsert(
+                $refreshRows,
+                ['id'],
+                ['scraped_price', 'amazon_rating', 'amazon_reviews_count', 'updated_at']
+            );
         }
 
         Log::info("BatchImport: {$created} created, {$refreshed} refreshed for category {$category->id}");

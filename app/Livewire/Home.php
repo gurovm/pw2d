@@ -4,11 +4,13 @@ namespace App\Livewire;
 
 use App\Models\Category;
 use App\Models\SearchLog;
+use App\Traits\NormalizesPrompts;
 use Illuminate\Support\Facades\Http;
 use Livewire\Component;
 
 class Home extends Component
 {
+    use NormalizesPrompts;
     public $searchQuery = '';
     public $isSearching = false;
     public $searchError = '';
@@ -181,7 +183,7 @@ class Home extends Component
         $samplePrompts = Category::whereNotNull('sample_prompts')
             ->get(['id', 'sample_prompts'])
             ->pluck('sample_prompts')
-            ->map(fn($v) => is_array($v) ? $v : (json_decode($v, true) ?? []))
+            ->map(fn($v) => self::normalizePrompts($v))
             ->flatten()
             ->filter()
             ->shuffle()

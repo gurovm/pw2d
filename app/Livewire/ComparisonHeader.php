@@ -4,11 +4,13 @@ namespace App\Livewire;
 
 use App\Models\Category;
 use App\Models\Preset;
+use App\Traits\NormalizesPrompts;
 use Livewire\Component;
 use Livewire\Attributes\On;
 
 class ComparisonHeader extends Component
 {
+    use NormalizesPrompts;
     public $features;
     public $weights = [];
     public $priceWeight = 50;
@@ -217,19 +219,5 @@ class ComparisonHeader extends Component
     {
         return view('livewire.comparison-header');
     }
-
-    /**
-     * Normalise a sample_prompts value regardless of whether the DB cast
-     * was applied (PHP array) or not (raw JSON string from MySQL).
-     */
-    private static function normalizePrompts(mixed $value): array
-    {
-        if (is_array($value)) {
-            return $value;
-        }
-        if (is_string($value) && str_starts_with(trim($value), '[')) {
-            return json_decode($value, true) ?? [];
-        }
-        return [];
-    }
 }
+

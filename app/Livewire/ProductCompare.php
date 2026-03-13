@@ -7,6 +7,7 @@ use App\Models\Feature;
 use App\Models\Product;
 use App\Models\SearchLog;
 use App\Services\ProductScoringService;
+use App\Traits\NormalizesPrompts;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Livewire\Attributes\Layout;
@@ -16,6 +17,7 @@ use Livewire\Component;
 
 class ProductCompare extends Component
 {
+    use NormalizesPrompts;
     public $category;
     public $subcategories; // Child categories (if this is a parent category)
     public $features; // Keeping this public is fine as it's a small collection
@@ -579,15 +581,5 @@ class ProductCompare extends Component
                 'schemaJson' => json_encode($schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
             ]);
     }
-
-    private static function normalizePrompts(mixed $value): array
-    {
-        if (is_array($value)) {
-            return $value;
-        }
-        if (is_string($value) && str_starts_with(trim($value), '[')) {
-            return json_decode($value, true) ?? [];
-        }
-        return [];
-    }
 }
+
