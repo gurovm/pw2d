@@ -462,6 +462,7 @@
                                 </div>
 
                                 <div class="mt-auto pt-2 border-t border-gray-100">
+                                    {{-- DEBUG: scraped={{ $product->scraped_price }}, est={{ $product->estimated_price }} --}}
                                     @if ($product->estimated_price)
                                         <div class="text-xs md:text-sm font-extrabold text-gray-800">{{ $product->estimated_price }}</div>
                                     @elseif ($product->price_tier)
