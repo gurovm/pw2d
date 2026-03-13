@@ -7,6 +7,7 @@ use App\Jobs\ProcessPendingProduct;
 use App\Models\Category;
 use App\Models\Product;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
@@ -58,10 +59,12 @@ class BatchImportController extends Controller
                 if ($existing) {
                     // Scenario B: Existing product — silently refresh lightweight data only.
                     // Do NOT change status or dispatch AI job.
-                    $existing->update([
+                    // Use DB::table() to bypass $fillable guard on older model versions.
+                    DB::table('products')->where('id', $existing->id)->update([
                         'scraped_price'        => $p['price'] ?? null,
                         'amazon_rating'        => $p['rating'] ?? null,
                         'amazon_reviews_count' => $p['reviews_count'] ?? 0,
+                        'updated_at'           => now(),
                     ]);
                     $refreshed++;
                 } else {
@@ -91,11 +94,7 @@ class BatchImportController extends Controller
             }
         }
 
-        // Temporary price debug — remove after confirming prices arrive correctly
-        $samplePrices = collect($validated['products'])->take(3)->pluck('price');
-        Log::info("BatchImport: {$created} created, {$refreshed} refreshed for category {$category->id}", [
-            'sample_prices' => $samplePrices,
-        ]);
+        Log::info("BatchImport: {$created} created, {$refreshed} refreshed for category {$category->id}");
 
         return response()->json([
             'success'   => true,
