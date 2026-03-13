@@ -415,7 +415,7 @@
                                    wire:click.prevent="openProduct('{{ $product->slug }}')"
                                    @click="window.history.pushState({}, '', '/product/{{ $product->slug }}')"
                                    class="h-44 md:h-52 w-full flex justify-center items-center bg-white overflow-hidden group-hover:bg-gray-50/50 transition-colors block outline-none">
-                                    <img src="{{ $product->image_url }}" alt="{{ $product->name }}" class="h-full w-auto object-contain p-4 mix-blend-multiply">
+                                    <img src="{{ $product->image_url }}" alt="{{ $product->name }}" class="h-full w-auto object-contain mix-blend-multiply">
                                 </a>
                             @else
                                 <a href="/product/{{ $product->slug }}"
@@ -442,7 +442,7 @@
                                    wire:click.prevent="openProduct('{{ $product->slug }}')"
                                    @click="window.history.pushState({}, '', '/product/{{ $product->slug }}')"
                                    class="block outline-none">
-                                    <h3 class="text-[11px] md:text-sm font-semibold text-gray-900 mb-3 leading-tight line-clamp-2 min-h-[2rem] md:min-h-[2.5rem]">{{ $product->name }}</h3>
+                                    <h3 class="text-[11px] md:text-sm font-semibold text-gray-900 mb-1.5 leading-tight line-clamp-2 min-h-8 md:min-h-10">{{ $product->name }}</h3>
                                 </a>
 
                                 @php
@@ -596,7 +596,7 @@
                                                         </div>
                                                         <a href="{{ $this->selectedProduct->affiliate_url }}"
                                                                 target="_blank" rel="noopener noreferrer"
-                                                                class="w-full bg-gradient-to-r from-gray-900 to-black text-white shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300 rounded-xl py-2.5 px-4 md:py-3.5 md:px-6 text-sm md:text-base font-semibold flex items-center justify-center gap-2">
+                                                                class="w-full bg-[#FF9900] hover:bg-[#E68A00] text-white shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 rounded-xl py-2.5 px-4 md:py-3.5 md:px-6 text-sm md:text-base font-bold flex items-center justify-center gap-2">
                                                                 <span>Check Current Price</span>
                                                                 <svg class="w-4 h-4" fill="none"
                                                                         stroke="currentColor" viewBox="0 0 24 24">
