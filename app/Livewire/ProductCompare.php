@@ -98,7 +98,7 @@ class ProductCompare extends Component
             return Product::where('category_id', $this->category->id)
                 ->where('is_ignored', false)
                 ->whereNull('status') // exclude pending_ai / failed (not yet fully scored)
-                ->select(['id', 'brand_id', 'amazon_rating', 'price_tier'])
+                ->select(['id', 'brand_id', 'amazon_rating', 'price_tier', 'scraped_price'])
                 ->with(['featureValues:id,product_id,feature_id,raw_value'])
                 ->when($this->filterBrand, fn($q) => $q->where('brand_id', $this->filterBrand))
                 ->when($this->filterPrice, fn($q) => $q->where('price_tier', $this->filterPrice))
@@ -108,6 +108,7 @@ class ProductCompare extends Component
                     'brand_id'       => $p->brand_id,
                     'amazon_rating'  => $p->amazon_rating,
                     'price_tier'     => $p->price_tier,
+                    'scraped_price'  => $p->scraped_price,
                     'fvs'            => $p->featureValues
                         ->map(fn($fv) => ['feature_id' => (int)$fv->feature_id, 'raw_value' => (float)$fv->raw_value])
                         ->toArray(),
@@ -122,6 +123,11 @@ class ProductCompare extends Component
             $p->brand_id = $arr['brand_id'];
             $p->amazon_rating = $arr['amazon_rating'];
             $p->price_tier = $arr['price_tier'];
+            $p->scraped_price = $arr['scraped_price'];
+            $price = $arr['scraped_price'];
+            $p->estimated_price = $price !== null
+                ? ($price < 100 ? round($price / 5) * 5 : round($price / 10) * 10)
+                : null;
             $p->featureValues = collect($arr['fvs'])->map(function ($fv) {
                 $o = new \stdClass();
                 $o->feature_id = $fv['feature_id'];
