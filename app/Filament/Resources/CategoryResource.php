@@ -55,6 +55,12 @@ class CategoryResource extends Resource
                             ->rows(3)
                             ->columnSpanFull(),
                             
+                        Forms\Components\TagsInput::make('sample_prompts')
+                            ->label('Sample Search Prompts')
+                            ->placeholder('Type a prompt and press Enter...')
+                            ->helperText('Add ~4 short example queries users might type (e.g. "mic for noisy room", "budget streaming mic"). Keep each under 6 words.')
+                            ->columnSpanFull(),
+
                         Forms\Components\Section::make('Buying Guide')
                             ->schema([
                                 Forms\Components\RichEditor::make('buying_guide.how_to_decide')

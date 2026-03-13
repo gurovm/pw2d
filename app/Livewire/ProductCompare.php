@@ -533,7 +533,38 @@ class ProductCompare extends Component
             }
         }
 
-        return view('livewire.product-compare')
+        // Build sample_prompts for the parent-category hero search typewriter.
+        // Only computed when subcategories exist (parent category view).
+        $samplePrompts = [];
+        if ($this->subcategories->isNotEmpty()) {
+            // Priority 1: the category's own prompts
+            $samplePrompts = $this->category->sample_prompts ?? [];
+
+            // Priority 2: aggregate from the loaded subcategories
+            if (empty($samplePrompts)) {
+                $samplePrompts = $this->subcategories
+                    ->pluck('sample_prompts')   // Eloquent Collection pluck → applies casts
+                    ->flatten()
+                    ->filter()
+                    ->shuffle()
+                    ->take(6)
+                    ->values()
+                    ->toArray();
+            }
+
+            // Priority 3: category-aware fallback
+            if (empty($samplePrompts)) {
+                $name = strtolower($this->category->name);
+                $samplePrompts = [
+                    "best {$name} for beginners",
+                    "top budget {$name}",
+                    "professional {$name} under \$200",
+                    "{$name} for everyday use",
+                ];
+            }
+        }
+
+        return view('livewire.product-compare', ['samplePrompts' => $samplePrompts])
             ->layoutData([
                 'metaTitle' => $metaTitle,
                 'metaDescription' => $metaDescription,

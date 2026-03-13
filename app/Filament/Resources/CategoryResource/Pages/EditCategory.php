@@ -69,6 +69,67 @@ class EditCategory extends EditRecord
         return trim($text);
     }
 
+    // ─── HELPER: Call Gemini Image API and save file ─────────────
+
+    /**
+     * Calls the Gemini image generation API and saves the resulting image to storage.
+     * Returns the storage path (e.g. "categories/images/slug-ai.png") on success.
+     * Throws on any failure so callers can handle notifications themselves.
+     */
+    private function callGeminiImage(string $imagePrompt, $record): string
+    {
+        $apiKey = config('services.gemini.api_key');
+        if (!$apiKey) {
+            throw new \Exception('GEMINI_API_KEY is not set in your .env file.');
+        }
+
+        $imageModel = env('AGENT_IMAGE_MODEL', 'gemini-2.5-flash-image');
+        $response = Http::timeout(120)->withHeaders([
+            'Content-Type' => 'application/json',
+        ])->post('https://generativelanguage.googleapis.com/v1beta/models/' . $imageModel . ':generateContent?key=' . $apiKey, [
+            'contents' => [
+                ['parts' => [['text' => $imagePrompt]]]
+            ],
+            'generationConfig' => [
+                'responseModalities' => ['TEXT', 'IMAGE'],
+            ],
+        ]);
+
+        if ($response->failed()) {
+            throw new \Exception('Image API failed: ' . $response->body());
+        }
+
+        $responseData = $response->json();
+        $parts = $responseData['candidates'][0]['content']['parts'] ?? [];
+
+        $imageData = null;
+        $mimeType = 'image/png';
+        foreach ($parts as $part) {
+            if (isset($part['inlineData'])) {
+                $imageData = $part['inlineData']['data'];
+                $mimeType  = $part['inlineData']['mimeType'] ?? 'image/png';
+                break;
+            }
+        }
+
+        if (!$imageData) {
+            throw new \Exception('No image data returned from AI. The model may not support image generation with this prompt.');
+        }
+
+        $extension = match ($mimeType) {
+            'image/jpeg', 'image/jpg' => 'jpg',
+            'image/webp'              => 'webp',
+            default                   => 'png',
+        };
+
+        $filename = 'categories/images/' . $record->slug . '-ai.' . $extension;
+        Storage::disk('public')->put($filename, base64_decode($imageData));
+
+        $record->update(['image' => $filename]);
+
+        return $filename;
+    }
+
     // ─── ACTION 1: Generate Category Image ─────────────────────
 
     private function generateImageAction(): Action
@@ -90,55 +151,7 @@ class EditCategory extends EditRecord
                 set_time_limit(120);
 
                 try {
-                    $apiKey = config('services.gemini.api_key');
-                    if (!$apiKey) {
-                        throw new \Exception('GEMINI_API_KEY is not set in your .env file.');
-                    }
-
-                    $imageModel = env('AGENT_IMAGE_MODEL', 'gemini-2.5-flash-image');
-                    $response = Http::timeout(120)->withHeaders([
-                        'Content-Type' => 'application/json',
-                    ])->post('https://generativelanguage.googleapis.com/v1beta/models/' . $imageModel . ':generateContent?key=' . $apiKey, [
-                        'contents' => [
-                            ['parts' => [['text' => $data['image_prompt']]]]
-                        ],
-                        'generationConfig' => [
-                            'responseModalities' => ['TEXT', 'IMAGE'],
-                        ],
-                    ]);
-
-                    if ($response->failed()) {
-                        throw new \Exception('Image API failed: ' . $response->body());
-                    }
-
-                    $responseData = $response->json();
-                    $parts = $responseData['candidates'][0]['content']['parts'] ?? [];
-
-                    $imageData = null;
-                    $mimeType = 'image/png';
-                    foreach ($parts as $part) {
-                        if (isset($part['inlineData'])) {
-                            $imageData = $part['inlineData']['data'];
-                            $mimeType = $part['inlineData']['mimeType'] ?? 'image/png';
-                            break;
-                        }
-                    }
-
-                    if (!$imageData) {
-                        throw new \Exception('No image data returned from AI. The model may not support image generation with this prompt.');
-                    }
-
-                    // Save the image
-                    $extension = match ($mimeType) {
-                        'image/jpeg', 'image/jpg' => 'jpg',
-                        'image/webp' => 'webp',
-                        default => 'png',
-                    };
-                    $filename = 'categories/images/' . $record->slug . '-ai.' . $extension;
-                    Storage::disk('public')->put($filename, base64_decode($imageData));
-
-                    // Update record
-                    $record->update(['image' => $filename]);
+                    $this->callGeminiImage($data['image_prompt'], $record);
 
                     Notification::make()
                         ->title('Category Image Generated')
@@ -251,21 +264,21 @@ class EditCategory extends EditRecord
             });
     }
 
-    // ─── ACTION 4: Generate Presets ────────────────────────────
+    // ─── ACTION 4: Generate Presets + Sample Prompts ────────────
 
     private function generatePresetsAction(): Action
     {
         return Action::make('generatePresets')
-            ->label('👤 Generate Presets')
+            ->label('👤 Generate Presets & Prompts')
             ->form(function ($record) {
                 $existingFeatures = $record->features()->pluck('name')->implode(', ');
-                $defaultPrompt = "You are a product database expert. The category is '{$record->name}'.\n\nThe existing features (sliders) for this category are: {$existingFeatures}\n\nGenerate 4 recommended user profiles (presets) that set different slider weights for these exact features.\n\nReturn ONLY a valid JSON object:\n{\"presets\": [{\"name\": \"Preset Name\", \"weights\": {\"Feature Name\": 90, \"Another Feature\": 20}}]}\nNote: weights must be integers between 0-100.";
+                $defaultPrompt = "You are a product database expert. The category is '{$record->name}'.\n\nThe existing features (sliders) for this category are: {$existingFeatures}\n\nGenerate 4 recommended user profiles (presets) with weights for these features, and 4 short sample search prompts.\n\nCRITICAL RULES FOR PRESET NAMES:\n- Names MUST be 1-2 words maximum. Examples: 'Podcaster', 'Gamer', 'Vocalist', 'Casual', 'Pro'.\n- NEVER use phrases like 'The Starting Podcaster' or 'For Home Recording'. One or two words only.\n\nCRITICAL RULES FOR SAMPLE PROMPTS:\n- Generate exactly 4 short, realistic user search queries (under 6 words each).\n- Examples: 'mic for noisy room', 'budget streaming mic', 'podcast mic under \$100'.\n- They should reflect real things users type, not marketing copy.\n\nReturn ONLY a valid JSON object:\n{\"presets\": [{\"name\": \"Podcaster\", \"weights\": {\"Feature Name\": 90, \"Another Feature\": 20}}], \"sample_prompts\": [\"query one\", \"query two\", \"query three\", \"query four\"]}\nNote: preset weights must be integers 0-100.";
 
                 return [
                     Textarea::make('ai_prompt')
                         ->label('AI Prompt')
                         ->required()
-                        ->rows(8)
+                        ->rows(10)
                         ->default($defaultPrompt),
                     Toggle::make('clear_existing')
                         ->label('Clear existing presets before generating?')
@@ -297,7 +310,7 @@ class EditCategory extends EditRecord
                     foreach ($decoded['presets'] as $presetData) {
                         $preset = Preset::firstOrCreate([
                             'category_id' => $record->id,
-                            'name' => $presetData['name'],
+                            'name'        => $presetData['name'],
                         ]);
 
                         $syncData = [];
@@ -313,7 +326,17 @@ class EditCategory extends EditRecord
                         $preset->features()->syncWithoutDetaching($syncData);
                     }
 
-                    Notification::make()->title('Presets Generated (' . count($decoded['presets']) . ')')->success()->send();
+                    // Save sample_prompts if returned
+                    if (!empty($decoded['sample_prompts']) && is_array($decoded['sample_prompts'])) {
+                        $record->update(['sample_prompts' => array_values(array_filter($decoded['sample_prompts']))]);
+                    }
+
+                    $presetCount  = count($decoded['presets']);
+                    $promptsCount = count($decoded['sample_prompts'] ?? []);
+                    Notification::make()
+                        ->title("Presets ({$presetCount}) & Prompts ({$promptsCount}) Generated")
+                        ->success()
+                        ->send();
 
                 } catch (\Exception $e) {
                     Notification::make()->title('Presets Failed')->body($e->getMessage())->danger()->send();
@@ -321,29 +344,33 @@ class EditCategory extends EditRecord
             });
     }
 
-    // ─── ACTION 5: Generate All (Legacy combined) ──────────────
+    // ─── ACTION 5: Generate All ─────────────────────────────────
 
     private function generateAllAction(): Action
     {
         return Action::make('generateAll')
             ->label('🚀 Generate All')
             ->form(function ($record) {
-                $defaultPrompt = "You are a product database expert for a consumer e-commerce comparison website. The category is '{$record->name}'.\n\nGenerate a list of 8 essential features to compare, 4 recommended user profiles (presets), and a 'buying_guide' object.\n\nCRITICAL RULES FOR FEATURES:\n1. Think like Amazon's 'Customer reviews by feature'. Use subjective, user-friendly scoring categories.\n2. STRICTLY AVOID overly technical engineering specs.\n3. AVOID Boolean (Yes/No) features. All features must make sense on a 0-100 slider.\n4. ORDER MATTERS: Sort by importance.\n\nCRITICAL RULES FOR BUYING GUIDE:\nThe 'buying_guide' property MUST be an object with these exact 3 keys, containing rich HTML strings (use <p>, <ul>, <li>, <strong>; DO NOT use header tags like <h3>):\n- 'how_to_decide': How to prioritize features, referencing the sliders.\n- 'the_pitfalls': 3 common marketing traps to avoid.\n- 'key_jargon': 2-3 technical terms explained simply.\n\nReturn ONLY a valid JSON object:\n{\"buying_guide\": {\"how_to_decide\": \"...\", \"the_pitfalls\": \"...\", \"key_jargon\": \"...\"}, \"features\": [{\"name\": \"...\", \"unit\": \"\", \"is_higher_better\": true}], \"presets\": [{\"name\": \"...\", \"weights\": {\"Feature\": 90}}]}\nPreset weights: integers 0-100.";
+                $defaultPrompt = "You are a product database expert for a consumer e-commerce comparison website. The category is '{$record->name}'.\n\nGenerate all of the following in ONE response:\n1. 8 essential comparison features\n2. 4 user profile presets with weighted feature importance\n3. A buying guide object\n4. 4 short sample search prompts\n\nCRITICAL RULES FOR FEATURES:\n1. Think like Amazon's 'Customer reviews by feature'. Use subjective, user-friendly scoring categories.\n2. STRICTLY AVOID overly technical engineering specs.\n3. AVOID Boolean (Yes/No) features. All features must make sense on a 0-100 slider.\n4. ORDER MATTERS: Sort by importance.\n\nCRITICAL RULES FOR PRESET NAMES:\n- Names MUST be 1-2 words maximum. Examples: 'Podcaster', 'Gamer', 'Vocalist', 'Casual', 'Pro'.\n- NEVER use phrases like 'The Starting Podcaster' or 'For Home Recording'. One or two words only.\n\nCRITICAL RULES FOR SAMPLE PROMPTS:\n- Generate exactly 4 short, realistic user search queries (under 6 words each).\n- Examples: 'mic for noisy room', 'budget streaming mic', 'podcast mic under \$100'.\n- They reflect real things users type, not marketing copy.\n\nCRITICAL RULES FOR BUYING GUIDE:\nThe 'buying_guide' property MUST be an object with these exact 3 keys, containing rich HTML strings (use <p>, <ul>, <li>, <strong>; DO NOT use header tags like <h3>):\n- 'how_to_decide': How to prioritize features, referencing the sliders.\n- 'the_pitfalls': 3 common marketing traps to avoid.\n- 'key_jargon': 2-3 technical terms explained simply.\n\nReturn ONLY a valid JSON object:\n{\"buying_guide\": {\"how_to_decide\": \"...\", \"the_pitfalls\": \"...\", \"key_jargon\": \"...\"}, \"features\": [{\"name\": \"...\", \"unit\": \"\", \"is_higher_better\": true}], \"presets\": [{\"name\": \"Podcaster\", \"weights\": {\"Feature\": 90}}], \"sample_prompts\": [\"query one\", \"query two\", \"query three\", \"query four\"]}\nPreset weights: integers 0-100.";
 
                 return [
                     Textarea::make('ai_prompt')
                         ->label('AI Prompt')
                         ->required()
                         ->columnSpanFull()
-                        ->rows(12)
+                        ->rows(14)
                         ->default($defaultPrompt),
                     Toggle::make('clear_existing')
                         ->label('Clear existing features and presets before generating?')
                         ->default(false),
+                    Toggle::make('generate_image')
+                        ->label('Also generate category hero image?')
+                        ->helperText('Adds ~30–60s to the total run time.')
+                        ->default(true),
                 ];
             })
             ->action(function (array $data, $record, EditRecord $livewire) {
-                set_time_limit(120);
+                set_time_limit(300);
 
                 try {
                     if ($data['clear_existing']) {
@@ -366,12 +393,17 @@ class EditCategory extends EditRecord
                         }
                     }
 
+                    // Sample Prompts
+                    if (!empty($decoded['sample_prompts']) && is_array($decoded['sample_prompts'])) {
+                        $record->update(['sample_prompts' => array_values(array_filter($decoded['sample_prompts']))]);
+                    }
+
                     // Features
                     $mappedFeatures = [];
                     foreach ($decoded['features'] as $featureData) {
                         $feature = Feature::firstOrCreate([
                             'category_id' => $record->id,
-                            'name' => $featureData['name'],
+                            'name'        => $featureData['name'],
                         ], [
                             'unit' => $featureData['unit'] ?? null,
                         ]);
@@ -382,7 +414,7 @@ class EditCategory extends EditRecord
                     foreach ($decoded['presets'] as $presetData) {
                         $preset = Preset::firstOrCreate([
                             'category_id' => $record->id,
-                            'name' => $presetData['name'],
+                            'name'        => $presetData['name'],
                         ]);
 
                         $syncData = [];
@@ -397,7 +429,18 @@ class EditCategory extends EditRecord
                         $preset->features()->syncWithoutDetaching($syncData);
                     }
 
-                    Notification::make()->title('AI Generation Complete')->success()->send();
+                    Notification::make()->title('AI Text Generation Complete')->success()->send();
+
+                    // Optionally generate the hero image
+                    if ($data['generate_image']) {
+                        $imagePrompt = "Top-down flat lay of premium {$record->name}, on a pristine clean white background. Minimalist tech aesthetic, soft diffused studio lighting, highly realistic professional product photography, clean composition with elegant negative space, 4k resolution, no text.";
+                        $this->callGeminiImage($imagePrompt, $record);
+
+                        Notification::make()->title('Category Image Generated')->success()->send();
+                    }
+
+                    // Redirect to refresh the form (image + buying_guide fields)
+                    $livewire->redirect($livewire->getResource()::getUrl('edit', ['record' => $record]));
 
                 } catch (\Exception $e) {
                     Notification::make()->title('Generation Failed')->body($e->getMessage())->danger()->send();

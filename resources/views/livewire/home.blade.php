@@ -14,12 +14,40 @@
 
         <form wire:submit.prevent="searchCategory" class="search-wrapper">
             <div class="search-shadow"></div>
-            <div class="search-box">
+            <div class="search-box"
+                 x-data="{
+                     prompts: @js($samplePrompts),
+                     typedText: '',
+                     _pi: 0,
+                     _ci: 0,
+                     _del: false,
+                     _tick() {
+                         const p = this.prompts[this._pi];
+                         if (!this._del) {
+                             this.typedText = p.slice(0, ++this._ci);
+                             if (this._ci >= p.length) {
+                                 this._del = true;
+                                 setTimeout(() => this._tick(), 2000);
+                                 return;
+                             }
+                         } else {
+                             this.typedText = p.slice(0, --this._ci);
+                             if (this._ci <= 0) {
+                                 this._del = false;
+                                 this._pi = (this._pi + 1) % this.prompts.length;
+                                 setTimeout(() => this._tick(), 150);
+                                 return;
+                             }
+                         }
+                         setTimeout(() => this._tick(), this._del ? 35 : 65);
+                     }
+                 }"
+                 x-init="if (prompts.length && !$el._tw) { $el._tw = true; _tick(); }">
                 <span class="search-ai-badge">AI Search</span>
-                <input 
-                    type="text" 
-                    wire:model="searchQuery" 
-                    placeholder="Describe what you need..." 
+                <input
+                    type="text"
+                    wire:model="searchQuery"
+                    x-bind:placeholder="typedText"
                     autocomplete="off"
                     :disabled="$wire.isSearching"
                 >

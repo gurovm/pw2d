@@ -16,12 +16,40 @@
 
                 <form wire:submit.prevent="searchCategory" class="search-wrapper">
                     <div class="search-shadow"></div>
-                    <div class="search-box">
+                    <div class="search-box"
+                         x-data="{
+                             prompts: @js($samplePrompts),
+                             typedText: '',
+                             _pi: 0,
+                             _ci: 0,
+                             _del: false,
+                             _tick() {
+                                 const p = this.prompts[this._pi];
+                                 if (!this._del) {
+                                     this.typedText = p.slice(0, ++this._ci);
+                                     if (this._ci >= p.length) {
+                                         this._del = true;
+                                         setTimeout(() => this._tick(), 2000);
+                                         return;
+                                     }
+                                 } else {
+                                     this.typedText = p.slice(0, --this._ci);
+                                     if (this._ci <= 0) {
+                                         this._del = false;
+                                         this._pi = (this._pi + 1) % this.prompts.length;
+                                         setTimeout(() => this._tick(), 150);
+                                         return;
+                                     }
+                                 }
+                                 setTimeout(() => this._tick(), this._del ? 35 : 65);
+                             }
+                         }"
+                         x-init="if (prompts.length && !$el._tw) { $el._tw = true; _tick(); }">
                         <span class="search-ai-badge">AI Search</span>
                         <input
                             type="text"
                             wire:model="searchQuery"
-                            placeholder="Describe what you need..."
+                            x-bind:placeholder="typedText"
                             autocomplete="off"
                             :disabled="$wire.isSearching"
                         >
@@ -434,7 +462,9 @@
                                 </div>
 
                                 <div class="mt-auto pt-2 border-t border-gray-100">
-                                    @if ($product->price_tier)
+                                    @if ($product->estimated_price)
+                                        <div class="text-xs md:text-sm font-extrabold text-gray-800">{{ $product->estimated_price }}</div>
+                                    @elseif ($product->price_tier)
                                         <div class="text-xs md:text-sm font-extrabold flex items-center gap-1">
                                             @if ($product->price_tier == 1)
                                                 <span class="text-green-600">$<span class="opacity-20">$$</span></span>
@@ -448,13 +478,14 @@
                                             @endif
                                         </div>
                                     @endif
+                                    <p class="text-[9px] text-gray-400 mt-0.5">Prices may vary.</p>
                                 </div>
                             </div>
 
                             @if ($product->affiliate_url)
                                 <a href="{{ $product->affiliate_url }}" target="_blank" rel="noopener noreferrer"
                                    class="amazon-cta block w-full text-center bg-[#FF9900] text-white py-2.5 md:py-3 font-bold text-xs md:text-sm transition-all duration-200 hover:bg-[#E68A00]">
-                                    View on Amazon →
+                                    Check Current Price →
                                 </a>
                             @endif
                         </div> @endforeach
@@ -534,32 +565,29 @@
                                                 <div
                                                         class="w-full flex flex-col items-center gap-3 md:gap-4 bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-gray-100">
                                                         <div class="flex flex-col items-center text-center">
-                                                                <span
-                                                                        class="text-[10px] md:text-xs text-gray-400 font-semibold uppercase tracking-wider mb-0.5 md:mb-1">Market
-                                                                        Tier</span>
-                                                                @if ($this->selectedProduct->price_tier)
-                                                                        <div
-                                                                                class="text-lg md:text-2xl font-bold tracking-tight text-gray-900">
+                                                                @if ($this->selectedProduct->estimated_price)
+                                                                        <span class="text-[10px] md:text-xs text-gray-400 font-semibold uppercase tracking-wider mb-0.5 md:mb-1">Est. Price</span>
+                                                                        <div class="text-lg md:text-2xl font-bold tracking-tight text-gray-900">
+                                                                                {{ $this->selectedProduct->estimated_price }}
+                                                                        </div>
+                                                                @elseif ($this->selectedProduct->price_tier)
+                                                                        <span class="text-[10px] md:text-xs text-gray-400 font-semibold uppercase tracking-wider mb-0.5 md:mb-1">Market Tier</span>
+                                                                        <div class="text-lg md:text-2xl font-bold tracking-tight text-gray-900">
                                                                                 @if ($this->selectedProduct->price_tier == 1)
-                                                                                        <span
-                                                                                                class="text-emerald-500 mr-0.5 text-base md:text-lg">$</span>
-                                                                                        Budget
+                                                                                        <span class="text-emerald-500 mr-0.5 text-base md:text-lg">$</span>Budget
                                                                                 @elseif($this->selectedProduct->price_tier == 2)
-                                                                                        <span
-                                                                                                class="text-emerald-500 mr-0.5 text-base md:text-lg">$$</span>
-                                                                                        Mid-Range
+                                                                                        <span class="text-emerald-500 mr-0.5 text-base md:text-lg">$$</span>Mid-Range
                                                                                 @else
-                                                                                        <span
-                                                                                                class="text-emerald-500 mr-0.5 text-base md:text-lg">$$$</span>
-                                                                                        Premium
+                                                                                        <span class="text-emerald-500 mr-0.5 text-base md:text-lg">$$$</span>Premium
                                                                                 @endif
                                                                         </div>
                                                                 @endif
+                                                                <p class="text-[9px] text-gray-400 mt-1">Prices may vary.</p>
                                                         </div>
                                                         <a href="{{ $this->selectedProduct->affiliate_url }}"
                                                                 target="_blank" rel="noopener noreferrer"
                                                                 class="w-full bg-gradient-to-r from-gray-900 to-black text-white shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300 rounded-xl py-2.5 px-4 md:py-3.5 md:px-6 text-sm md:text-base font-semibold flex items-center justify-center gap-2">
-                                                                <span>View on Amazon</span>
+                                                                <span>Check Current Price</span>
                                                                 <svg class="w-4 h-4" fill="none"
                                                                         stroke="currentColor" viewBox="0 0 24 24">
                                                                         <path stroke-linecap="round"

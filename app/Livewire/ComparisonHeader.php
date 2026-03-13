@@ -14,9 +14,10 @@ class ComparisonHeader extends Component
     public $priceWeight = 50;
     public $amazonRatingWeight = 50;
     public $presets;
-    public $selectedPreset = 'balanced';
+    public $selectedPreset = null;
     public $categoryId;
     public $autoOpen = true;
+    public array $samplePrompts = [];
 
     #[On('ai-weights-updated')]
     public function syncAiWeights($weights, $priceWeight, $amazonRatingWeight)
@@ -38,6 +39,8 @@ class ComparisonHeader extends Component
             priceWeight: $this->priceWeight,
             amazonRatingWeight: $this->amazonRatingWeight
         );
+
+        $this->dispatch('alpine-sliders-dirty');
     }
     
     public function mount($features, $weights, $priceWeight, $amazonRatingWeight, $categoryId, $autoOpen = true)
@@ -50,6 +53,36 @@ class ComparisonHeader extends Component
         $this->autoOpen = $autoOpen;
         
         $this->presets = Preset::where('category_id', $this->categoryId)->get();
+
+        $category = Category::with('children')->find($this->categoryId);
+
+        // Priority 1: the category's own prompts
+        $prompts = $category?->sample_prompts ?? [];
+
+        // Priority 2: aggregate from child categories (parent hub pages have no own prompts)
+        if (empty($prompts) && $category?->children->isNotEmpty()) {
+            $prompts = $category->children
+                ->pluck('sample_prompts')
+                ->flatten()
+                ->filter()
+                ->shuffle()
+                ->take(6)
+                ->values()
+                ->toArray();
+        }
+
+        // Priority 3: generate sensible category-aware fallbacks
+        if (empty($prompts)) {
+            $name = strtolower($category?->name ?? 'product');
+            $prompts = [
+                "best {$name} for beginners",
+                "top budget {$name}",
+                "professional {$name} under \$200",
+                "{$name} for everyday use",
+            ];
+        }
+
+        $this->samplePrompts = $prompts;
     }
     
     public function applyPreset($presetId)
@@ -96,6 +129,33 @@ class ComparisonHeader extends Component
             priceWeight: $this->priceWeight,
             amazonRatingWeight: $this->amazonRatingWeight
         );
+
+        $this->dispatch('alpine-sliders-dirty');
+    }
+
+    public function resetWeights(): void
+    {
+        $this->selectedPreset = null;
+
+        foreach ($this->features as $feature) {
+            $this->weights[$feature->id] = 50;
+        }
+        $this->priceWeight = 50;
+        $this->amazonRatingWeight = 50;
+
+        $this->dispatch('weights-updated',
+            weights: $this->weights,
+            priceWeight: $this->priceWeight,
+            amazonRatingWeight: $this->amazonRatingWeight
+        );
+
+        $this->dispatch('alpine-weights-sync',
+            weights: $this->weights,
+            priceWeight: $this->priceWeight,
+            amazonRatingWeight: $this->amazonRatingWeight
+        );
+
+        $this->dispatch('alpine-sliders-reset');
     }
 
     public function updatedWeights()

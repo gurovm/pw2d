@@ -173,8 +173,39 @@ class Home extends Component
             ->limit(8)
             ->get(['id', 'name', 'slug', 'description', 'image']);
 
+        // Aggregate sample_prompts from all categories for the homepage typewriter.
+        // Use ->get()->pluck() (not ->pluck()) so Eloquent model casts turn the
+        // stored JSON strings into PHP arrays before flatten() is called.
+        $samplePrompts = Category::whereHas('products')
+            ->whereNotNull('sample_prompts')
+            ->get(['id', 'sample_prompts'])
+            ->pluck('sample_prompts')
+            ->flatten()
+            ->filter()
+            ->shuffle()
+            ->take(8)
+            ->values()
+            ->toArray();
+
+        if (empty($samplePrompts)) {
+            // Derive prompts from actual category names so fallback is always relevant
+            $samplePrompts = Category::whereHas('products')
+                ->inRandomOrder()
+                ->limit(6)
+                ->pluck('name')
+                ->map(fn ($name) => 'best ' . strtolower($name) . ' for my needs')
+                ->values()
+                ->toArray();
+        }
+
+        // Last resort if still empty (fresh install, no categories yet)
+        if (empty($samplePrompts)) {
+            $samplePrompts = ['Tell me what you need...', 'What are you shopping for?'];
+        }
+
         return view('livewire.home', [
             'popularCategories' => $popularCategories,
+            'samplePrompts'     => $samplePrompts,
         ]);
     }
 }

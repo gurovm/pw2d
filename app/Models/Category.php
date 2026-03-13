@@ -19,6 +19,7 @@ class Category extends Model
         'description',
         'buying_guide',
         'image',
+        'sample_prompts',
     ];
 
     /**
@@ -27,7 +28,8 @@ class Category extends Model
      * @var array
      */
     protected $casts = [
-        'buying_guide' => 'array',
+        'buying_guide'   => 'array',
+        'sample_prompts' => 'array',
     ];
 
     /**
