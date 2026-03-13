@@ -34,44 +34,37 @@ class ProductEstimatedPriceTest extends TestCase
     public function it_rounds_prices_under_100_to_nearest_5(): void
     {
         // Rounds down
-        $this->assertEquals('~$50', $this->makeProduct(52.10)->estimated_price);
+        $this->assertEquals(50, $this->makeProduct(52.10)->estimated_price);
         // Rounds up
-        $this->assertEquals('~$55', $this->makeProduct(54.99)->estimated_price);
+        $this->assertEquals(55, $this->makeProduct(54.99)->estimated_price);
         // Exact multiple — stays
-        $this->assertEquals('~$30', $this->makeProduct(30.00)->estimated_price);
+        $this->assertEquals(30, $this->makeProduct(30.00)->estimated_price);
         // Low price
-        $this->assertEquals('~$10', $this->makeProduct(9.99)->estimated_price);
+        $this->assertEquals(10, $this->makeProduct(9.99)->estimated_price);
         // Boundary: exactly 99.99 rounds to nearest 5
-        $this->assertEquals('~$100', $this->makeProduct(99.99)->estimated_price);
+        $this->assertEquals(100, $this->makeProduct(99.99)->estimated_price);
     }
 
     #[Test]
     public function it_rounds_prices_at_or_above_100_to_nearest_10(): void
     {
         // Rounds down
-        $this->assertEquals('~$140', $this->makeProduct(144.99)->estimated_price);
+        $this->assertEquals(140, $this->makeProduct(144.99)->estimated_price);
         // Rounds up
-        $this->assertEquals('~$150', $this->makeProduct(146.00)->estimated_price);
+        $this->assertEquals(150, $this->makeProduct(146.00)->estimated_price);
         // Exact multiple — stays
-        $this->assertEquals('~$200', $this->makeProduct(200.00)->estimated_price);
+        $this->assertEquals(200, $this->makeProduct(200.00)->estimated_price);
         // High price
-        $this->assertEquals('~$500', $this->makeProduct(499.95)->estimated_price);
+        $this->assertEquals(500, $this->makeProduct(499.95)->estimated_price);
     }
 
     #[Test]
-    public function it_prefixes_the_estimated_price_with_tilde_dollar(): void
-    {
-        $product = $this->makeProduct(29.99);
-
-        $this->assertStringStartsWith('~$', $product->estimated_price);
-    }
-
-    #[Test]
-    public function it_returns_integer_amount_with_no_decimals(): void
+    public function it_returns_a_raw_integer_with_no_formatting(): void
     {
         $product = $this->makeProduct(54.99);
 
-        // Should be '~$55', not '~$55.00'
-        $this->assertEquals('~$55', $product->estimated_price);
+        // Returns integer 55, not formatted string '~$55'
+        $this->assertIsInt($product->estimated_price);
+        $this->assertEquals(55, $product->estimated_price);
     }
 }

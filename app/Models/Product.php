@@ -129,7 +129,7 @@ class Product extends Model
                     ? (int) round($price / 5) * 5
                     : (int) round($price / 10) * 10;
 
-                return '~$' . $rounded;
+                return $rounded;
             }
         );
     }

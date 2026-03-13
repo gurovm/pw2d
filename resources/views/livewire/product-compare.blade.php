@@ -463,22 +463,30 @@
 
                                 <div class="mt-auto pt-2 border-t border-gray-100">
                                     @if ($product->estimated_price)
-                                        <div class="text-xs md:text-sm font-extrabold text-gray-800">{{ $product->estimated_price }}</div>
+                                        <div class="flex items-end justify-between">
+                                            <div>
+                                                <p class="text-[10px] font-bold tracking-wider uppercase text-gray-400 leading-none mb-0.5">Est. Price</p>
+                                                <span class="text-[11px] font-semibold text-gray-400 align-top mt-0.5 mr-0.5">$</span><span class="text-xl font-extrabold text-gray-900 leading-none">{{ $product->estimated_price }}</span>
+                                            </div>
+                                            <p class="text-[9px] text-gray-400 text-right leading-tight">Prices<br>may vary.</p>
+                                        </div>
                                     @elseif ($product->price_tier)
-                                        <div class="text-xs md:text-sm font-extrabold flex items-center gap-1">
-                                            @if ($product->price_tier == 1)
-                                                <span class="text-green-600">$<span class="opacity-20">$$</span></span>
-                                                <span class="text-green-600">Budget</span>
-                                            @elseif($product->price_tier == 2)
-                                                <span class="text-blue-600">$$<span class="opacity-20">$</span></span>
-                                                <span class="text-blue-600">Mid Range</span>
-                                            @else
-                                                <span class="text-amber-600">$$$</span>
-                                                <span class="text-amber-600">Premium</span>
-                                            @endif
+                                        <div class="flex items-end justify-between">
+                                            <div class="text-xs md:text-sm font-extrabold flex items-center gap-1">
+                                                @if ($product->price_tier == 1)
+                                                    <span class="text-green-600">$<span class="opacity-20">$$</span></span>
+                                                    <span class="text-green-600">Budget</span>
+                                                @elseif($product->price_tier == 2)
+                                                    <span class="text-blue-600">$$<span class="opacity-20">$</span></span>
+                                                    <span class="text-blue-600">Mid Range</span>
+                                                @else
+                                                    <span class="text-amber-600">$$$</span>
+                                                    <span class="text-amber-600">Premium</span>
+                                                @endif
+                                            </div>
+                                            <p class="text-[9px] text-gray-400">Prices may vary.</p>
                                         </div>
                                     @endif
-                                    <p class="text-[9px] text-gray-400 mt-0.5">Prices may vary.</p>
                                 </div>
                             </div>
 
@@ -566,10 +574,12 @@
                                                         class="w-full flex flex-col items-center gap-3 md:gap-4 bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-gray-100">
                                                         <div class="flex flex-col items-center text-center">
                                                                 @if ($this->selectedProduct->estimated_price)
-                                                                        <span class="text-[10px] md:text-xs text-gray-400 font-semibold uppercase tracking-wider mb-0.5 md:mb-1">Est. Price</span>
-                                                                        <div class="text-lg md:text-2xl font-bold tracking-tight text-gray-900">
-                                                                                {{ $this->selectedProduct->estimated_price }}
+                                                                        <span class="text-[10px] md:text-xs text-gray-400 font-bold uppercase tracking-wider mb-0.5 md:mb-1">Est. Price</span>
+                                                                        <div class="flex items-start leading-none">
+                                                                                <span class="text-sm font-semibold text-gray-400 mt-0.5 mr-0.5">$</span>
+                                                                                <span class="text-2xl md:text-3xl font-extrabold text-gray-900">{{ $this->selectedProduct->estimated_price }}</span>
                                                                         </div>
+                                                                        <p class="text-[9px] text-gray-400 mt-1">Prices may vary.</p>
                                                                 @elseif ($this->selectedProduct->price_tier)
                                                                         <span class="text-[10px] md:text-xs text-gray-400 font-semibold uppercase tracking-wider mb-0.5 md:mb-1">Market Tier</span>
                                                                         <div class="text-lg md:text-2xl font-bold tracking-tight text-gray-900">
@@ -581,8 +591,8 @@
                                                                                         <span class="text-emerald-500 mr-0.5 text-base md:text-lg">$$$</span>Premium
                                                                                 @endif
                                                                         </div>
+                                                                        <p class="text-[9px] text-gray-400 mt-1">Prices may vary.</p>
                                                                 @endif
-                                                                <p class="text-[9px] text-gray-400 mt-1">Prices may vary.</p>
                                                         </div>
                                                         <a href="{{ $this->selectedProduct->affiliate_url }}"
                                                                 target="_blank" rel="noopener noreferrer"
