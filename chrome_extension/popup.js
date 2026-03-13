@@ -111,7 +111,8 @@ if (scanPageBtn) {
     });
 }
 
-// Send to Server Button — filters existing ASINs then POSTs bulk to batch-import
+// Send to Server Button — checks existing ASINs for display, then POSTs ALL products to batch-import.
+// The backend handles new vs existing: new ones are queued for AI, existing ones get a data refresh.
 if (startBatchBtn) {
     startBatchBtn.addEventListener('click', async () => {
         if (!selectedCategoryId) {
@@ -125,25 +126,17 @@ if (startBatchBtn) {
         startBatchBtn.disabled = true;
 
         try {
-            // Fetch already-imported ASINs for this category
+            // Fetch already-imported ASINs for display purposes only (not for filtering)
             const asinRes = await fetch(`${baseUrl}/api/existing-asins?category_id=${selectedCategoryId}`, {
                 headers: { 'X-Extension-Token': EXTENSION_TOKEN },
             });
             const asinData = await asinRes.json();
             const existingAsins = (asinData.success && asinData.asins) ? asinData.asins : [];
+            const existingCount = extractedProducts.filter(p => existingAsins.includes(p.asin)).length;
 
-            const newProducts = extractedProducts.filter(p => !existingAsins.includes(p.asin));
-            const skipped     = extractedProducts.length - newProducts.length;
+            statusDiv.textContent = `Sending ${extractedProducts.length} products (${existingCount} will be refreshed)...`;
 
-            if (newProducts.length === 0) {
-                statusDiv.textContent = `All ${skipped} products already exist in this category.`;
-                statusDiv.className = 'success';
-                startBatchBtn.disabled = false;
-                return;
-            }
-
-            statusDiv.textContent = `Sending ${newProducts.length} products to server...`;
-
+            // Send ALL products — backend differentiates new vs existing
             const batchRes = await fetch(`${baseUrl}/api/products/batch-import`, {
                 method: 'POST',
                 headers: {
@@ -153,15 +146,17 @@ if (startBatchBtn) {
                 },
                 body: JSON.stringify({
                     category_id: selectedCategoryId,
-                    products: newProducts,
+                    products: extractedProducts,
                 }),
             });
 
             const result = await batchRes.json();
 
             if (batchRes.ok && result.success) {
-                const skipNote = skipped > 0 ? ` (${skipped} already existed, skipped)` : '';
-                statusDiv.textContent = `Successfully sent ${result.saved} products to the server. Marked as pending_ai.${skipNote}`;
+                const parts = [];
+                if (result.saved > 0)     parts.push(`${result.saved} new queued for AI`);
+                if (result.refreshed > 0) parts.push(`${result.refreshed} refreshed`);
+                statusDiv.textContent = parts.join(', ') + '. Done!';
                 statusDiv.className = 'success';
                 batchControls.style.display = 'none';
                 extractedProducts = [];

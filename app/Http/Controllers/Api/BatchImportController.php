@@ -40,45 +40,58 @@ class BatchImportController extends Controller
             ], 400);
         }
 
-        $saved = 0;
+        $created  = 0;
+        $refreshed = 0;
 
         foreach ($validated['products'] as $p) {
             try {
-                $product = Product::updateOrCreate(
-                    [
-                        'external_id' => $p['asin'],
-                        'category_id' => $category->id,
-                    ],
-                    [
+                $existing = Product::where('external_id', $p['asin'])
+                    ->where('category_id', $category->id)
+                    ->first();
+
+                if ($existing) {
+                    // Scenario B: Existing product — silently refresh lightweight data only.
+                    // Do NOT change status or dispatch AI job.
+                    $existing->update([
+                        'scraped_price'        => $p['price'] ?? null,
+                        'amazon_rating'        => $p['rating'] ?? null,
+                        'amazon_reviews_count' => $p['reviews_count'] ?? 0,
+                    ]);
+                    $refreshed++;
+                } else {
+                    // Scenario A: New product — create stub and queue for AI scoring.
+                    $product = Product::create([
+                        'external_id'          => $p['asin'],
+                        'category_id'          => $category->id,
                         'name'                 => mb_substr($p['title'], 0, 255),
                         'slug'                 => Str::slug(Str::limit($p['title'], 80)) . '-' . strtolower($p['asin']),
                         'external_image_path'  => $p['image_url'] ?? null,
                         'amazon_rating'        => $p['rating'] ?? null,
                         'amazon_reviews_count' => $p['reviews_count'] ?? 0,
+                        'scraped_price'        => $p['price'] ?? null,
                         'price_tier'           => $this->guessPriceTier($p['price'] ?? null),
                         'status'               => 'pending_ai',
                         'is_ignored'           => false,
-                    ]
-                );
+                    ]);
 
-                // Dispatch AI scoring job for this product
-                ProcessPendingProduct::dispatch($product->id, $category->id);
-
-                $saved++;
+                    ProcessPendingProduct::dispatch($product->id, $category->id);
+                    $created++;
+                }
             } catch (\Exception $e) {
-                Log::warning('BatchImport: failed to save product', [
+                Log::warning('BatchImport: failed to process product', [
                     'asin'  => $p['asin'] ?? 'unknown',
                     'error' => $e->getMessage(),
                 ]);
             }
         }
 
-        Log::info("BatchImport: saved {$saved} products for category {$category->id}");
+        Log::info("BatchImport: {$created} created, {$refreshed} refreshed for category {$category->id}");
 
         return response()->json([
-            'success' => true,
-            'saved'   => $saved,
-            'message' => "Successfully queued {$saved} products for AI processing.",
+            'success'   => true,
+            'saved'     => $created,
+            'refreshed' => $refreshed,
+            'message'   => "Queued {$created} new product(s) for AI processing. Refreshed data for {$refreshed} existing product(s).",
         ]);
     }
 

@@ -34,6 +34,7 @@ class Product extends Model
         'external_image_path',
         'affiliate_url',
         'price_tier',
+        'scraped_price',
         'amazon_rating',
         'amazon_reviews_count',
         'is_ignored',
@@ -41,10 +42,11 @@ class Product extends Model
     ];
 
     protected $casts = [
-        'price_tier' => 'integer',
+        'price_tier'    => 'integer',
+        'scraped_price' => 'decimal:2',
         'amazon_rating' => 'float',
         'amazon_reviews_count' => 'integer',
-        'is_ignored' => 'boolean',
+        'is_ignored'    => 'boolean',
     ];
 
     /**
@@ -104,6 +106,30 @@ class Product extends Model
 
                 $separator = str_contains($value, '?') ? '&' : '?';
                 return $value . $separator . 'tag=' . $tag;
+            }
+        );
+    }
+
+    /**
+     * Return an obfuscated price string suitable for public display.
+     * Rounds to the nearest $5 (under $100) or $10 ($100+) to avoid
+     * showing stale exact prices, per Amazon Associates ToS.
+     */
+    protected function estimatedPrice(): Attribute
+    {
+        return Attribute::make(
+            get: function () {
+                if ($this->scraped_price === null) {
+                    return null;
+                }
+
+                $price = (float) $this->scraped_price;
+
+                $rounded = $price < 100
+                    ? (int) round($price / 5) * 5
+                    : (int) round($price / 10) * 10;
+
+                return '~$' . $rounded;
             }
         );
     }

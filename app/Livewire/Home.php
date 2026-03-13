@@ -176,8 +176,9 @@ class Home extends Component
         // Aggregate sample_prompts from all categories for the homepage typewriter.
         // Use ->get()->pluck() (not ->pluck()) so Eloquent model casts turn the
         // stored JSON strings into PHP arrays before flatten() is called.
-        $samplePrompts = Category::whereHas('products')
-            ->whereNotNull('sample_prompts')
+        // Note: no whereHas('products') here — prompts are useful regardless of
+        // whether products exist yet (e.g. local dev with empty products table).
+        $samplePrompts = Category::whereNotNull('sample_prompts')
             ->get(['id', 'sample_prompts'])
             ->pluck('sample_prompts')
             ->flatten()
@@ -189,8 +190,7 @@ class Home extends Component
 
         if (empty($samplePrompts)) {
             // Derive prompts from actual category names so fallback is always relevant
-            $samplePrompts = Category::whereHas('products')
-                ->inRandomOrder()
+            $samplePrompts = Category::inRandomOrder()
                 ->limit(6)
                 ->pluck('name')
                 ->map(fn ($name) => 'best ' . strtolower($name) . ' for my needs')
