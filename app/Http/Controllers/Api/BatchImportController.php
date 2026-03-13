@@ -91,7 +91,11 @@ class BatchImportController extends Controller
             }
         }
 
-        Log::info("BatchImport: {$created} created, {$refreshed} refreshed for category {$category->id}");
+        // Temporary price debug — remove after confirming prices arrive correctly
+        $samplePrices = collect($validated['products'])->take(3)->pluck('price');
+        Log::info("BatchImport: {$created} created, {$refreshed} refreshed for category {$category->id}", [
+            'sample_prices' => $samplePrices,
+        ]);
 
         return response()->json([
             'success'   => true,
