@@ -40,14 +40,20 @@ class BatchImportController extends Controller
             ], 400);
         }
 
+        $incomingAsins = collect($validated['products'])->pluck('asin');
+
+        // One query to find all already-imported ASINs — avoids 1 SELECT per product.
+        $existingMap = Product::where('category_id', $category->id)
+            ->whereIn('external_id', $incomingAsins)
+            ->get(['id', 'external_id'])
+            ->keyBy('external_id');
+
         $created  = 0;
         $refreshed = 0;
 
         foreach ($validated['products'] as $p) {
             try {
-                $existing = Product::where('external_id', $p['asin'])
-                    ->where('category_id', $category->id)
-                    ->first();
+                $existing = $existingMap->get($p['asin']);
 
                 if ($existing) {
                     // Scenario B: Existing product — silently refresh lightweight data only.
@@ -89,7 +95,7 @@ class BatchImportController extends Controller
 
         return response()->json([
             'success'   => true,
-            'saved'     => $created,
+            'created'   => $created,
             'refreshed' => $refreshed,
             'message'   => "Queued {$created} new product(s) for AI processing. Refreshed data for {$refreshed} existing product(s).",
         ]);

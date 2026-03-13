@@ -154,7 +154,7 @@ if (startBatchBtn) {
 
             if (batchRes.ok && result.success) {
                 const parts = [];
-                if (result.saved > 0)     parts.push(`${result.saved} new queued for AI`);
+                if (result.created > 0)   parts.push(`${result.created} new queued for AI`);
                 if (result.refreshed > 0) parts.push(`${result.refreshed} refreshed`);
                 statusDiv.textContent = parts.join(', ') + '. Done!';
                 statusDiv.className = 'success';
