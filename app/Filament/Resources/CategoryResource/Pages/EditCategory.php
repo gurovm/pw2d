@@ -326,9 +326,9 @@ class EditCategory extends EditRecord
                         $preset->features()->syncWithoutDetaching($syncData);
                     }
 
-                    // Save sample_prompts if returned
+                    // Save sample_prompts if returned (forceFill bypasses $fillable guard)
                     if (!empty($decoded['sample_prompts']) && is_array($decoded['sample_prompts'])) {
-                        $record->update(['sample_prompts' => array_values(array_filter($decoded['sample_prompts']))]);
+                        $record->forceFill(['sample_prompts' => array_values(array_filter($decoded['sample_prompts']))])->save();
                     }
 
                     $presetCount  = count($decoded['presets']);
@@ -393,9 +393,9 @@ class EditCategory extends EditRecord
                         }
                     }
 
-                    // Sample Prompts
+                    // Sample Prompts (forceFill bypasses $fillable guard)
                     if (!empty($decoded['sample_prompts']) && is_array($decoded['sample_prompts'])) {
-                        $record->update(['sample_prompts' => array_values(array_filter($decoded['sample_prompts']))]);
+                        $record->forceFill(['sample_prompts' => array_values(array_filter($decoded['sample_prompts']))])->save();
                     }
 
                     // Features
