@@ -57,12 +57,13 @@ class ComparisonHeader extends Component
         $category = Category::with('children')->find($this->categoryId);
 
         // Priority 1: the category's own prompts
-        $prompts = $category?->sample_prompts ?? [];
+        $prompts = self::normalizePrompts($category?->sample_prompts);
 
         // Priority 2: aggregate from child categories (parent hub pages have no own prompts)
         if (empty($prompts) && $category?->children->isNotEmpty()) {
             $prompts = $category->children
                 ->pluck('sample_prompts')
+                ->map(fn($v) => self::normalizePrompts($v))
                 ->flatten()
                 ->filter()
                 ->shuffle()
@@ -215,5 +216,20 @@ class ComparisonHeader extends Component
     public function render()
     {
         return view('livewire.comparison-header');
+    }
+
+    /**
+     * Normalise a sample_prompts value regardless of whether the DB cast
+     * was applied (PHP array) or not (raw JSON string from MySQL).
+     */
+    private static function normalizePrompts(mixed $value): array
+    {
+        if (is_array($value)) {
+            return $value;
+        }
+        if (is_string($value) && str_starts_with(trim($value), '[')) {
+            return json_decode($value, true) ?? [];
+        }
+        return [];
     }
 }

@@ -538,12 +538,13 @@ class ProductCompare extends Component
         $samplePrompts = [];
         if ($this->subcategories->isNotEmpty()) {
             // Priority 1: the category's own prompts
-            $samplePrompts = $this->category->sample_prompts ?? [];
+            $samplePrompts = self::normalizePrompts($this->category->sample_prompts);
 
             // Priority 2: aggregate from the loaded subcategories
             if (empty($samplePrompts)) {
                 $samplePrompts = $this->subcategories
-                    ->pluck('sample_prompts')   // Eloquent Collection pluck → applies casts
+                    ->pluck('sample_prompts')
+                    ->map(fn($v) => self::normalizePrompts($v))
                     ->flatten()
                     ->filter()
                     ->shuffle()
@@ -571,5 +572,16 @@ class ProductCompare extends Component
                 'canonicalUrl' => $canonicalUrl,
                 'schemaJson' => json_encode($schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
             ]);
+    }
+
+    private static function normalizePrompts(mixed $value): array
+    {
+        if (is_array($value)) {
+            return $value;
+        }
+        if (is_string($value) && str_starts_with(trim($value), '[')) {
+            return json_decode($value, true) ?? [];
+        }
+        return [];
     }
 }

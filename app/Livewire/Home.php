@@ -181,6 +181,7 @@ class Home extends Component
         $samplePrompts = Category::whereNotNull('sample_prompts')
             ->get(['id', 'sample_prompts'])
             ->pluck('sample_prompts')
+            ->map(fn($v) => is_array($v) ? $v : (json_decode($v, true) ?? []))
             ->flatten()
             ->filter()
             ->shuffle()
