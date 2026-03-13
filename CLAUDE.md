@@ -27,6 +27,7 @@ Pw2D is a modern affiliate/recommendation platform targeted at the US market. It
   4. Run migrations if needed: `php artisan migrate --force`
   5. Build frontend assets: `npm run build`
   6. Clear caches: `php artisan optimize:clear`
+  7. Restart PHP-FPM to clear OPcache: `systemctl restart php8.3-fpm`
 
 ## 5. Coding Standards
 - Write clean, modern PHP 8.3 (use strict types, match expressions, arrow functions).
