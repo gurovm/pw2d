@@ -24,7 +24,7 @@ class BatchImportController extends Controller
             'category_id'                => 'required|exists:categories,id',
             'products'                   => 'required|array|min:1|max:100',
             'products.*.asin'            => 'required|string|max:20',
-            'products.*.title'           => 'required|string|max:500',
+            'products.*.title'           => 'required|string|min:3|max:500',
             'products.*.price'           => 'nullable|numeric|min:0',
             'products.*.rating'          => 'nullable|numeric|min:0|max:5',
             'products.*.reviews_count'   => 'nullable|integer|min:0',
@@ -95,13 +95,17 @@ class BatchImportController extends Controller
             }
         }
 
-        // Single batch upsert for all refreshed products — avoids N individual UPDATE queries.
-        if (!empty($refreshRows)) {
-            DB::table('products')->upsert(
-                $refreshRows,
-                ['id'],
-                ['scraped_price', 'amazon_rating', 'amazon_reviews_count', 'updated_at']
-            );
+        // Update refreshed products. We use individual UPDATE statements because we already
+        // confirmed these IDs exist (from $existingMap), so upsert's INSERT fallback is wrong.
+        foreach ($refreshRows as $row) {
+            DB::table('products')
+                ->where('id', $row['id'])
+                ->update([
+                    'scraped_price'        => $row['scraped_price'],
+                    'amazon_rating'        => $row['amazon_rating'],
+                    'amazon_reviews_count' => $row['amazon_reviews_count'],
+                    'updated_at'           => $row['updated_at'],
+                ]);
         }
 
         Log::info("BatchImport: {$created} created, {$refreshed} refreshed for category {$category->id}");

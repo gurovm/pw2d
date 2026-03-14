@@ -43,7 +43,7 @@
                      }
                  }"
                  x-init="if (prompts.length && !$el._tw) { $el._tw = true; _tick(); }">
-                <span class="search-ai-badge">AI Search</span>
+                <span class="search-ai-badge"><span class="sm:hidden">AI</span><span class="hidden sm:inline">AI Search</span></span>
                 <input
                     type="text"
                     wire:model="searchQuery"
@@ -52,7 +52,7 @@
                     :disabled="$wire.isSearching"
                 >
                 <button type="submit" class="search-btn" wire:loading.attr="disabled">
-                    <div wire:loading.remove wire:target="searchCategory">Find My Gear</div>
+                    <div wire:loading.remove wire:target="searchCategory"><span class="sm:hidden">Search</span><span class="hidden sm:inline">Find My Gear</span></div>
                     <div wire:loading wire:target="searchCategory" class="flex items-center gap-2">
                         <svg class="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
                             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -79,7 +79,7 @@
             </div>
         </form>
 
-        <div class="search-hints">
+        <div class="search-hints hidden sm:flex">
             <button type="button" class="hint-chip" wire:click="setQueryAndSearch('quiet mechanical keyboard')"><b>→</b> quiet mechanical keyboard</button>
             <button type="button" class="hint-chip" wire:click="setQueryAndSearch('4k webcam for streaming')"><b>→</b> 4k webcam for streaming</button>
             <button type="button" class="hint-chip" wire:click="setQueryAndSearch('wireless headset for gaming')"><b>→</b> wireless headset for gaming</button>
@@ -93,8 +93,10 @@
             <div class="step-card">
                 <div class="step-icon-strip">💬</div>
                 <div class="step-body">
-                    <div class="step-num">1</div>
-                    <h3>Natural Input</h3>
+                    <div class="step-header">
+                        <div class="step-num">1</div>
+                        <h3>Natural Input</h3>
+                    </div>
                     <p>Describe your needs in plain English. Our AI analyzes your use case, budget, and style to
                         identify the perfect category.</p>
                 </div>
@@ -102,8 +104,10 @@
             <div class="step-card">
                 <div class="step-icon-strip">🎛️</div>
                 <div class="step-body">
-                    <div class="step-num">2</div>
-                    <h3>Priority Sliders</h3>
+                    <div class="step-header">
+                        <div class="step-num">2</div>
+                        <h3>Priority Sliders</h3>
+                    </div>
                     <p>Every user is different. Drag priorities on our custom sliders to tell us what matters: price,
                         quality, or specific features.</p>
                 </div>
@@ -111,8 +115,10 @@
             <div class="step-card">
                 <div class="step-icon-strip">🎯</div>
                 <div class="step-body">
-                    <div class="step-num">3</div>
-                    <h3>Dynamic Ranking</h3>
+                    <div class="step-header">
+                        <div class="step-num">3</div>
+                        <h3>Dynamic Ranking</h3>
+                    </div>
                     <p>Watch the list update instantly. We recalculate every product's match score based on YOUR
                         specific needs.</p>
                 </div>

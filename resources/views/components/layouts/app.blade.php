@@ -40,7 +40,7 @@
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @livewireStyles
 </head>
-<body class="antialiased bg-white text-deep-blue">
+<body class="antialiased bg-white text-deep-blue" style="overflow-x:hidden; max-width:100vw;">
     <!-- Navigation -->
     <livewire:navigation />
 

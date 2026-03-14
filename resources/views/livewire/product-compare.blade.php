@@ -45,7 +45,7 @@
                              }
                          }"
                          x-init="if (prompts.length && !$el._tw) { $el._tw = true; _tick(); }">
-                        <span class="search-ai-badge">AI Search</span>
+                        <span class="search-ai-badge"><span class="sm:hidden">AI</span><span class="hidden sm:inline">AI Search</span></span>
                         <input
                             type="text"
                             wire:model="searchQuery"
@@ -54,7 +54,7 @@
                             :disabled="$wire.isSearching"
                         >
                         <button type="submit" class="search-btn" wire:loading.attr="disabled">
-                            <div wire:loading.remove wire:target="searchCategory">Find My Gear</div>
+                            <div wire:loading.remove wire:target="searchCategory"><span class="sm:hidden">Search</span><span class="hidden sm:inline">Find My Gear</span></div>
                             <div wire:loading wire:target="searchCategory" class="flex items-center gap-2">
                                 <svg class="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
                                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -116,7 +116,7 @@
                 <livewire:comparison-header :features="$features" :weights="$weights" :priceWeight="$priceWeight" :amazonRatingWeight="$amazonRatingWeight"
                         :categoryId="$category->id" :autoOpen="!$selectedProductSlug" />
 
-                <div class="bg-white border-b border-gray-200">
+                <div class="bg-white border-b border-gray-200 overflow-hidden">
                         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
                                 <div class="cat-header-grid">
                                         <div class="cat-header-left">
@@ -189,18 +189,19 @@
                                                                 <div
                                                                         class="bg-gradient-to-br from-slate-50 via-white to-indigo-50/30 rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                                                                         <div
-                                                                                class="flex items-center gap-2 px-4 pt-3 pb-1.5 border-b border-gray-100/80 bg-white/60">
+                                                                                class="flex items-center gap-1 px-2 sm:px-4 pt-2 sm:pt-3 pb-1.5 border-b border-gray-100/80 bg-white/60">
                                                                                 <div
-                                                                                        class="flex space-x-1 overflow-x-auto scrollbar-hide w-full pb-1">
+                                                                                        class="flex space-x-0.5 overflow-x-auto scrollbar-hide w-full pb-1">
                                                                                         @foreach ($sections as $key => $data)
                                                                                                 @if (!empty($data['content']))
                                                                                                         <button @click="activeTab = '{{ $key }}'; expanded = true"
-                                                                                                                class="whitespace-nowrap flex items-center gap-1.5 px-3 py-1.5 text-[13px] sm:text-[14px] transition-all focus:outline-none shrink-0 rounded-lg hover:bg-gray-100/60 cursor-pointer"
+                                                                                                                class="whitespace-nowrap flex items-center gap-1 px-2 py-1 sm:gap-1.5 sm:px-3 sm:py-1.5 text-[12px] sm:text-[14px] transition-all focus:outline-none shrink-0 rounded-lg hover:bg-gray-100/60 cursor-pointer"
                                                                                                                 :class="activeTab === '{{ $key }}'
                                                                                                                     ?
                                                                                                                     'text-gray-900 font-bold bg-gray-50/50' :
                                                                                                                     'text-gray-500 font-semibold hover:text-gray-800'">
                                                                                                                 <span
+                                                                                                                        class="hidden sm:inline"
                                                                                                                         :class="activeTab === '{{ $key }}' ? '{{ $data['activeColor'] }}' : 'text-gray-400'">
                                                                                                                         {!! $data['icon'] !!}
                                                                                                                 </span>
@@ -523,7 +524,7 @@
         </div>
 
         @if ($this->selectedProduct)
-                <div class="fixed inset-0 z-50 flex items-center justify-center p-4 pt-20 sm:p-6 sm:pt-20"
+                <div class="fixed inset-0 z-70 flex items-center justify-center sm:p-6"
                         x-data="{ show: false }" x-init="setTimeout(() => show = true, 50)" x-transition.opacity
                         @keyup.escape.window="window.history.pushState({}, '', '/compare/{{ $category->slug }}'); $wire.closeProduct()"
                         style="display: none;" x-show="show">
@@ -532,7 +533,7 @@
                                 @click="window.history.pushState({}, '', '/compare/{{ $category->slug }}'); $wire.closeProduct()">
                         </div>
 
-                        <div class="relative w-full max-w-5xl bg-white rounded-2xl shadow-2xl overflow-y-auto md:overflow-hidden flex flex-col md:flex-row max-h-[85vh] z-10"
+                        <div class="relative w-full max-w-5xl bg-white sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row h-dvh sm:h-auto sm:max-h-[85vh] z-10"
                                 x-show="show" x-transition:enter="transition ease-out duration-300 transform"
                                 x-transition:enter-start="opacity-0 translate-y-8 sm:translate-y-0 sm:scale-95"
                                 x-transition:enter-end="opacity-100 translate-y-0 sm:scale-100"
@@ -540,15 +541,31 @@
                                 x-transition:leave-start="opacity-100 translate-y-0 sm:scale-100"
                                 x-transition:leave-end="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95">
 
+                                {{-- Desktop close button (absolute, hidden on mobile) --}}
                                 <button type="button"
                                         @click="window.history.pushState({}, '', '/compare/{{ $category->slug }}'); $wire.closeProduct()"
-                                        class="absolute top-4 right-4 z-50 p-2.5 bg-white/80 hover:bg-white backdrop-blur-md rounded-full text-gray-500 hover:text-gray-900 transition-all focus:outline-none focus:ring-2 focus:ring-gray-300 shadow-sm border border-gray-100">
+                                        class="hidden md:flex absolute top-4 right-4 z-50 p-2.5 bg-white/80 hover:bg-white backdrop-blur-md rounded-full text-gray-500 hover:text-gray-900 transition-all focus:outline-none focus:ring-2 focus:ring-gray-300 shadow-sm border border-gray-100">
                                         <svg class="w-5 h-5" fill="none" stroke="currentColor"
                                                 viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round"
                                                         stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path>
                                         </svg>
                                 </button>
+
+                                {{-- Mobile sticky header with close button --}}
+                                <div class="md:hidden flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-white shrink-0 z-20">
+                                        <span class="font-semibold text-sm text-gray-800 truncate pr-2">{{ $this->selectedProduct->name }}</span>
+                                        <button type="button"
+                                                @click="window.history.pushState({}, '', '/compare/{{ $category->slug }}'); $wire.closeProduct()"
+                                                class="p-2 hover:bg-gray-100 rounded-full text-gray-500 hover:text-gray-900 transition-all cursor-pointer shrink-0">
+                                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path>
+                                                </svg>
+                                        </button>
+                                </div>
+
+                                {{-- Inner scrollable area: both columns scroll together on mobile --}}
+                                <div class="flex-1 overflow-y-auto flex flex-col md:flex-row min-h-0">
 
                                 <div
                                         class="w-full md:w-[40%] bg-gray-50 flex flex-col items-center justify-between p-4 md:p-8 relative h-auto md:sticky md:top-0 border-r border-gray-100 shrink-0">
@@ -569,9 +586,10 @@
                                                 @endif
                                         </div>
 
+                                        {{-- Desktop only: price + CTA in left column --}}
                                         @if ($this->selectedProduct->affiliate_url)
                                                 <div
-                                                        class="w-full flex flex-col items-center gap-3 md:gap-4 bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-gray-100">
+                                                        class="hidden md:flex w-full flex-col items-center gap-3 md:gap-4 bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-gray-100">
                                                         <div class="flex flex-col items-center text-center">
                                                                 @if ($this->selectedProduct->estimated_price)
                                                                         <span class="text-[10px] md:text-xs text-gray-400 font-bold uppercase tracking-wider mb-0.5 md:mb-1">Est. Price</span>
@@ -782,9 +800,47 @@
                                                         @endforeach
                                                 </div>
                                         </div>
+                                </div>{{-- /right column --}}
+
+                                </div>{{-- /inner scrollable --}}
+
+                                {{-- Mobile sticky footer: price + CTA --}}
+                                @if($this->selectedProduct->affiliate_url)
+                                <div class="md:hidden shrink-0 bg-white border-t border-gray-100 px-4 py-3">
+                                        <div class="flex items-center gap-3">
+                                                @if($this->selectedProduct->estimated_price)
+                                                        <div class="shrink-0">
+                                                                <span class="text-[9px] text-gray-400 font-bold uppercase tracking-wider block">Est. Price</span>
+                                                                <div class="flex items-baseline">
+                                                                        <span class="text-xs font-semibold text-gray-400 mr-0.5">$</span>
+                                                                        <span class="text-xl font-extrabold text-gray-900">{{ $this->selectedProduct->estimated_price }}</span>
+                                                                </div>
+                                                        </div>
+                                                @elseif($this->selectedProduct->price_tier)
+                                                        <div class="shrink-0">
+                                                                <span class="text-[9px] text-gray-400 font-semibold uppercase tracking-wider block">Tier</span>
+                                                                <div class="text-base font-bold text-gray-900">
+                                                                        @if($this->selectedProduct->price_tier == 1)<span class="text-emerald-500">$</span>Budget
+                                                                        @elseif($this->selectedProduct->price_tier == 2)<span class="text-emerald-500">$$</span>Mid-Range
+                                                                        @else<span class="text-emerald-500">$$$</span>Premium
+                                                                        @endif
+                                                                </div>
+                                                        </div>
+                                                @endif
+                                                <a href="{{ $this->selectedProduct->affiliate_url }}"
+                                                        target="_blank" rel="noopener noreferrer"
+                                                        class="flex-1 bg-[#FF9900] hover:bg-[#E68A00] text-white rounded-xl py-3 px-4 text-sm font-bold flex items-center justify-center gap-2">
+                                                        <span>Check Current Price</span>
+                                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M14 5l7 7m0 0l-7 7m7-7H3"></path>
+                                                        </svg>
+                                                </a>
+                                        </div>
                                 </div>
-                        </div>
-                </div>
+                                @endif
+
+                        </div>{{-- /card --}}
+                </div>{{-- /outer container --}}
         @endif
 
         <script>

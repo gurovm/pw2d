@@ -191,31 +191,47 @@ function extractSerpProducts() {
 
             // ── Title (fallback chain) ────────────────────────
             let title = null;
-            // Prefer the hidden full-text span Amazon includes for screen readers
-            // (avoids the duplicated text that results from reading h2.innerText
-            //  when both .a-truncate-full and .a-truncate-cut are present)
+            // 1. Hidden full-text span Amazon includes for screen readers — most reliable
             const fullSpan = el.querySelector('h2 .a-truncate-full');
-            if (fullSpan) {
-                title = fullSpan.textContent.trim();
-            }
+            if (fullSpan) title = fullSpan.textContent.trim();
+
+            // 2. h2 innerText (stripped of duplicate hidden spans)
             if (!title) {
                 const h2 = el.querySelector('h2');
                 if (h2) {
-                    // Strip any hidden child spans to avoid duplication
                     const clone = h2.cloneNode(true);
                     clone.querySelectorAll('.a-truncate-full').forEach(s => s.remove());
                     title = clone.innerText.trim();
                 }
             }
+
+            // 3. Newer Amazon "recipe" card title attribute
             if (!title) {
-                const trunc = el.querySelector('.a-size-base-plus, .a-size-medium');
-                if (trunc) title = trunc.innerText.trim();
+                const recipe = el.querySelector('[data-cy="title-recipe-title"]');
+                if (recipe) title = recipe.textContent.trim();
             }
+
+            // 4. Any span inside an anchor pointing to /dp/ (sponsored/carousel cards)
+            if (!title) {
+                const dpLink = el.querySelector('a[href*="/dp/"] span, a[href*="/gp/product/"] span');
+                if (dpLink) title = dpLink.textContent.trim();
+            }
+
+            // 5. Carousel-style truncated title spans
+            if (!title) {
+                const trunc = el.querySelector(
+                    '.p13n-sc-truncate, .a-size-base-plus, .a-size-medium, [class*="truncate"]'
+                );
+                if (trunc) title = trunc.textContent.trim();
+            }
+
+            // 6. Last resort: image alt text
             if (!title) {
                 const img = el.querySelector('img[alt]');
                 if (img?.alt) title = img.alt.trim();
             }
-            if (!title) return; // no usable title — skip
+
+            if (!title || title.length < 3) return; // no usable title — skip
 
             // ── Price ─────────────────────────────────────────
             const price = extractPrice(el);

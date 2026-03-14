@@ -61,7 +61,7 @@
         x-show="showPreferences"
         x-transition.opacity.duration.300ms
         @click="showPreferences = false"
-        class="fixed inset-0 z-50 bg-gray-900/40 backdrop-blur-[2px]"
+        class="fixed top-20 inset-x-0 bottom-0 z-50 bg-gray-900/40 backdrop-blur-[2px]"
         style="display: none;"
     ></div>
 
@@ -74,14 +74,14 @@
         x-transition:leave="transition ease-in duration-300"
         x-transition:leave-start="translate-x-0"
         x-transition:leave-end="translate-x-full"
-        class="fixed top-0 right-0 bottom-0 z-50 w-[400px] max-w-[90vw] bg-white border-l border-gray-200 shadow-[-10px_0_30px_rgba(0,0,0,0.05)] flex flex-col"
+        class="fixed top-20 right-0 bottom-0 z-50 w-[400px] max-w-[82vw] bg-white border-l border-gray-200 shadow-[-10px_0_30px_rgba(0,0,0,0.05)] flex flex-col"
         style="display: none;"
     >
         <!-- Panel Header -->
-        <div class="flex items-center justify-between px-6 py-5 border-b border-gray-100 shrink-0">
+        <div class="flex items-center justify-between px-4 py-3 sm:px-6 sm:py-5 border-b border-gray-100 shrink-0">
             <div>
-                <h3 class="text-xl font-black text-gray-900">Customize Your Priorities</h3>
-                <p class="text-xs text-gray-500 mt-0.5">Presets, AI, and sliders all work together in real time</p>
+                <h3 class="text-base sm:text-xl font-black text-gray-900 leading-tight">Customize Your Priorities</h3>
+                <p class="text-xs text-gray-500 mt-0.5">Presets, AI, and sliders all work together</p>
             </div>
             <button @click="showPreferences = false" class="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-400 hover:text-gray-600 cursor-pointer">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
@@ -89,13 +89,13 @@
         </div>
 
         <!-- Panel Body — Single unified panel, no tabs -->
-        <div class="flex-1 overflow-y-auto px-6 py-5 space-y-7">
+        <div class="flex-1 overflow-y-auto px-4 py-3 space-y-4 sm:px-6 sm:py-5 sm:space-y-7">
 
             <!-- ─────────────────────────────────────────────── -->
             <!-- SECTION 1: AI CONCIERGE                        -->
             <!-- ─────────────────────────────────────────────── -->
             <div>
-                <p class="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">✦ Tell us what you need</p>
+                <p class="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2 sm:mb-3">✦ Tell us what you need</p>
 
                 <!-- AI Response -->
                 @if($aiMessage && !$isThinking)
@@ -165,7 +165,7 @@
             <!-- SECTION 2: QUICK PRESETS (Pill chips)          -->
             <!-- ─────────────────────────────────────────────── -->
             <div>
-                <p class="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">⚡ Quick Presets</p>
+                <p class="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2 sm:mb-3">⚡ Quick Presets</p>
                 <div class="flex flex-wrap gap-2">
 
                     @forelse($presets as $preset)
@@ -236,7 +236,7 @@
                      x-on:alpine-sliders-reset.window="isDirty = false">
 
                     <!-- Section header: Reset button visibility is driven by Alpine isDirty, not Blade -->
-                    <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center justify-between mb-2 sm:mb-4">
                         <p class="text-[10px] font-bold uppercase tracking-widest text-gray-400">🎚 Your Priorities</p>
                         <button
                             x-show="isDirty"
@@ -250,11 +250,11 @@
                         </button>
                     </div>
 
-                    <div class="space-y-5">
+                    <div class="space-y-3 sm:space-y-5">
 
                     <!-- Price Slider -->
                     <div>
-                        <div class="flex justify-between items-center mb-2">
+                        <div class="flex justify-between items-center mb-1 sm:mb-2">
                             <span class="text-sm font-semibold text-gray-700">Price</span>
                             <span class="text-xs font-bold px-2 py-0.5 rounded-full transition-all duration-300"
                                   :style="`background-color: hsl(${price * 1.2}, 85%, 93%); color: hsl(${price * 1.2}, 85%, 30%)`"
@@ -269,7 +269,7 @@
 
                     <!-- Amazon Rating Slider -->
                     <div>
-                        <div class="flex justify-between items-center mb-2">
+                        <div class="flex justify-between items-center mb-1 sm:mb-2">
                             <span class="text-sm font-semibold text-gray-700">Amazon Rating</span>
                             <span class="text-xs font-bold px-2 py-0.5 rounded-full transition-all duration-300"
                                   :style="`background-color: hsl(${rating * 1.2}, 85%, 93%); color: hsl(${rating * 1.2}, 85%, 30%)`"
@@ -287,7 +287,7 @@
                     <!-- Category Feature Sliders -->
                     @foreach($features as $feature)
                         <div>
-                            <div class="flex justify-between items-center mb-2">
+                            <div class="flex justify-between items-center mb-1 sm:mb-2">
                                 <span class="text-sm font-semibold text-gray-700">{{ $feature->label ?? $feature->name }}</span>
                                 <span class="text-xs font-bold px-2 py-0.5 rounded-full transition-all duration-300"
                                       :style="`background-color: hsl(${w[{{ $feature->id }}] * 1.2}, 85%, 93%); color: hsl(${w[{{ $feature->id }}] * 1.2}, 85%, 30%)`"
@@ -309,7 +309,7 @@
         </div>
 
         <!-- Panel Footer -->
-        <div class="px-6 py-4 border-t border-gray-100 bg-gray-50/50 shrink-0">
+        <div class="px-4 py-3 sm:px-6 sm:py-4 border-t border-gray-100 bg-gray-50/50 shrink-0">
             <button
                 @click="showPreferences = false"
                 class="w-full py-3 bg-gradient-to-r from-indigo-600 to-blue-600 text-white font-bold rounded-xl hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 text-sm flex items-center justify-center gap-2 cursor-pointer"
