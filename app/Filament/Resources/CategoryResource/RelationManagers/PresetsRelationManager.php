@@ -49,6 +49,8 @@ class PresetsRelationManager extends RelationManager
     {
         return $table
             ->recordTitleAttribute('name')
+            ->reorderable('sort_order')
+            ->defaultSort('sort_order')
             ->columns([
                 Tables\Columns\TextColumn::make('name'),
                 Tables\Columns\TextColumn::make('features_count')

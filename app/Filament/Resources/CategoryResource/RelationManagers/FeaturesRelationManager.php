@@ -39,15 +39,17 @@ class FeaturesRelationManager extends RelationManager
     {
         return $table
             ->recordTitleAttribute('name')
+            ->reorderable('sort_order')
+            ->defaultSort('sort_order')
             ->columns([
                 Tables\Columns\TextColumn::make('name')
                     ->searchable()
                     ->sortable(),
-                
+
                 Tables\Columns\TextColumn::make('unit')
                     ->searchable()
                     ->placeholder('—'),
-                
+
                 Tables\Columns\IconColumn::make('is_higher_better')
                     ->label('Higher is Better')
                     ->boolean()

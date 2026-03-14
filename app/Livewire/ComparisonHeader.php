@@ -54,7 +54,10 @@ class ComparisonHeader extends Component
         $this->categoryId = $categoryId;
         $this->autoOpen = $autoOpen;
         
-        $this->presets = Preset::where('category_id', $this->categoryId)->get();
+        $this->presets = Preset::where('category_id', $this->categoryId)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get();
 
         $category = Category::with('children')->find($this->categoryId);
 

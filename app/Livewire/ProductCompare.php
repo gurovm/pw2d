@@ -303,6 +303,7 @@ class ProductCompare extends Component
         }
 
         $this->features = Feature::where('category_id', $this->category->id)
+            ->orderBy('sort_order')
             ->orderBy('name')
             ->get();
 

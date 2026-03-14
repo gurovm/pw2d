@@ -19,6 +19,7 @@ class Feature extends Model
         'is_higher_better',
         'min_value',
         'max_value',
+        'sort_order',
     ];
 
     protected $casts = [
