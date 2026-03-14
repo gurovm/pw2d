@@ -61,7 +61,7 @@
         x-show="showPreferences"
         x-transition.opacity.duration.300ms
         @click="showPreferences = false"
-        class="fixed top-20 inset-x-0 bottom-0 z-50 bg-gray-900/40 backdrop-blur-[2px]"
+        class="fixed inset-0 z-50 bg-gray-900/40 backdrop-blur-[2px]"
         style="display: none;"
     ></div>
 
@@ -74,7 +74,7 @@
         x-transition:leave="transition ease-in duration-300"
         x-transition:leave-start="translate-x-0"
         x-transition:leave-end="translate-x-full"
-        class="fixed top-20 right-0 bottom-0 z-50 w-[400px] max-w-[82vw] bg-white border-l border-gray-200 shadow-[-10px_0_30px_rgba(0,0,0,0.05)] flex flex-col"
+        class="fixed top-0 sm:top-20 right-0 bottom-0 z-50 w-100 max-w-[82vw] bg-white border-l border-gray-200 shadow-[-10px_0_30px_rgba(0,0,0,0.05)] flex flex-col"
         style="display: none;"
     >
         <!-- Panel Header -->
