@@ -29,10 +29,10 @@ class EditCategory extends EditRecord
                 $this->generatePresetsAction(),
                 $this->generateAllAction(),
             ])
-            ->label('✨ AI Generator')
-            ->icon('heroicon-o-sparkles')
-            ->color('info')
-            ->button(),
+                ->label('✨ AI Generator')
+                ->icon('heroicon-o-sparkles')
+                ->color('info')
+                ->button(),
 
             Actions\DeleteAction::make(),
         ];
@@ -160,7 +160,6 @@ class EditCategory extends EditRecord
 
                     // Redirect to refresh the FileUpload component
                     $livewire->redirect($livewire->getResource()::getUrl('edit', ['record' => $record]));
-
                 } catch (\Exception $e) {
                     Notification::make()
                         ->title('Image Generation Failed')
@@ -205,7 +204,6 @@ class EditCategory extends EditRecord
                     }
 
                     Notification::make()->title('Buying Guide Generated')->success()->send();
-
                 } catch (\Exception $e) {
                     Notification::make()->title('Buying Guide Failed')->body($e->getMessage())->danger()->send();
                 }
@@ -257,7 +255,6 @@ class EditCategory extends EditRecord
                     }
 
                     Notification::make()->title('Features Generated (' . count($decoded['features']) . ')')->success()->send();
-
                 } catch (\Exception $e) {
                     Notification::make()->title('Features Failed')->body($e->getMessage())->danger()->send();
                 }
@@ -272,8 +269,7 @@ class EditCategory extends EditRecord
             ->label('👤 Generate Presets & Prompts')
             ->form(function ($record) {
                 $existingFeatures = $record->features()->pluck('name')->implode(', ');
-                $defaultPrompt = "You are a product database expert. The category is '{$record->name}'.\n\nThe existing features (sliders) for this category are: {$existingFeatures}\n\nGenerate 4 recommended user profiles (presets) with weights for these features, and 4 short sample search prompts.\n\nCRITICAL RULES FOR PRESET NAMES:\n- Names MUST be 1-2 words maximum. Examples: 'Podcaster', 'Gamer', 'Vocalist', 'Casual', 'Pro'.\n- NEVER use phrases like 'The Starting Podcaster' or 'For Home Recording'. One or two words only.\n\nCRITICAL RULES FOR SAMPLE PROMPTS:\n- Generate exactly 4 short, realistic user search queries (under 6 words each).\n- Examples: 'mic for noisy room', 'budget streaming mic', 'podcast mic under \$100'.\n- They should reflect real things users type, not marketing copy.\n\nCRITICAL RULE FOR FEATURE WEIGHTS (0-100): You MUST force trade-offs. Do NOT assign high weights to everything.\nFor each preset, you must strictly follow this distribution:\n- 1 or 2 Primary Features: 85-100 (The absolute dealbreakers for this persona).\n- 1 or 2 Secondary Features: 60-80 (Nice to have).\n- ALL REMAINING Features: 10-50 (This persona does not care about these relative to the primary ones).\nIf you give one feature a 95, you MUST give another feature a 30. Create realistic contrasts.\n\nReturn ONLY a valid JSON object:\n{\"presets\": [{\"name\": \"Podcaster\", \"weights\": {\"Feature Name\": 90, \"Another Feature\": 20}}], \"sample_prompts\": [\"query one\", \"query two\", \"query three\", \"query four\"]}\nNote: preset weights must be integers 0-100.";
-
+                $defaultPrompt = "You are a product database expert for a consumer e-commerce comparison website. The category is '{$record->name}'.\n\nGenerate all of the following in ONE response:\n1. 5 to 6 essential comparison features\n2. 4 user profile presets with weighted feature importance\n3. A buying guide object\n4. 4 short sample search prompts\n\nCRITICAL RULES FOR FEATURES (generate exactly 5 to 6, no more):\n1. USER-CENTRIC SCORING: Think like Amazon's 'Customer reviews by feature'. All features must make sense when scored objectively on a 0-100 slider.\n2. STRICTLY AVOID BOOLEANS & SPECS: No Yes/No features, and no raw engineering specs (e.g., don't use \"Battery mAh\", use \"Battery Endurance\").\n3. NO GENERIC FILLERS: STRICTLY AVOID vague, lazy terms like \"Versatility\", \"Feature Set\", \"Extras\", \"Style\", \"Design\", or \"Ease of Use\". Features must be highly specific to the actual category.\n4. NO OVERLAPPING CONCEPTS: Each feature must measure a completely distinct aspect. Do not split related concepts (e.g., combine \"Typing Satisfaction\" and \"Quietness\" into \"Typing Acoustics & Feel\").\n5. PROFESSIONAL NAMING: Use industry-standard, polished names (2-4 words max). For example, prefer \"Input Latency & Speed\" over \"Gaming Responsiveness\", or \"Spatial Audio Accuracy\" over \"Game Sound\".\n6. ORDER MATTERS: Sort the JSON array by absolute importance to the buyer. The most critical deal-breaker features must be first.\n\nCRITICAL RULES FOR PRESET NAMES:\n- Names MUST be 1-2 words maximum. Examples: 'Podcaster', 'Gamer', 'Vocalist', 'Casual', 'Pro'.\n- NEVER use phrases like 'The Starting Podcaster' or 'For Home Recording'. One or two words only.\n\nCRITICAL RULES FOR SAMPLE PROMPTS:\n- Generate exactly 4 short, realistic user search queries (under 6 words each).\n- Examples: 'mic for noisy room', 'budget streaming mic', 'podcast mic under \$100'.\n- They reflect real things users type, not marketing copy.\n\nCRITICAL RULES FOR BUYING GUIDE:\nThe 'buying_guide' property MUST be an object with these exact 3 keys, containing rich HTML strings (use <p>, <ul>, <li>, <strong>; DO NOT use header tags like <h3>):\n- 'how_to_decide': How to prioritize features, referencing the sliders.\n- 'the_pitfalls': 3 common marketing traps to avoid.\n- 'key_jargon': 2-3 technical terms explained simply.\n\nCRITICAL RULE FOR FEATURE WEIGHTS (0-100): You MUST force trade-offs. Do NOT assign high weights to everything.\nFor each preset, you must strictly follow this distribution:\n- 1 or 2 Primary Features: 85-100 (The absolute dealbreakers for this persona).\n- 1 or 2 Secondary Features: 60-80 (Nice to have).\n- ALL REMAINING Features: 10-50 (This persona does not care about these relative to the primary ones).\nIf you give one feature a 95, you MUST give another feature a 30. Create realistic contrasts.\n\nReturn ONLY a valid JSON object:\n{\"buying_guide\": {\"how_to_decide\": \"...\", \"the_pitfalls\": \"...\", \"key_jargon\": \"...\"}, \"features\": [{\"name\": \"...\", \"unit\": \"\", \"is_higher_better\": true}], \"presets\": [{\"name\": \"Podcaster\", \"weights\": {\"Feature\": 90}}], \"sample_prompts\": [\"query one\", \"query two\", \"query three\", \"query four\"]}\nPreset weights: integers 0-100.";
                 return [
                     Textarea::make('ai_prompt')
                         ->label('AI Prompt')
@@ -337,7 +333,6 @@ class EditCategory extends EditRecord
                         ->title("Presets ({$presetCount}) & Prompts ({$promptsCount}) Generated")
                         ->success()
                         ->send();
-
                 } catch (\Exception $e) {
                     Notification::make()->title('Presets Failed')->body($e->getMessage())->danger()->send();
                 }
@@ -441,7 +436,6 @@ class EditCategory extends EditRecord
 
                     // Redirect to refresh the form (image + buying_guide fields)
                     $livewire->redirect($livewire->getResource()::getUrl('edit', ['record' => $record]));
-
                 } catch (\Exception $e) {
                     Notification::make()->title('Generation Failed')->body($e->getMessage())->danger()->send();
                 }
