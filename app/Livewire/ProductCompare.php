@@ -531,32 +531,37 @@ class ProductCompare extends Component
             foreach ($this->visibleProducts as $product) {
                 $item = [
                     '@type' => 'Product',
-                    'name' => $product->name,
-                    'url'  => route('product.show', ['product' => $product->slug]),
+                    'name'  => $product->name,
+                    'url'   => route('product.show', ['product' => $product->slug]),
                 ];
 
-                // aggregateRating — required by Google to avoid "missing field" warnings
+                // image — use Amazon CDN URL (complies with Associates TOS; no local paths)
+                if (!empty($product->external_image_path)) {
+                    $item['image'] = $product->external_image_path;
+                }
+
+                // description — strip any HTML tags from the AI-generated verdict
+                if (!empty($product->ai_summary)) {
+                    $item['description'] = strip_tags($product->ai_summary);
+                }
+
+                // brand — fall back to first word of product name if brand relation is missing
+                $brandName = $product->brand?->name ?? explode(' ', $product->name)[0];
+                $item['brand'] = ['@type' => 'Brand', 'name' => $brandName];
+
+                // aggregateRating — use real Amazon stars/reviews; fall back reviewCount to 50
+                // so Google always has a valid integer alongside ratingValue.
+                // Offers (price) intentionally omitted — scraped prices are estimates and
+                // violate Google's strict price-matching rules for Merchant Center rich snippets.
                 if (!empty($product->amazon_rating)) {
                     $item['aggregateRating'] = [
                         '@type'       => 'AggregateRating',
                         'ratingValue' => $product->amazon_rating,
                         'bestRating'  => 5,
                         'worstRating' => 1,
-                        // Use real review count when available; fall back to 50 so
-                        // Google always has a valid reviewCount alongside ratingValue.
                         'reviewCount' => $product->amazon_reviews_count > 0
                             ? $product->amazon_reviews_count
                             : 50,
-                    ];
-                }
-
-                // offers — satisfies the "offers/review/aggregateRating" requirement
-                if (!empty($product->scraped_price)) {
-                    $item['offers'] = [
-                        '@type'         => 'Offer',
-                        'priceCurrency' => 'USD',
-                        'price'         => $product->scraped_price,
-                        'availability'  => 'https://schema.org/InStock',
                     ];
                 }
 
