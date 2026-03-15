@@ -4,13 +4,16 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\ProductResource\Pages;
 use App\Filament\Resources\ProductResource\RelationManagers;
+use App\Jobs\RescanProductFeatures;
 use App\Models\Product;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 
 class ProductResource extends Resource
@@ -183,11 +186,42 @@ class ProductResource extends Resource
                     ->falseLabel('Visible only'),
             ])
             ->actions([
+                Tables\Actions\Action::make('aiRescan')
+                    ->label('AI Rescan')
+                    ->icon('heroicon-o-arrow-path')
+                    ->color('warning')
+                    ->requiresConfirmation()
+                    ->modalHeading('Rescan this product?')
+                    ->modalDescription('Re-scores all feature grades against the current category features and recalculates the price tier. Name, brand, summary, and image are NOT changed.')
+                    ->action(function (Product $record) {
+                        RescanProductFeatures::dispatch($record->id, $record->category_id);
+                        Notification::make()
+                            ->title('Rescan queued for "' . $record->name . '"')
+                            ->success()
+                            ->send();
+                    }),
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make(),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\BulkAction::make('aiRescanBulk')
+                        ->label('AI Rescan Selected')
+                        ->icon('heroicon-o-arrow-path')
+                        ->color('warning')
+                        ->requiresConfirmation()
+                        ->modalHeading('Rescan selected products?')
+                        ->modalDescription('Re-scores feature grades and recalculates price tiers for all selected products. Name, brand, summary, and images are NOT changed.')
+                        ->action(function (Collection $records) {
+                            foreach ($records as $record) {
+                                RescanProductFeatures::dispatch($record->id, $record->category_id);
+                            }
+                            Notification::make()
+                                ->title($records->count() . ' products queued for AI rescan')
+                                ->success()
+                                ->send();
+                        })
+                        ->deselectRecordsAfterCompletion(),
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ]);

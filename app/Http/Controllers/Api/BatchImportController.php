@@ -79,7 +79,7 @@ class BatchImportController extends Controller
                         'amazon_rating'        => $p['rating'] ?? null,
                         'amazon_reviews_count' => $p['reviews_count'] ?? 0,
                         'scraped_price'        => $p['price'] ?? null,
-                        'price_tier'           => $this->guessPriceTier($p['price'] ?? null),
+                        'price_tier'           => $category->priceTierFor($p['price'] ?? null),
                         'status'               => 'pending_ai',
                         'is_ignored'           => false,
                     ]);
@@ -118,17 +118,4 @@ class BatchImportController extends Controller
         ]);
     }
 
-    /**
-     * Infer a price tier (1=Budget, 2=Mid, 3=Premium) from a raw price.
-     * Returns null if price is unavailable so the field stays unset.
-     */
-    private function guessPriceTier(?float $price): ?int
-    {
-        if ($price === null) return null;
-        return match (true) {
-            $price < 50  => 1,
-            $price < 150 => 2,
-            default      => 3,
-        };
-    }
 }

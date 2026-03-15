@@ -17,6 +17,8 @@ class Category extends Model
         'name',
         'slug',
         'description',
+        'budget_max',
+        'midrange_max',
         'buying_guide',
         'image',
         'sample_prompts',
@@ -70,6 +72,25 @@ class Category extends Model
     public function presets(): HasMany
     {
         return $this->hasMany(Preset::class);
+    }
+
+    /**
+     * Infer the price tier (1=Budget, 2=Mid, 3=Premium) for a given price using
+     * this category's thresholds. Falls back to global defaults ($50/$150) if
+     * budget_max / midrange_max have not been set by the AI generator yet.
+     */
+    public function priceTierFor(?float $price): ?int
+    {
+        if ($price === null) return null;
+
+        $budgetMax   = $this->budget_max   ?? 50;
+        $midrangeMax = $this->midrange_max ?? 150;
+
+        return match (true) {
+            $price <= $budgetMax   => 1,
+            $price <= $midrangeMax => 2,
+            default                => 3,
+        };
     }
 
     /**

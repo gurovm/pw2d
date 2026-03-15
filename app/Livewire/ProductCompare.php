@@ -48,7 +48,8 @@ class ProductCompare extends Component
 
     // Filters
     public $filterBrand = '';
-    public $filterPrice = '';
+    public int $maxPrice = 0;
+    public int $selectedPrice = 0;
 
     // Pinterest Modal State
     public $selectedProductSlug = null;
@@ -95,7 +96,7 @@ class ProductCompare extends Component
         // Cache raw product data as plain arrays (not Eloquent models).
         // Eloquent unserialize for 2000+ objects takes ~90ms; plain arrays take ~5ms.
         // Scoring still runs fresh (weights change), but the DB round-trip is skipped.
-        $cacheKey = "products:cat{$this->category->id}:b{$this->filterBrand}:p{$this->filterPrice}";
+        $cacheKey = "products:cat{$this->category->id}:b{$this->filterBrand}:p{$this->selectedPrice}";
         $rawData = Cache::remember($cacheKey, 90, function () {
             return Product::where('category_id', $this->category->id)
                 ->where('is_ignored', false)
@@ -103,7 +104,7 @@ class ProductCompare extends Component
                 ->select(['id', 'brand_id', 'amazon_rating', 'price_tier', 'scraped_price'])
                 ->with(['featureValues:id,product_id,feature_id,raw_value'])
                 ->when($this->filterBrand, fn($q) => $q->where('brand_id', $this->filterBrand))
-                ->when($this->filterPrice, fn($q) => $q->where('price_tier', $this->filterPrice))
+                ->when($this->selectedPrice < $this->maxPrice, fn($q) => $q->where('scraped_price', '<=', $this->selectedPrice))
                 ->get()
                 ->map(fn($p) => [
                     'id'             => $p->id,
@@ -311,6 +312,12 @@ class ProductCompare extends Component
             $this->weights[$feature->id] = 50;
         }
 
+        $this->maxPrice = (int) (Product::where('category_id', $this->category->id)
+            ->where('is_ignored', false)
+            ->whereNull('status')
+            ->max('scraped_price') ?? 500);
+        $this->selectedPrice = $this->maxPrice;
+
         if (session()->has('ai_initial_prompt')) {
             $this->userInput = session('ai_initial_prompt');
             $this->showAiChat = true;
@@ -321,7 +328,7 @@ class ProductCompare extends Component
     public function clearFilters()
     {
         $this->filterBrand = '';
-        $this->filterPrice = '';
+        $this->selectedPrice = $this->maxPrice;
     }
 
     public function analyzeUserNeeds()

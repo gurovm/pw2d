@@ -370,25 +370,20 @@
                                         </div>
                                 </div>
 
-                                <div class="relative">
-                                        <select wire:model.live="filterPrice"
-                                                class="appearance-none bg-white border border-gray-200 text-gray-700 text-sm rounded-full px-4 py-2 pr-8 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer font-medium hover:bg-gray-50 transition-colors">
-                                                <option value="">Any Price</option>
-                                                <option value="1">Budget ($)</option>
-                                                <option value="2">Mid-Range ($$)</option>
-                                                <option value="3">Premium ($$$)</option>
-                                        </select>
-                                        <div
-                                                class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
-                                                <svg class="h-4 w-4" fill="none" stroke="currentColor"
-                                                        viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round"
-                                                                stroke-width="2" d="M19 9l-7 7-7-7"></path>
-                                                </svg>
-                                        </div>
+                                @if ($maxPrice > 0)
+                                <div class="flex items-center gap-2 bg-white border border-gray-200 rounded-full px-4 py-1.5 shadow-sm">
+                                        <span class="text-sm text-gray-500 whitespace-nowrap">Max price:</span>
+                                        <input type="range"
+                                               wire:model.live="selectedPrice"
+                                               min="0"
+                                               max="{{ $maxPrice }}"
+                                               step="5"
+                                               class="w-24 md:w-32 accent-blue-500 cursor-pointer">
+                                        <span class="text-sm font-semibold text-gray-700 w-16 text-right">${{ number_format($selectedPrice) }}</span>
                                 </div>
+                                @endif
 
-                                @if ($filterBrand || $filterPrice)
+                                @if ($filterBrand || $selectedPrice < $maxPrice)
                                         <button wire:click="clearFilters"
                                                 class="text-sm font-medium text-gray-500 hover:text-gray-900 px-2 flex items-center gap-1 transition-colors group">
                                                 <svg class="w-4 h-4" fill="none" stroke="currentColor"
@@ -463,29 +458,14 @@
                                 </div>
 
                                 <div class="mt-auto pt-2 border-t border-gray-100">
-                                    @if ($product->estimated_price)
-                                        <div class="flex items-end justify-between">
-                                            <div>
-                                                <p class="text-[10px] font-bold tracking-wider uppercase text-gray-400 leading-none mb-0.5">Est. Price</p>
-                                                <span class="text-[11px] font-semibold text-gray-400 align-top mt-0.5 mr-0.5">$</span><span class="text-xl font-extrabold text-gray-900 leading-none">{{ $product->estimated_price }}</span>
+                                    @if ($product->price_tier)
+                                        <div>
+                                            <p class="text-[10px] font-bold tracking-wider uppercase text-gray-400 leading-none mb-1">Price Range</p>
+                                            <div class="flex items-center gap-px leading-none">
+                                                <span class="text-lg font-black text-gray-900">$</span>
+                                                <span class="text-lg font-black {{ $product->price_tier >= 2 ? 'text-gray-900' : 'text-gray-300' }}">$</span>
+                                                <span class="text-lg font-black {{ $product->price_tier >= 3 ? 'text-gray-900' : 'text-gray-300' }}">$</span>
                                             </div>
-                                            <p class="text-[9px] text-gray-400 text-right leading-tight">Prices<br>may vary.</p>
-                                        </div>
-                                    @elseif ($product->price_tier)
-                                        <div class="flex items-end justify-between">
-                                            <div class="text-xs md:text-sm font-extrabold flex items-center gap-1">
-                                                @if ($product->price_tier == 1)
-                                                    <span class="text-green-600">$<span class="opacity-20">$$</span></span>
-                                                    <span class="text-green-600">Budget</span>
-                                                @elseif($product->price_tier == 2)
-                                                    <span class="text-blue-600">$$<span class="opacity-20">$</span></span>
-                                                    <span class="text-blue-600">Mid Range</span>
-                                                @else
-                                                    <span class="text-amber-600">$$$</span>
-                                                    <span class="text-amber-600">Premium</span>
-                                                @endif
-                                            </div>
-                                            <p class="text-[9px] text-gray-400">Prices may vary.</p>
                                         </div>
                                     @endif
                                 </div>
