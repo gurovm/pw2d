@@ -14,7 +14,10 @@
                     <p class="hero-sub">Not sure where to start? Describe what you need and our AI will find the right category for you.</p>
                 @endif
 
-                <form wire:submit.prevent="searchCategory" class="search-wrapper">
+                <form wire:submit.prevent="searchCategory" class="search-wrapper"
+                      x-data="{ searching: false }"
+                      @submit="searching = true"
+                      @search-failed.window="searching = false">
                     <div class="search-shadow"></div>
                     <div class="search-box"
                          x-data="{
@@ -48,14 +51,14 @@
                         <span class="search-ai-badge"><span class="sm:hidden">AI</span><span class="hidden sm:inline">AI Search</span></span>
                         <input
                             type="text"
-                            wire:model="searchQuery"
+                            wire:model.defer="searchQuery"
                             x-bind:placeholder="typedText"
                             autocomplete="off"
-                            :disabled="$wire.isSearching"
+                            :disabled="searching"
                         >
-                        <button type="submit" class="search-btn" wire:loading.attr="disabled">
-                            <div wire:loading.remove wire:target="searchCategory"><span class="sm:hidden">Search</span><span class="hidden sm:inline">Find My Gear</span></div>
-                            <div wire:loading wire:target="searchCategory" class="flex items-center gap-2">
+                        <button type="submit" class="search-btn" :disabled="searching">
+                            <div x-show="!searching"><span class="sm:hidden">Search</span><span class="hidden sm:inline">Find My Gear</span></div>
+                            <div x-show="searching" class="flex items-center gap-2">
                                 <svg class="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
                                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -74,7 +77,7 @@
                         </div>
                     @endif
 
-                    <div wire:loading wire:target="searchCategory" class="mt-4 p-4 bg-indigo-50/70 border border-indigo-100/50 rounded-xl text-left shadow-sm flex items-center gap-3 w-full relative z-10">
+                    <div x-show="searching" style="display:none" class="mt-4 p-4 bg-indigo-50/70 border border-indigo-100/50 rounded-xl text-left shadow-sm flex items-center gap-3 w-full relative z-10">
                         <svg class="animate-spin h-5 w-5 text-indigo-500 shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                         <p class="animate-pulse font-medium text-indigo-800 text-sm">Analyzing your request...</p>
                     </div>
@@ -780,6 +783,9 @@
                                                         @endforeach
                                                 </div>
                                         </div>
+                                        {{-- Similar products section --}}
+                                        <x-similar-products :product="$this->selectedProduct" />
+
                                 </div>{{-- /right column --}}
 
                                 </div>{{-- /inner scrollable --}}

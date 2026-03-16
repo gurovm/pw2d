@@ -163,6 +163,7 @@ class Home extends Component
 
             $this->searchError = $e->getMessage();
             $this->isSearching = false;
+            $this->dispatch('search-failed');
         }
     }
 

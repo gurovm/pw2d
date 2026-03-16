@@ -183,14 +183,35 @@ class ProductCompare extends Component
         });
     }
 
-    public function openProduct($slug)
+    public function openProduct($slug): void
     {
         $this->selectedProductSlug = $slug;
+
+        // Dispatch social/OG meta for client-side <head> update.
+        // The computed property is freshly resolved here since $selectedProductSlug was just set.
+        if ($this->selectedProduct) {
+            $imageUrl = $this->selectedProduct->image_url;
+            $absImage = $imageUrl
+                ? (str_starts_with($imageUrl, 'http') ? $imageUrl : url($imageUrl))
+                : null;
+
+            $this->dispatch('meta:product-opened',
+                title:       "{$this->selectedProduct->name} - AI Review & Match Score | pw2d",
+                description: \Illuminate\Support\Str::limit(
+                    strip_tags($this->selectedProduct->ai_summary ?? "Read the AI review for the {$this->selectedProduct->name}."),
+                    155
+                ),
+                image: $absImage ?? '',
+                url:   url('/product/' . $this->selectedProduct->slug),
+            );
+        }
     }
 
-    public function closeProduct()
+    public function closeProduct(): void
     {
         $this->selectedProductSlug = null;
+        // JS listener will restore <head> tags from data-default attributes
+        $this->dispatch('meta:product-closed');
     }
 
     public function setQueryAndSearch($query)
@@ -285,6 +306,7 @@ class ProductCompare extends Component
 
             $this->searchError = $e->getMessage();
             $this->isSearching = false;
+            $this->dispatch('search-failed');
         }
     }
 
@@ -646,12 +668,23 @@ class ProductCompare extends Component
             }
         }
 
+        // Build absolute OG image URL for the initial SSR (covers Googlebot + social scrapers)
+        $ogImage = null;
+        if ($this->selectedProductSlug && $this->selectedProduct) {
+            $imageUrl = $this->selectedProduct->image_url;
+            $ogImage  = $imageUrl
+                ? (str_starts_with($imageUrl, 'http') ? $imageUrl : url($imageUrl))
+                : null;
+        }
+
         return view('livewire.product-compare', ['samplePrompts' => $samplePrompts, 'activePreset' => $activePreset ?? null])
             ->layoutData([
-                'metaTitle' => $metaTitle,
+                'metaTitle'       => $metaTitle,
                 'metaDescription' => $metaDescription,
-                'canonicalUrl' => $canonicalUrl,
-                'schemaJson' => json_encode($schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+                'canonicalUrl'    => $canonicalUrl,
+                'ogType'          => ($this->selectedProductSlug && $this->selectedProduct) ? 'product' : 'website',
+                'ogImage'         => $ogImage,
+                'schemaJson'      => json_encode($schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
             ]);
     }
 }

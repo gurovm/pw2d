@@ -8,6 +8,30 @@
     <title>{{ $metaTitle ?? 'pw2d - Power to Decide | AI Tech Recommendations' }}</title>
     <meta name="description" content="{{ $metaDescription ?? 'Discover the best tech products tailored to your exact needs using our AI-powered recommendation engine.' }}">
     <link rel="canonical" href="{{ $canonicalUrl ?? request()->url() }}">
+
+    @php
+        $defaultTitle       = $metaTitle       ?? 'pw2d - Power to Decide | AI Tech Recommendations';
+        $defaultDescription = $metaDescription ?? 'Discover the best tech products tailored to your exact needs using our AI-powered recommendation engine.';
+        $defaultImage       = $ogImage         ?? asset('images/og-default.jpg');
+        $defaultUrl         = $canonicalUrl    ?? request()->url();
+    @endphp
+
+    {{-- Open Graph --}}
+    <meta property="og:site_name" content="pw2d - Power to Decide">
+    <meta property="og:type"        id="og-type"        content="{{ $ogType ?? 'website' }}">
+    <meta property="og:title"       id="og-title"       content="{{ $defaultTitle }}"       data-default="{{ $defaultTitle }}">
+    <meta property="og:description" id="og-description" content="{{ $defaultDescription }}" data-default="{{ $defaultDescription }}">
+    <meta property="og:url"         id="og-url"         content="{{ $defaultUrl }}"         data-default="{{ $defaultUrl }}">
+    <meta property="og:image"       id="og-image"       content="{{ $defaultImage }}"       data-default="{{ $defaultImage }}">
+    <meta property="og:image:width"  content="1200">
+    <meta property="og:image:height" content="630">
+
+    {{-- Twitter Card --}}
+    <meta name="twitter:card"        content="summary_large_image">
+    <meta name="twitter:title"       id="twitter-title"       content="{{ $defaultTitle }}"       data-default="{{ $defaultTitle }}">
+    <meta name="twitter:description" id="twitter-description" content="{{ $defaultDescription }}" data-default="{{ $defaultDescription }}">
+    <meta name="twitter:image"       id="twitter-image"       content="{{ $defaultImage }}"       data-default="{{ $defaultImage }}">
+
     @if(isset($schemaJson))
         <script type="application/ld+json">{!! $schemaJson !!}</script>
     @endif
@@ -87,5 +111,35 @@
     </footer>
 
     @livewireScripts
+    <script>
+        document.addEventListener('livewire:initialized', () => {
+            const setMeta = (id, val) => {
+                if (val) document.getElementById(id)?.setAttribute('content', val);
+            };
+
+            Livewire.on('meta:product-opened', ({ title, description, image, url }) => {
+                document.getElementById('og-type')?.setAttribute('content', 'product');
+                setMeta('og-title',        title);
+                setMeta('og-description',  description);
+                setMeta('og-url',          url);
+                setMeta('og-image',        image);
+                setMeta('twitter-title',       title);
+                setMeta('twitter-description', description);
+                setMeta('twitter-image',       image);
+                document.title = title;
+            });
+
+            // Restore the page-level defaults stored in data-default attributes on initial SSR
+            Livewire.on('meta:product-closed', () => {
+                document.getElementById('og-type')?.setAttribute('content', 'website');
+                ['og-title', 'og-description', 'og-url', 'og-image', 'twitter-title', 'twitter-description', 'twitter-image'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.setAttribute('content', el.dataset.default ?? '');
+                });
+                const pageTitle = document.getElementById('og-title')?.dataset.default ?? '';
+                if (pageTitle) document.title = pageTitle;
+            });
+        });
+    </script>
 </body>
 </html>
