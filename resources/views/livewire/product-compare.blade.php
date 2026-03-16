@@ -409,14 +409,14 @@
                             @if ($product->image_url)
                                 <a href="/product/{{ $product->slug }}"
                                    wire:click.prevent="openProduct('{{ $product->slug }}')"
-                                   @click="window.history.pushState({}, '', '/product/{{ $product->slug }}')"
+                                   @click="window.history.pushState({ returnUrl: window.location.href }, '', '/product/{{ $product->slug }}')"
                                    class="h-44 md:h-52 w-full flex justify-center items-center bg-white overflow-hidden group-hover:bg-gray-50/50 transition-colors block outline-none">
                                     <img src="{{ $product->image_url }}" alt="{{ $product->name }}" class="h-full w-auto object-contain mix-blend-multiply">
                                 </a>
                             @else
                                 <a href="/product/{{ $product->slug }}"
                                    wire:click.prevent="openProduct('{{ $product->slug }}')"
-                                   @click="window.history.pushState({}, '', '/product/{{ $product->slug }}')"
+                                   @click="window.history.pushState({ returnUrl: window.location.href }, '', '/product/{{ $product->slug }}')"
                                    class="h-44 md:h-52 w-full flex justify-center items-center bg-gradient-to-br from-gray-50 to-gray-100 overflow-hidden block outline-none">
                                     <svg class="w-14 h-14 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>
@@ -436,7 +436,7 @@
 
                                 <a href="/product/{{ $product->slug }}"
                                    wire:click.prevent="openProduct('{{ $product->slug }}')"
-                                   @click="window.history.pushState({}, '', '/product/{{ $product->slug }}')"
+                                   @click="window.history.pushState({ returnUrl: window.location.href }, '', '/product/{{ $product->slug }}')"
                                    class="block outline-none">
                                     <h3 class="text-[11px] md:text-sm font-semibold text-gray-900 mb-1.5 leading-tight line-clamp-2 min-h-8 md:min-h-10">{{ $product->name }}</h3>
                                 </a>
@@ -482,11 +482,12 @@
 
                         @if($this->scoredProducts->count() > $displayLimit)
                         <div class="mt-12 flex justify-center pb-8">
-                                        <button wire:click="loadMore"
-                                                class="px-8 py-3 bg-white border border-gray-200 rounded-full text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 hover:shadow-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-gray-200">
-                                                Show More Matches
-                                        </button>
-                                </div>
+                                <a href="{{ request()->fullUrlWithQuery(['limit' => $displayLimit + 12]) }}"
+                                   wire:click.prevent="loadMore"
+                                   class="px-8 py-3 bg-white border border-gray-200 rounded-full text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 hover:shadow-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-gray-200">
+                                        Show More Matches
+                                </a>
+                        </div>
                         @endif
                 @else
                         <div class="text-center py-16 bg-white rounded-xl shadow-sm border border-gray-100">
@@ -506,11 +507,12 @@
         @if ($this->selectedProduct)
                 <div class="fixed inset-0 z-70 flex items-center justify-center sm:p-6"
                         x-data="{ show: false }" x-init="setTimeout(() => show = true, 50)" x-transition.opacity
-                        @keyup.escape.window="window.history.pushState({}, '', '/compare/{{ $category->slug }}'); $wire.closeProduct()"
+                        @keyup.escape.window="window.history.pushState({}, '', window.history.state?.returnUrl ?? '/compare/{{ $category->slug }}'); $wire.closeProduct()"
+                        @popstate.window="$wire.closeProduct()"
                         style="display: none;" x-show="show">
 
                         <div class="fixed inset-0 bg-gray-900/60 backdrop-blur-md transition-opacity"
-                                @click="window.history.pushState({}, '', '/compare/{{ $category->slug }}'); $wire.closeProduct()">
+                                @click="window.history.pushState({}, '', window.history.state?.returnUrl ?? '/compare/{{ $category->slug }}'); $wire.closeProduct()">
                         </div>
 
                         <div class="relative w-full max-w-5xl bg-white sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row h-dvh sm:h-auto sm:max-h-[85vh] z-10"
@@ -523,7 +525,7 @@
 
                                 {{-- Desktop close button (absolute, hidden on mobile) --}}
                                 <button type="button"
-                                        @click="window.history.pushState({}, '', '/compare/{{ $category->slug }}'); $wire.closeProduct()"
+                                        @click="window.history.pushState({}, '', window.history.state?.returnUrl ?? '/compare/{{ $category->slug }}'); $wire.closeProduct()"
                                         class="hidden md:flex absolute top-4 right-4 z-50 p-2.5 bg-white/80 hover:bg-white backdrop-blur-md rounded-full text-gray-500 hover:text-gray-900 transition-all focus:outline-none focus:ring-2 focus:ring-gray-300 shadow-sm border border-gray-100">
                                         <svg class="w-5 h-5" fill="none" stroke="currentColor"
                                                 viewBox="0 0 24 24">
@@ -536,7 +538,7 @@
                                 <div class="md:hidden flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-white shrink-0 z-20">
                                         <span class="font-semibold text-sm text-gray-800 truncate pr-2">{{ $this->selectedProduct->name }}</span>
                                         <button type="button"
-                                                @click="window.history.pushState({}, '', '/compare/{{ $category->slug }}'); $wire.closeProduct()"
+                                                @click="window.history.pushState({}, '', window.history.state?.returnUrl ?? '/compare/{{ $category->slug }}'); $wire.closeProduct()"
                                                 class="p-2 hover:bg-gray-100 rounded-full text-gray-500 hover:text-gray-900 transition-all cursor-pointer shrink-0">
                                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path>
@@ -571,23 +573,12 @@
                                                 <div
                                                         class="hidden md:flex w-full flex-col items-center gap-3 md:gap-4 bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-gray-100">
                                                         <div class="flex flex-col items-center text-center">
-                                                                @if ($this->selectedProduct->estimated_price)
-                                                                        <span class="text-[10px] md:text-xs text-gray-400 font-bold uppercase tracking-wider mb-0.5 md:mb-1">Est. Price</span>
-                                                                        <div class="flex items-start leading-none">
-                                                                                <span class="text-sm font-semibold text-gray-400 mt-0.5 mr-0.5">$</span>
-                                                                                <span class="text-2xl md:text-3xl font-extrabold text-gray-900">{{ $this->selectedProduct->estimated_price }}</span>
-                                                                        </div>
-                                                                        <p class="text-[9px] text-gray-400 mt-1">Prices may vary.</p>
-                                                                @elseif ($this->selectedProduct->price_tier)
-                                                                        <span class="text-[10px] md:text-xs text-gray-400 font-semibold uppercase tracking-wider mb-0.5 md:mb-1">Market Tier</span>
-                                                                        <div class="text-lg md:text-2xl font-bold tracking-tight text-gray-900">
-                                                                                @if ($this->selectedProduct->price_tier == 1)
-                                                                                        <span class="text-emerald-500 mr-0.5 text-base md:text-lg">$</span>Budget
-                                                                                @elseif($this->selectedProduct->price_tier == 2)
-                                                                                        <span class="text-emerald-500 mr-0.5 text-base md:text-lg">$$</span>Mid-Range
-                                                                                @else
-                                                                                        <span class="text-emerald-500 mr-0.5 text-base md:text-lg">$$$</span>Premium
-                                                                                @endif
+                                                                @if ($this->selectedProduct->price_tier)
+                                                                        <span class="text-[10px] md:text-xs text-gray-400 font-bold uppercase tracking-wider mb-1 md:mb-2">Price Range</span>
+                                                                        <div class="flex items-center gap-0.5 leading-none">
+                                                                                <span class="text-2xl md:text-3xl font-black {{ $this->selectedProduct->price_tier >= 1 ? 'text-gray-900' : 'text-gray-300' }}">$</span>
+                                                                                <span class="text-2xl md:text-3xl font-black {{ $this->selectedProduct->price_tier >= 2 ? 'text-gray-900' : 'text-gray-300' }}">$</span>
+                                                                                <span class="text-2xl md:text-3xl font-black {{ $this->selectedProduct->price_tier >= 3 ? 'text-gray-900' : 'text-gray-300' }}">$</span>
                                                                         </div>
                                                                         <p class="text-[9px] text-gray-400 mt-1">Prices may vary.</p>
                                                                 @endif
@@ -788,22 +779,13 @@
                                 @if($this->selectedProduct->affiliate_url)
                                 <div class="md:hidden shrink-0 bg-white border-t border-gray-100 px-4 py-3">
                                         <div class="flex items-center gap-3">
-                                                @if($this->selectedProduct->estimated_price)
+                                                @if($this->selectedProduct->price_tier)
                                                         <div class="shrink-0">
-                                                                <span class="text-[9px] text-gray-400 font-bold uppercase tracking-wider block">Est. Price</span>
-                                                                <div class="flex items-baseline">
-                                                                        <span class="text-xs font-semibold text-gray-400 mr-0.5">$</span>
-                                                                        <span class="text-xl font-extrabold text-gray-900">{{ $this->selectedProduct->estimated_price }}</span>
-                                                                </div>
-                                                        </div>
-                                                @elseif($this->selectedProduct->price_tier)
-                                                        <div class="shrink-0">
-                                                                <span class="text-[9px] text-gray-400 font-semibold uppercase tracking-wider block">Tier</span>
-                                                                <div class="text-base font-bold text-gray-900">
-                                                                        @if($this->selectedProduct->price_tier == 1)<span class="text-emerald-500">$</span>Budget
-                                                                        @elseif($this->selectedProduct->price_tier == 2)<span class="text-emerald-500">$$</span>Mid-Range
-                                                                        @else<span class="text-emerald-500">$$$</span>Premium
-                                                                        @endif
+                                                                <span class="text-[9px] text-gray-400 font-bold uppercase tracking-wider block">Price Range</span>
+                                                                <div class="flex items-center gap-0.5 leading-none">
+                                                                        <span class="text-xl font-black {{ $this->selectedProduct->price_tier >= 1 ? 'text-gray-900' : 'text-gray-300' }}">$</span>
+                                                                        <span class="text-xl font-black {{ $this->selectedProduct->price_tier >= 2 ? 'text-gray-900' : 'text-gray-300' }}">$</span>
+                                                                        <span class="text-xl font-black {{ $this->selectedProduct->price_tier >= 3 ? 'text-gray-900' : 'text-gray-300' }}">$</span>
                                                                 </div>
                                                         </div>
                                                 @endif

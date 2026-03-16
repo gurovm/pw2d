@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Http;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\On;
 use Livewire\Attributes\Computed;
+use Livewire\Attributes\Url;
 use Livewire\Component;
 
 class ProductCompare extends Component
@@ -36,8 +37,9 @@ class ProductCompare extends Component
     // Price weight (virtual feature)
     public $priceWeight = 50;
 
-    // Limits the number of products displayed
-    public $displayLimit = 12;
+    // Limits the number of products displayed; tracked in URL so Googlebot can crawl paginated results
+    #[Url(as: 'limit')]
+    public int $displayLimit = 12;
 
     // AI Concierge properties
     public $aiMessage = '';
@@ -323,6 +325,11 @@ class ProductCompare extends Component
             $this->showAiChat = true;
             $this->analyzeUserNeeds();
         }
+
+        // Clamp URL-supplied limit to a sane range (12–120) to prevent abuse
+        $this->displayLimit = max(12, min(120, $this->displayLimit));
+        // Round down to the nearest page boundary so ?limit=13 doesn't sneak in
+        $this->displayLimit = (int) ceil($this->displayLimit / 12) * 12;
     }
 
     public function clearFilters()

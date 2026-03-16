@@ -28,4 +28,14 @@
     </url>
     @endforeach
 
+    {{-- Preset pages: distinct ranking intent per use-case (e.g. ?preset=podcaster) --}}
+    @foreach ($presets as $preset)
+    <url>
+        <loc>{{ url('/compare/' . $preset['category_slug']) }}?preset={{ $preset['preset_slug'] }}</loc>
+        <lastmod>{{ $preset['updated_at']->toAtomString() }}</lastmod>
+        <changefreq>weekly</changefreq>
+        <priority>0.7</priority>
+    </url>
+    @endforeach
+
 </urlset>

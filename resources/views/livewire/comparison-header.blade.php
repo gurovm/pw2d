@@ -171,7 +171,7 @@
                     @forelse($presets as $preset)
                         <button
                             wire:click="applyPreset('{{ $preset->id }}')"
-                            class="px-3.5 py-1.5 rounded-full text-[13px] font-semibold border transition-all duration-200 cursor-pointer {{ $selectedPreset == $preset->id ? 'bg-purple-100 border-[#7C3AED] text-[#7C3AED]' : 'bg-gray-100 border-transparent text-gray-600 hover:bg-gray-200' }}"
+                            class="px-3.5 py-1.5 rounded-full text-[13px] font-semibold border transition-all duration-200 cursor-pointer {{ $presetSlug === Str::slug($preset->name) ? 'bg-purple-100 border-[#7C3AED] text-[#7C3AED]' : 'bg-gray-100 border-transparent text-gray-600 hover:bg-gray-200' }}"
                         >✨ {{ $preset->name }}</button>
                     @empty
                         <p class="text-xs text-gray-400 italic">No presets defined for this category yet.</p>
@@ -202,9 +202,17 @@
                          price: {{ (int) $priceWeight }},
                          rating: {{ (int) $amazonRatingWeight }},
                          isDirty: false,
+                         presetCleared: false,
 
                          fire() {
                              this.isDirty = true;
+                             // One-shot: clear the active preset the first time a slider is dragged.
+                             // $wire.clearPreset() is called only once per drag session to avoid
+                             // a Livewire round-trip on every slider tick.
+                             if (!this.presetCleared) {
+                                 this.presetCleared = true;
+                                 $wire.clearPreset();
+                             }
                              Livewire.dispatch('weights-updated', { weights: this.w, priceWeight: this.price, amazonRatingWeight: this.rating });
                          },
 
@@ -233,7 +241,8 @@
                      }"
                      x-on:alpine-weights-sync.window="syncAndAnimate($event.detail.weights, $event.detail.priceWeight, $event.detail.amazonRatingWeight)"
                      x-on:alpine-sliders-dirty.window="isDirty = true"
-                     x-on:alpine-sliders-reset.window="isDirty = false">
+                     x-on:alpine-sliders-reset.window="isDirty = false"
+                     x-on:alpine-preset-applied.window="presetCleared = false">
 
                     <!-- Section header: Reset button visibility is driven by Alpine isDirty, not Blade -->
                     <div class="flex items-center justify-between mb-2 sm:mb-4">

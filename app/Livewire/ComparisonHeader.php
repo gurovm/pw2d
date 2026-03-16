@@ -5,8 +5,10 @@ namespace App\Livewire;
 use App\Models\Category;
 use App\Models\Preset;
 use App\Traits\NormalizesPrompts;
-use Livewire\Component;
+use Illuminate\Support\Str;
 use Livewire\Attributes\On;
+use Livewire\Attributes\Url;
+use Livewire\Component;
 
 class ComparisonHeader extends Component
 {
@@ -17,6 +19,10 @@ class ComparisonHeader extends Component
     public $amazonRatingWeight = 50;
     public $presets;
     public $selectedPreset = null;
+
+    #[Url(as: 'preset', history: true)]
+    public ?string $presetSlug = null;
+
     public $categoryId;
     public $autoOpen = true;
     public array $samplePrompts = [];
@@ -89,6 +95,22 @@ class ComparisonHeader extends Component
         }
 
         $this->samplePrompts = $prompts;
+
+        // Auto-apply preset if URL contains ?preset=
+        if ($this->presetSlug) {
+            if ($this->presetSlug === 'balanced') {
+                $this->applyPreset('balanced');
+            } else {
+                $matching = $this->presets->first(
+                    fn(Preset $p) => Str::slug($p->name) === $this->presetSlug
+                );
+                if ($matching) {
+                    $this->applyPreset($matching->id);
+                } else {
+                    $this->presetSlug = null; // invalid slug — discard silently
+                }
+            }
+        }
     }
     
     public function applyPreset($presetId)
@@ -96,40 +118,34 @@ class ComparisonHeader extends Component
         $this->selectedPreset = $presetId;
 
         if ($presetId === 'balanced') {
-            // Reset everything to neutral (50)
             foreach ($this->features as $feature) {
                 $this->weights[$feature->id] = 50;
             }
             $this->priceWeight = 50;
             $this->amazonRatingWeight = 50;
+            $this->presetSlug = 'balanced';
         } else {
-            // Fetch the preset with its pivot features
             $preset = Preset::with('features')->find($presetId);
-            
+
             if ($preset) {
-                // Map feature IDs to their preset weights
                 $presetWeights = $preset->features->pluck('pivot.weight', 'id')->toArray();
-                
-                // Loop through ALL category features
+
                 foreach ($this->features as $feature) {
-                    // If the feature is in the preset, use its weight. Otherwise, default to 50.
                     $this->weights[$feature->id] = $presetWeights[$feature->id] ?? 50;
                 }
-                
-                // Keep virtual features neutral for DB presets
+
                 $this->priceWeight = 50;
                 $this->amazonRatingWeight = 50;
+                $this->presetSlug = Str::slug($preset->name);
             }
         }
-        
-        // Dispatch event to recalculate Match Scores and animate the grid
+
         $this->dispatch('weights-updated',
             weights: $this->weights,
             priceWeight: $this->priceWeight,
             amazonRatingWeight: $this->amazonRatingWeight
         );
 
-        // Sync Alpine.js slider positions to the preset values
         $this->dispatch('alpine-weights-sync',
             weights: $this->weights,
             priceWeight: $this->priceWeight,
@@ -137,11 +153,25 @@ class ComparisonHeader extends Component
         );
 
         $this->dispatch('alpine-sliders-dirty');
+
+        // Resets Alpine's one-shot guard so the next manual drag clears the preset again
+        $this->dispatch('alpine-preset-applied');
+    }
+
+    /**
+     * Called from Alpine's fire() exactly once per drag session.
+     * Clears the active preset without affecting slider values.
+     */
+    public function clearPreset(): void
+    {
+        $this->selectedPreset = null;
+        $this->presetSlug = null;
     }
 
     public function resetWeights(): void
     {
         $this->selectedPreset = null;
+        $this->presetSlug = null;
 
         foreach ($this->features as $feature) {
             $this->weights[$feature->id] = 50;
