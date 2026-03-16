@@ -142,7 +142,16 @@
                                         <div class="cat-header-right">
                                                 <h1
                                                         class="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight mb-3">
-                                                        {{ $category->name }}</h1>
+                                                        @if($activePreset)
+                                                            Best {{ $category->name }} for {{ $activePreset->name }}
+                                                        @else
+                                                            {{ $category->name }}
+                                                        @endif
+                                                </h1>
+
+                                                @if($activePreset && $activePreset->seo_description)
+                                                        <p class="text-gray-600 text-sm leading-relaxed mb-4">{{ $activePreset->seo_description }}</p>
+                                                @endif
 
                                                 @if ($category->buying_guide && is_array($category->buying_guide))
                                                         @php

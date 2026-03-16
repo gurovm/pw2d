@@ -156,6 +156,9 @@ class ComparisonHeader extends Component
 
         // Resets Alpine's one-shot guard so the next manual drag clears the preset again
         $this->dispatch('alpine-preset-applied');
+
+        // Notify sibling components (e.g. ProductCompare hero) of the new preset slug
+        $this->dispatch('preset-slug-changed', slug: $this->presetSlug);
     }
 
     /**
@@ -166,6 +169,7 @@ class ComparisonHeader extends Component
     {
         $this->selectedPreset = null;
         $this->presetSlug = null;
+        $this->dispatch('preset-slug-changed', slug: null);
     }
 
     public function resetWeights(): void
@@ -192,6 +196,7 @@ class ComparisonHeader extends Component
         );
 
         $this->dispatch('alpine-sliders-reset');
+        $this->dispatch('preset-slug-changed', slug: null);
     }
 
     public function updatedWeights()

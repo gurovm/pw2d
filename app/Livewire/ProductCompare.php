@@ -42,6 +42,10 @@ class ProductCompare extends Component
     #[Url(as: 'limit')]
     public int $displayLimit = 12;
 
+    // Active preset slug — read from URL so hero H1/description updates on re-renders too
+    #[Url(as: 'preset')]
+    public ?string $activePresetSlug = null;
+
     // AI Concierge properties
     public $aiMessage = '';
     public $userInput = '';
@@ -444,6 +448,12 @@ class ProductCompare extends Component
         $this->analyzeUserNeeds();
     }
 
+    #[On('preset-slug-changed')]
+    public function handlePresetSlugChanged(?string $slug): void
+    {
+        $this->activePresetSlug = $slug;
+    }
+
     #[On('weights-updated')]
     public function handleWeightsUpdated($weights, $priceWeight, $amazonRatingWeight, $isFromAi = false)
     {
@@ -534,18 +544,17 @@ class ProductCompare extends Component
             $canonicalUrl = route('category.show', ['slug' => $this->category->slug]);
 
             // Preset landing page: override title, description, and canonical with preset-specific values.
-            // request()->query() is authoritative for Googlebot's initial server render.
-            $activePresetSlug = request()->query('preset');
-            if (!empty($activePresetSlug)) {
+            // $activePresetSlug comes from #[Url(as: 'preset')] so it's valid on both initial load and Livewire re-renders.
+            if (!empty($this->activePresetSlug)) {
                 $activePreset = Preset::where('category_id', $this->category->id)
                     ->get()
-                    ->first(fn(Preset $p) => \Illuminate\Support\Str::slug($p->name) === $activePresetSlug);
+                    ->first(fn(Preset $p) => \Illuminate\Support\Str::slug($p->name) === $this->activePresetSlug);
 
                 if ($activePreset) {
                     $metaTitle = "Best {$this->category->name} for {$activePreset->name} | pw2d";
                     $metaDescription = $activePreset->seo_description
                         ?? "Top-ranked {$this->category->name} for {$activePreset->name} users. Compare by the features that matter most for your specific use case.";
-                    $canonicalUrl = route('category.show', ['slug' => $this->category->slug]) . "?preset={$activePresetSlug}";
+                    $canonicalUrl = route('category.show', ['slug' => $this->category->slug]) . "?preset={$this->activePresetSlug}";
                 }
             }
 
@@ -637,7 +646,7 @@ class ProductCompare extends Component
             }
         }
 
-        return view('livewire.product-compare', ['samplePrompts' => $samplePrompts])
+        return view('livewire.product-compare', ['samplePrompts' => $samplePrompts, 'activePreset' => $activePreset ?? null])
             ->layoutData([
                 'metaTitle' => $metaTitle,
                 'metaDescription' => $metaDescription,
