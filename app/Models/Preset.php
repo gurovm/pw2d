@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class Preset extends Model
 {
-    protected $fillable = ['category_id', 'name', 'sort_order'];
+    protected $fillable = ['category_id', 'name', 'sort_order', 'seo_description'];
 
     public function category()
     {

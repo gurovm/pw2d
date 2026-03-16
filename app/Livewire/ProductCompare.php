@@ -4,6 +4,7 @@ namespace App\Livewire;
 
 use App\Models\Category;
 use App\Models\Feature;
+use App\Models\Preset;
 use App\Models\Product;
 use App\Models\SearchLog;
 use App\Services\ProductScoringService;
@@ -531,6 +532,22 @@ class ProductCompare extends Component
                 : "Compare the absolute best {$this->category->name} on the market. Use our AI-driven sliders to find the perfect match for your exact needs.";
 
             $canonicalUrl = route('category.show', ['slug' => $this->category->slug]);
+
+            // Preset landing page: override title, description, and canonical with preset-specific values.
+            // request()->query() is authoritative for Googlebot's initial server render.
+            $activePresetSlug = request()->query('preset');
+            if (!empty($activePresetSlug)) {
+                $activePreset = Preset::where('category_id', $this->category->id)
+                    ->get()
+                    ->first(fn(Preset $p) => \Illuminate\Support\Str::slug($p->name) === $activePresetSlug);
+
+                if ($activePreset) {
+                    $metaTitle = "Best {$this->category->name} for {$activePreset->name} | pw2d";
+                    $metaDescription = $activePreset->seo_description
+                        ?? "Top-ranked {$this->category->name} for {$activePreset->name} users. Compare by the features that matter most for your specific use case.";
+                    $canonicalUrl = route('category.show', ['slug' => $this->category->slug]) . "?preset={$activePresetSlug}";
+                }
+            }
 
             $schema = [
                 '@context' => 'https://schema.org/',
