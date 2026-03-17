@@ -142,12 +142,17 @@ class GlobalSearch extends Component
                 \Log::error('GlobalSearch: failed to parse AI JSON', ['raw' => $raw]);
             }
 
-            if (empty($parsed['suggested_category_slug'])) {
+            $categorySlug = $parsed['suggested_category_slug']
+                ?? $parsed['category_slug']
+                ?? $parsed['slug']
+                ?? '';
+
+            if (empty($categorySlug)) {
                 throw new \Exception('No match found. Try a more specific phrase.');
             }
 
             $category = Category::with('presets:id,category_id,name')
-                ->where('slug', $parsed['suggested_category_slug'])
+                ->where('slug', $categorySlug)
                 ->first();
 
             if (!$category) {
@@ -156,9 +161,12 @@ class GlobalSearch extends Component
 
             $presetSlug = null;
             $presetName = null;
-            if (!empty($parsed['suggested_preset_slug'])) {
+            $parsedPresetSlug = $parsed['suggested_preset_slug']
+                ?? $parsed['preset_slug']
+                ?? '';
+            if (!empty($parsedPresetSlug)) {
                 $preset = $category->presets->first(
-                    fn (Preset $p) => Str::slug($p->name) === $parsed['suggested_preset_slug']
+                    fn (Preset $p) => Str::slug($p->name) === $parsedPresetSlug
                 );
                 if ($preset) {
                     $presetSlug = Str::slug($preset->name);
@@ -273,9 +281,10 @@ User query: "{$this->query}"
 
 Identify the single best matching category. If a specific preset is a strong fit, include it.
 
-Return ONLY valid JSON with no markdown fences:
+You MUST respond with ONLY a raw JSON object — no markdown, no backticks, no explanation text before or after.
+Use EXACTLY these key names (no variations):
 {
-  "suggested_category_slug": "the-slug",
+  "suggested_category_slug": "the-exact-slug-from-the-list-above",
   "suggested_preset_slug": "preset-slug-or-omit-this-key",
   "reasoning": "one short sentence"
 }

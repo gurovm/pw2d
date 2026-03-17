@@ -22,7 +22,7 @@
      }"
      @click.outside="open = false; clearTimeout(_aiTimer)"
      @keydown.escape.window="open = false; clearTimeout(_aiTimer)"
-     class="{{ $variant === 'hero' ? 'w-full' : 'relative w-full max-w-lg z-50' }}">
+     class="{{ $variant === 'hero' ? 'w-full flex flex-col items-center' : 'relative w-full max-w-lg z-50' }}">
 
     {{-- ══════════════════════════════════════════════════════════════════ --}}
     {{-- HERO VARIANT — identical look to the homepage search bar          --}}
