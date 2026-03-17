@@ -49,16 +49,24 @@ class GlobalSearch extends Component
     public function setQuery(string $query): void
     {
         $this->query = $query;
-        $this->updatedQuery();
+        $this->search();
     }
 
     /**
-     * Phase 1 — instant DB search, fires after 400 ms debounce.
-     * If DB returns nothing, flip $isAiSearching = true.
-     * Alpine watches this flag and, after a 1-second idle wait, calls
-     * performAiSearch() in a second round-trip — keeping this response fast.
+     * Livewire lifecycle hook — fires automatically when wire:model.live
+     * syncs the $query property. Delegates to search() so Alpine can also
+     * call $wire.search() directly without hitting the lifecycle-hook guard.
      */
     public function updatedQuery(): void
+    {
+        $this->search();
+    }
+
+    /**
+     * Phase 1 — instant DB search.
+     * Public so the hero form's @submit.prevent and Alpine can call it directly.
+     */
+    public function search(): void
     {
         $this->aiSuggestion  = null;
         $this->aiError       = null;

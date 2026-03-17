@@ -29,7 +29,7 @@
     {{-- ══════════════════════════════════════════════════════════════════ --}}
     @if($variant === 'hero')
 
-        <form @submit.prevent="$wire.updatedQuery()" class="search-wrapper">
+        <form @submit.prevent="$wire.search()" class="search-wrapper">
             <div class="search-shadow"></div>
 
             <div class="search-box"
