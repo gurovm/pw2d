@@ -24,11 +24,6 @@ class ProductCompare extends Component
     public $subcategories; // Child categories (if this is a parent category)
     public $features; // Keeping this public is fine as it's a small collection
 
-    // AI search for parent category pages
-    public $searchQuery = '';
-    public $isSearching = false;
-    public $searchError = '';
-
     // Feature weights (feature_id => weight 0-100)
     public $weights = [];
 
@@ -212,102 +207,6 @@ class ProductCompare extends Component
         $this->selectedProductSlug = null;
         // JS listener will restore <head> tags from data-default attributes
         $this->dispatch('meta:product-closed');
-    }
-
-    public function setQueryAndSearch($query)
-    {
-        $this->searchQuery = $query;
-        $this->searchCategory();
-    }
-
-    public function searchCategory()
-    {
-        $this->searchError = '';
-
-        if (empty(trim($this->searchQuery))) {
-            $this->searchError = 'Please enter what you\'re looking for.';
-            return;
-        }
-
-        $this->isSearching = true;
-
-        try {
-            $categories = Category::whereHas('products')
-                ->select('name', 'slug', 'description')
-                ->get();
-
-            if ($categories->isEmpty()) {
-                $this->searchError = 'No categories available yet. Please check back later.';
-                $this->isSearching = false;
-                return;
-            }
-
-            $categoryList = $categories->map(fn($c) => [
-                'name' => $c->name,
-                'slug' => $c->slug,
-                'description' => $c->description,
-            ])->toArray();
-
-            $contextHint = "The user is currently browsing the '{$this->category->name}' category. Use this as a soft context for ambiguous queries. However, if the user explicitly asks for a product outside this category (e.g., a keyboard while in audio), IGNORE the context and route them to the correct global category.";
-
-            $promptText = "You are a smart routing assistant for a product comparison website. {$contextHint}\n\nThe user will describe what they want in natural language. Your job is to identify the MAIN product category they're interested in and return its slug.\n\nAvailable categories:\n" . json_encode($categoryList, JSON_PRETTY_PRINT) . "\n\nUser request: \"{$this->searchQuery}\"\n\nAnalyze the request and identify the primary product category. Return ONLY a JSON object: {\"slug\": \"category-slug\"}\n\nDo not include markdown formatting, just raw JSON.";
-
-            $apiKey = config('services.gemini.api_key');
-            $response = Http::timeout(10)->post(
-                "https://generativelanguage.googleapis.com/v1beta/models/" . config('services.gemini.site_model') . ":generateContent?key={$apiKey}",
-                [
-                    'contents' => [['parts' => [['text' => $promptText]]]],
-                    'generationConfig' => ['temperature' => 0.5, 'maxOutputTokens' => 200],
-                ]
-            );
-
-            if (!$response->successful()) {
-                if ($response->status() === 429) {
-                    throw new \Exception('AI is taking a short break (rate limit). Please wait 10 seconds and try again.');
-                }
-                throw new \Exception('AI service unavailable. Please try again.');
-            }
-
-            $content = $response->json()['candidates'][0]['content']['parts'][0]['text'] ?? '';
-            $content = trim(preg_replace('/^```json\s*|\s*```$/m', '', trim($content)));
-            $parsed = json_decode($content, true);
-
-            if (!isset($parsed['slug'])) {
-                throw new \Exception('Could not determine the best category. Please try being more specific.');
-            }
-
-            if (!$categories->where('slug', $parsed['slug'])->first()) {
-                throw new \Exception('Invalid category match. Please try again.');
-            }
-
-            session()->flash('ai_initial_prompt', $this->searchQuery);
-
-            $this->dispatch('ai_search_submitted', location: 'parent_category', query: $this->searchQuery);
-
-            SearchLog::create([
-                'type' => 'homepage_ai',
-                'query' => $this->searchQuery,
-                'category_name' => $categories->where('slug', $parsed['slug'])->first()->name,
-                'results_count' => 1,
-                'user_id' => auth()->id(),
-            ]);
-
-            return redirect()->route('category.show', $parsed['slug']);
-
-        } catch (\Exception $e) {
-            SearchLog::create([
-                'type' => 'homepage_ai',
-                'query' => $this->searchQuery,
-                'category_name' => null,
-                'results_count' => 0,
-                'response_summary' => $e->getMessage(),
-                'user_id' => auth()->id(),
-            ]);
-
-            $this->searchError = $e->getMessage();
-            $this->isSearching = false;
-            $this->dispatch('search-failed');
-        }
     }
 
     public function mount($slug = null, ?Product $product = null)

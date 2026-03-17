@@ -1,101 +1,261 @@
-<div class="relative w-full max-w-lg z-50">
-    <!-- Search Input -->
+{{--
+  GlobalSearch — hybrid DB + AI fallback dropdown.
+  Two-phase: Phase 1 (instant DB, ≤500 ms debounce) → Phase 2 (AI, separate
+  round-trip triggered by Alpine $watch on isAiSearching).
+--}}
+<div class="relative w-full max-w-lg z-50"
+     x-data="{
+         open: @entangle('open'),
+
+         {{-- Watch isAiSearching: when Livewire flips it true after an empty DB
+              result, immediately call performAiSearch() so the AI round-trip
+              starts while the labor-illusion spinner is already on screen. --}}
+         init() {
+             $watch('$wire.isAiSearching', val => {
+                 if (val) $wire.performAiSearch();
+             });
+         }
+     }"
+     @click.outside="open = false; $wire.close()">
+
+    {{-- ── Search input ─────────────────────────────────────────────────── --}}
     <div class="relative">
-        <input 
-            type="search" 
-            wire:model.live.debounce.750ms="search" 
-            placeholder="Search categories or products..." 
-            class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-electric-blue focus:border-transparent shadow-sm text-sm transition-shadow duration-200"
-            autocomplete="off"
-        >
         <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <!-- Search Icon -->
-            <svg class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            <svg class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
             </svg>
         </div>
-        
-        <!-- Loading Indicator -->
-        <div wire:loading class="absolute inset-y-0 right-0 pr-3 flex items-center">
-            <svg class="animate-spin h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        <input
+            type="search"
+            wire:model.live.debounce.500ms="query"
+            placeholder="{{ $parentName ? 'Search in ' . $parentName . '...' : 'Search categories or products...' }}"
+            autocomplete="off"
+            @focus="if ($wire.query.length >= 3) open = true"
+            class="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-full bg-gray-50
+                   focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30
+                   focus:border-blue-400 shadow-sm text-sm transition-all duration-200"
+        >
+        {{-- Livewire loading spinner (DB phase only) --}}
+        <div wire:loading wire:target="updatedQuery"
+             class="absolute inset-y-0 right-0 pr-3 flex items-center">
+            <svg class="animate-spin h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                <path class="opacity-75" fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
             </svg>
         </div>
     </div>
 
-    <!-- Dropdown Results -->
-    @if(strlen($search) >= 2)
-        <div class="absolute mt-2 w-full bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden max-h-96 overflow-y-auto">
-            
-            @if(count($this->results['categories']) > 0)
-                <div class="px-4 py-2 bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                    Categories
+    {{-- ── Dropdown ─────────────────────────────────────────────────────── --}}
+    <div x-show="open"
+         x-transition:enter="transition ease-out duration-150"
+         x-transition:enter-start="opacity-0 translate-y-1"
+         x-transition:enter-end="opacity-100 translate-y-0"
+         x-transition:leave="transition ease-in duration-100"
+         x-transition:leave-start="opacity-100 translate-y-0"
+         x-transition:leave-end="opacity-0 translate-y-1"
+         style="display:none"
+         class="absolute top-full mt-2 w-full bg-white rounded-2xl shadow-xl
+                border border-gray-100 overflow-hidden max-h-[28rem] overflow-y-auto">
+
+        {{-- ── Phase 1: DB results ──────────────────────────────────────── --}}
+        @if(!empty($dbResults))
+            @php
+                $types = collect($dbResults)->groupBy('type');
+            @endphp
+
+            {{-- Categories --}}
+            @if($types->has('category'))
+                <div class="px-4 pt-3 pb-1">
+                    <span class="text-[10px] font-bold uppercase tracking-widest text-gray-400">Categories</span>
                 </div>
-                <ul>
-                    @foreach($this->results['categories'] as $category)
-                        <li>
-                            <a href="{{ route('category.show', $category->slug) }}" class="block px-4 py-2 hover:bg-gray-50 transition duration-150 ease-in-out border-b border-gray-50 last:border-b-0">
-                                <div class="flex items-center justify-between">
-                                    <span class="text-sm font-medium text-gray-900">{{ $category->name }}</span>
-                                    <svg class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-                                    </svg>
-                                </div>
-                            </a>
-                        </li>
-                    @endforeach
-                </ul>
+                @foreach($types['category'] as $row)
+                    <a href="{{ $row['url'] }}"
+                       class="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors group">
+                        <div class="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
+                            <svg class="w-3.5 h-3.5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
+                            </svg>
+                        </div>
+                        <span class="text-sm font-medium text-gray-800 group-hover:text-blue-600 transition-colors">
+                            {{ $row['name'] }}
+                        </span>
+                        <svg class="w-4 h-4 text-gray-300 ml-auto group-hover:text-blue-400 transition-colors"
+                             fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                        </svg>
+                    </a>
+                @endforeach
             @endif
 
-            @if(count($this->results['products']) > 0)
-                <div class="px-4 py-2 bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wider border-t border-gray-100">
-                    Products
+            {{-- Presets --}}
+            @if($types->has('preset'))
+                <div class="px-4 pt-3 pb-1 {{ $types->has('category') ? 'border-t border-gray-50' : '' }}">
+                    <span class="text-[10px] font-bold uppercase tracking-widest text-gray-400">Presets</span>
                 </div>
-                <ul>
-                    @foreach($this->results['products'] as $product)
-                        <li>
-                            <!-- Link to parent category compare page -->
-                            <a href="{{ route('category.show', $product->category->slug ?? '#') }}" class="block px-4 py-2 hover:bg-gray-50 transition duration-150 ease-in-out border-b border-gray-50 last:border-b-0">
-                                <div class="flex justify-between items-center">
-                                    <div>
-                                        <div class="text-sm font-medium text-gray-900">
-                                            {{ $product->name }} 
-                                            @if($product->brand)
-                                                <span class="text-gray-500">- {{ $product->brand->name }}</span>
-                                            @endif
-                                        </div>
-                                        <div class="text-xs text-gray-500">
-                                            in <span class="text-electric-blue font-medium">{{ $product->category->name ?? 'Uncategorized' }}</span>
-                                        </div>
-                                    </div>
-                                    <svg class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                @foreach($types['preset'] as $row)
+                    <a href="{{ $row['url'] }}"
+                       class="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors group">
+                        <div class="w-7 h-7 rounded-lg bg-amber-50 flex items-center justify-center shrink-0">
+                            <svg class="w-3.5 h-3.5 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/>
+                            </svg>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="text-sm font-medium text-gray-800 group-hover:text-amber-600 transition-colors">
+                                {{ $row['name'] }}
+                            </div>
+                            <div class="text-xs text-gray-400 truncate">in {{ $row['category_name'] }}</div>
+                        </div>
+                        <svg class="w-4 h-4 text-gray-300 ml-auto shrink-0 group-hover:text-amber-400 transition-colors"
+                             fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                        </svg>
+                    </a>
+                @endforeach
+            @endif
+
+            {{-- Products --}}
+            @if($types->has('product'))
+                <div class="px-4 pt-3 pb-1 border-t border-gray-50">
+                    <span class="text-[10px] font-bold uppercase tracking-widest text-gray-400">Products</span>
+                </div>
+                @foreach($types['product'] as $row)
+                    <a href="{{ $row['url'] }}"
+                       class="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors group">
+                        <div class="w-8 h-8 rounded-lg bg-gray-100 overflow-hidden shrink-0">
+                            @if(!empty($row['image']))
+                                <img src="{{ $row['image'] }}" alt="{{ $row['name'] }}"
+                                     class="w-full h-full object-contain">
+                            @else
+                                <div class="w-full h-full flex items-center justify-center">
+                                    <svg class="w-4 h-4 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                              d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
                                     </svg>
                                 </div>
-                            </a>
-                        </li>
-                    @endforeach
-                </ul>
+                            @endif
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="text-sm font-medium text-gray-800 group-hover:text-blue-600 truncate transition-colors">
+                                {{ $row['name'] }}
+                            </div>
+                            @if(!empty($row['category_name']))
+                                <div class="text-xs text-gray-400">in {{ $row['category_name'] }}</div>
+                            @endif
+                        </div>
+                        <svg class="w-4 h-4 text-gray-300 ml-auto shrink-0 group-hover:text-blue-400 transition-colors"
+                             fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                        </svg>
+                    </a>
+                @endforeach
             @endif
-            
-            @if(count($this->results['categories']) === 0 && count($this->results['products']) === 0)
-                 <div class="px-4 py-6 text-sm text-gray-500 text-center">
-                    No results found for "<span class="font-medium text-gray-900">{{ $search }}</span>"
-                </div>
-            @endif
-        </div>
-    @endif
 
-    <!-- PostHog Tracking for Global Search -->
-    <script>
-        document.addEventListener('livewire:initialized', () => {
-            Livewire.on('global_search_used', (event) => {
-                let data = Array.isArray(event) ? event[0] : event;
-                if (typeof posthog !== 'undefined') {
-                    posthog.capture('global_search_used', { query: data.query });
-                }
-            });
-        });
-    </script>
+        {{-- ── Phase 2a: AI searching — labor illusion ─────────────────── --}}
+        @elseif($isAiSearching)
+            <div class="px-5 py-5"
+                 x-data="{
+                     phrases: [
+                         'Analyzing your request…',
+                         'Scanning product categories…',
+                         'Matching to your needs…',
+                         'Calculating best fit…',
+                         'Almost there…'
+                     ],
+                     idx: 0,
+                     init() { setInterval(() => this.idx = (this.idx + 1) % this.phrases.length, 2000) }
+                 }">
+                <div class="flex items-center gap-3">
+                    <div class="relative shrink-0">
+                        <svg class="animate-spin h-5 w-5 text-blue-500" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                            <path class="opacity-75" fill="currentColor"
+                                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <p class="text-sm font-semibold text-gray-800" x-text="phrases[idx]"></p>
+                        <p class="text-xs text-gray-400 mt-0.5">AI is finding the best match for you</p>
+                    </div>
+                </div>
+                <div class="mt-4 flex gap-1.5">
+                    <div class="h-1 flex-1 rounded-full bg-blue-200 overflow-hidden">
+                        <div class="h-full bg-blue-500 rounded-full animate-pulse" style="width:60%"></div>
+                    </div>
+                    <div class="h-1 flex-1 rounded-full bg-blue-100 overflow-hidden">
+                        <div class="h-full bg-blue-300 rounded-full animate-pulse" style="width:40%; animation-delay:0.3s"></div>
+                    </div>
+                    <div class="h-1 flex-1 rounded-full bg-blue-50 overflow-hidden">
+                        <div class="h-full bg-blue-200 rounded-full animate-pulse" style="width:25%; animation-delay:0.6s"></div>
+                    </div>
+                </div>
+            </div>
+
+        {{-- ── Phase 2b: AI suggestion — click to navigate ─────────────── --}}
+        @elseif($aiSuggestion)
+            <div class="p-4">
+                <div class="flex items-center gap-2 mb-3">
+                    <span class="text-xs font-bold uppercase tracking-widest text-gray-400">AI Best Match</span>
+                    <span class="inline-flex items-center gap-1 bg-blue-50 text-blue-600 text-[10px] font-semibold px-2 py-0.5 rounded-full">
+                        <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+                        </svg>
+                        AI
+                    </span>
+                </div>
+
+                <a href="{{ $aiSuggestion['url'] }}"
+                   class="flex items-start gap-3.5 p-3.5 rounded-xl bg-gradient-to-br from-blue-50 to-indigo-50
+                          border border-blue-100 hover:border-blue-300 hover:shadow-md
+                          transition-all duration-200 group">
+                    <div class="w-9 h-9 rounded-xl bg-white border border-blue-100 flex items-center justify-center shrink-0 shadow-sm">
+                        <span class="text-lg">🎯</span>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="font-semibold text-gray-900 text-sm leading-tight">
+                            {{ $aiSuggestion['category_name'] }}
+                            @if($aiSuggestion['preset_name'])
+                                <span class="text-blue-600"> · {{ $aiSuggestion['preset_name'] }}</span>
+                            @endif
+                        </div>
+                        @if($aiSuggestion['reasoning'])
+                            <div class="text-xs text-gray-500 mt-1 leading-relaxed">
+                                {{ $aiSuggestion['reasoning'] }}
+                            </div>
+                        @endif
+                    </div>
+                    <div class="shrink-0 self-center">
+                        <svg class="w-5 h-5 text-blue-400 group-hover:text-blue-600 group-hover:translate-x-0.5 transition-all"
+                             fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                        </svg>
+                    </div>
+                </a>
+            </div>
+
+        {{-- ── Phase 2c: AI error ───────────────────────────────────────── --}}
+        @elseif($aiError)
+            <div class="px-4 py-5 flex items-start gap-3">
+                <svg class="w-5 h-5 text-red-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <p class="text-sm text-gray-600">{{ $aiError }}</p>
+            </div>
+
+        {{-- ── Empty: DB returned nothing and AI hasn't fired yet ──────── --}}
+        @elseif(mb_strlen($query) >= 3)
+            <div class="px-4 py-6 text-center">
+                <p class="text-sm text-gray-500">
+                    No results for
+                    <span class="font-medium text-gray-800">"{{ $query }}"</span>
+                </p>
+            </div>
+        @endif
+
+    </div>
 </div>

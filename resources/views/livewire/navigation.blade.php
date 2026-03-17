@@ -8,9 +8,11 @@
                 </a>
             </div>
 
-            <!-- Global Search (Center) -->
+            <!-- Global Search (Center) — hidden on homepage where the hero search takes over -->
             <div class="flex-1 flex justify-center px-4 md:px-8">
-                <livewire:global-search />
+                @unless(request()->routeIs('home'))
+                    <livewire:global-search />
+                @endunless
             </div>
 
             <!-- Right Side: reserved for future features -->
