@@ -126,9 +126,21 @@ class GlobalSearch extends Component
                     : 'AI service unavailable.');
             }
 
-            $raw    = $response->json()['candidates'][0]['content']['parts'][0]['text'] ?? '';
-            $raw    = trim(preg_replace('/^```json\s*|\s*```$/m', '', trim($raw)));
-            $parsed = json_decode($raw, true);
+            $raw = $response->json()['candidates'][0]['content']['parts'][0]['text'] ?? '';
+
+            // Extract the first JSON object, handling markdown fences and surrounding prose
+            if (preg_match('/```(?:json)?\s*(\{.*?\})\s*```/s', $raw, $m)) {
+                $jsonStr = $m[1];
+            } elseif (preg_match('/(\{.*\})/s', $raw, $m)) {
+                $jsonStr = $m[1];
+            } else {
+                $jsonStr = $raw;
+            }
+            $parsed = json_decode(trim($jsonStr), true);
+
+            if ($parsed === null) {
+                \Log::error('GlobalSearch: failed to parse AI JSON', ['raw' => $raw]);
+            }
 
             if (empty($parsed['suggested_category_slug'])) {
                 throw new \Exception('No match found. Try a more specific phrase.');
