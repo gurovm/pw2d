@@ -28,7 +28,7 @@
         </div>
         <input
             type="search"
-            wire:model.live.debounce.500ms="query"
+            wire:model.live.debounce.400ms="query"
             placeholder="{{ $parentName ? 'Search in ' . $parentName . '...' : 'Search categories or products...' }}"
             autocomplete="off"
             @focus="if ($wire.query.length >= 3) open = true"
