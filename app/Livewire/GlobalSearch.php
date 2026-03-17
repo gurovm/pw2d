@@ -116,7 +116,11 @@ class GlobalSearch extends Component
                 "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}",
                 [
                     'contents'         => [['parts' => [['text' => $this->buildPrompt($categoryContext)]]]],
-                    'generationConfig' => ['temperature' => 0.3, 'maxOutputTokens' => 300],
+                    'generationConfig' => [
+                        'temperature'      => 0.3,
+                        'maxOutputTokens'  => 1024,
+                        'thinkingConfig'   => ['thinkingBudget' => 0],
+                    ],
                 ]
             );
 
