@@ -14,10 +14,7 @@
                     <p class="hero-sub">Not sure where to start? Describe what you need and our AI will find the right category for you.</p>
                 @endif
 
-                <div class="search-wrapper">
-                    <div class="search-shadow"></div>
-                    <livewire:global-search :parent-id="$category->id" />
-                </div>
+                <livewire:global-search variant="hero" :parent-id="$category->id" :sample-prompts="$samplePrompts" />
             </section>
 
             {{-- Subcategory grid --}}

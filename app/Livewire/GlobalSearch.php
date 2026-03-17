@@ -10,24 +10,30 @@ use App\Models\Product;
 use App\Models\SearchLog;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use Livewire\Attributes\On;
 use Livewire\Component;
 
 class GlobalSearch extends Component
 {
     public string $query = '';
-    public ?int $parentId = null;
+    public string $variant = 'nav';   // 'nav' | 'hero'
+    public array  $samplePrompts = [];
+    public ?int   $parentId = null;
     public string $parentName = '';
-    public bool $open = false;
-    public bool $isAiSearching = false;
+    public bool   $open = false;
+    public bool   $isAiSearching = false;
     public ?array $aiSuggestion = null;
     public ?string $aiError = null;
+    public array  $dbResults = [];
 
-    /** Flat result list [{type, name, url, ...}] populated by runDbSearch() */
-    public array $dbResults = [];
-
-    public function mount(?int $parentId = null): void
-    {
-        $this->parentId = $parentId;
+    public function mount(
+        string $variant = 'nav',
+        ?int $parentId = null,
+        array $samplePrompts = []
+    ): void {
+        $this->variant       = $variant;
+        $this->samplePrompts = $samplePrompts;
+        $this->parentId      = $parentId;
 
         if ($parentId) {
             $this->parentName = Category::find($parentId)?->name ?? '';
@@ -35,12 +41,22 @@ class GlobalSearch extends Component
     }
 
     /**
-     * Fires on every debounced keystroke (500 ms via wire:model.live.debounce.500ms).
-     *
-     * Phase 1 — instant DB search.
-     * If DB returns nothing, flip $isAiSearching = true so the browser renders
-     * the labor-illusion spinner immediately, then Alpine calls performAiSearch()
-     * in a separate non-blocking round-trip.
+     * Called by hint-chip buttons on the home/parent-category pages.
+     * Those buttons live in a different Livewire component (Home / ProductCompare)
+     * which dispatches 'set-search-query'; this listener picks it up.
+     */
+    #[On('set-search-query')]
+    public function setQuery(string $query): void
+    {
+        $this->query = $query;
+        $this->updatedQuery();
+    }
+
+    /**
+     * Phase 1 — instant DB search, fires after 400 ms debounce.
+     * If DB returns nothing, flip $isAiSearching = true.
+     * Alpine watches this flag and, after a 1-second idle wait, calls
+     * performAiSearch() in a second round-trip — keeping this response fast.
      */
     public function updatedQuery(): void
     {
@@ -64,8 +80,7 @@ class GlobalSearch extends Component
 
     /**
      * Phase 2 — AI fallback.
-     * Called by Alpine's $watch when isAiSearching flips to true, so the
-     * labor-illusion UI is already visible before this slow round-trip begins.
+     * Called by Alpine after a 1-second idle window when isAiSearching is true.
      */
     public function performAiSearch(): void
     {
@@ -141,7 +156,6 @@ class GlobalSearch extends Component
                                     . ($presetSlug ? "?preset={$presetSlug}" : ''),
             ];
 
-            // Flash for AI Concierge pick-up on the destination category page
             session()->flash('ai_initial_prompt', $this->query);
 
             SearchLog::create([
@@ -168,16 +182,6 @@ class GlobalSearch extends Component
         }
     }
 
-    public function close(): void
-    {
-        $this->open          = false;
-        $this->isAiSearching = false;
-        $this->aiSuggestion  = null;
-        $this->aiError       = null;
-        $this->dbResults     = [];
-        $this->query         = '';
-    }
-
     // ─────────────────────────────────────────────────────────────────────────
     // Private helpers
     // ─────────────────────────────────────────────────────────────────────────
@@ -187,22 +191,15 @@ class GlobalSearch extends Component
         $term    = $this->query;
         $results = [];
 
-        // ── Categories ────────────────────────────────────────────────────────
         $catQ = Category::where('name', 'like', "%{$term}%");
         if ($this->parentId) {
             $catQ->where('parent_id', $this->parentId);
         }
         foreach ($catQ->limit(4)->get(['id', 'name', 'slug']) as $cat) {
-            $results[] = [
-                'type' => 'category',
-                'name' => $cat->name,
-                'url'  => route('category.show', $cat->slug),
-            ];
+            $results[] = ['type' => 'category', 'name' => $cat->name, 'url' => route('category.show', $cat->slug)];
         }
 
-        // ── Presets ───────────────────────────────────────────────────────────
-        $presetQ = Preset::with('category:id,name,slug')
-            ->where('name', 'like', "%{$term}%");
+        $presetQ = Preset::with('category:id,name,slug')->where('name', 'like', "%{$term}%");
         if ($this->parentId) {
             $childIds = Category::where('parent_id', $this->parentId)->pluck('id');
             $presetQ->whereIn('category_id', $childIds);
@@ -212,12 +209,10 @@ class GlobalSearch extends Component
                 'type'          => 'preset',
                 'name'          => $preset->name,
                 'category_name' => $preset->category->name,
-                'url'           => route('category.show', $preset->category->slug)
-                                    . '?preset=' . Str::slug($preset->name),
+                'url'           => route('category.show', $preset->category->slug) . '?preset=' . Str::slug($preset->name),
             ];
         }
 
-        // ── Products ──────────────────────────────────────────────────────────
         $productQ = Product::with('category:id,name,slug')
             ->whereNull('status')
             ->where('is_ignored', false)
@@ -238,18 +233,12 @@ class GlobalSearch extends Component
         $this->dbResults = $results;
     }
 
-    /**
-     * Prompt instructs Gemini to return a single best-match category + optional
-     * preset slug, with smart scoping when a parent context is present.
-     */
     private function buildPrompt(array $categoryContext): string
     {
         $contextBlock = $this->parentName
             ? "CONTEXT: The user is currently browsing the \"{$this->parentName}\" section. " .
               "Strongly prioritize categories and presets within this section. " .
-              "However, if the user's query clearly describes a different product type " .
-              "(e.g., asking about keyboards while in an audio section), act as a smart " .
-              "global router and return the best match regardless of current section.\n\n"
+              "However, if the query clearly describes a different product type, route globally.\n\n"
             : '';
 
         $json = json_encode($categoryContext, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
