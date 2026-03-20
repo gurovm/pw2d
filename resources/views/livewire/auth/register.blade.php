@@ -2,7 +2,7 @@
     <div class="w-full max-w-md">
         <!-- Logo -->
         <div class="text-center mb-8">
-            <a href="/"><img src="{{ asset('images/logo.png') }}" alt="pw2d" class="h-14 mx-auto"></a>
+            <a href="/"><img src="{{ asset('images/logo.webp') }}" alt="pw2d" class="h-14 mx-auto" width="212" height="56"></a>
             <h1 class="mt-4 text-2xl font-bold text-gray-900">Create your account</h1>
             <p class="text-sm text-gray-500 mt-1">Start comparing products smarter</p>
         </div>

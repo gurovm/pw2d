@@ -12,7 +12,7 @@
     @php
         $defaultTitle       = $metaTitle       ?? 'pw2d - Power to Decide | AI Tech Recommendations';
         $defaultDescription = $metaDescription ?? 'Discover the best tech products tailored to your exact needs using our AI-powered recommendation engine.';
-        $defaultImage       = $ogImage         ?? asset('images/og-default.jpg');
+        $defaultImage       = $ogImage         ?? asset('images/logo.webp');
         $defaultUrl         = $canonicalUrl    ?? request()->url();
     @endphp
 

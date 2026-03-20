@@ -4,7 +4,7 @@
             <!-- Logo -->
             <div class="flex-shrink-0">
                 <a href="/" class="flex items-center">
-                    <img src="{{ asset('images/logo.png') }}" alt="pw2d Logo" class="h-10 md:h-16 w-auto">
+                    <img src="{{ asset('images/logo.webp') }}" alt="pw2d Logo" class="h-10 md:h-16 w-auto" width="242" height="64" fetchpriority="high">
                 </a>
             </div>
 
