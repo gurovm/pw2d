@@ -17,17 +17,10 @@ Pw2D is a modern affiliate/recommendation platform targeted at the US market. It
   - **SSL:** Secured via Certbot.
 - **Sub-system (TAU Chatbox):** There is a separate Python/FastAPI/Docker project running on the same server under `t.pw2d.com` (Port 8010). Do not confuse the Laravel monolithic codebase with the TAU Chatbox project.
 
-## 4. STRICT Deployment Workflow (CRITICAL)
-- **NEVER** edit files directly on the production server via SSH.
-- All code changes must be made locally, committed, and pushed to GitHub (`origin/main`).
-- **To Deploy to Production:**
-  1. SSH into the server: `ssh root@209.97.153.234`
-  2. Navigate to project: `cd /var/www/pw2d`
-  3. Pull changes: `git pull origin main` (If there are conflicts, NEVER force push from the server. Reset to origin/main).
-  4. Run migrations if needed: `php artisan migrate --force`
-  5. Build frontend assets: `npm run build`
-  6. Clear caches: `php artisan optimize:clear`
-  7. Restart PHP-FPM to clear OPcache: `systemctl restart php8.3-fpm`
+### 4. STRICT Deployment Workflow (CRITICAL BOUNDARY)
+
+🛑 **STOP! NEVER INITIATE DEPLOYMENT AUTOMATICALLY.** 🛑
+Under NO circumstances should you execute deployment commands, SSH into the server, or run build scripts after finishing a coding task. Your job ends when the code is written and tested locally. Deployment is strictly handled via the `/deploy` command.
 
 ## 5. Coding Standards
 - Write clean, modern PHP 8.3 (use strict types, match expressions, arrow functions).

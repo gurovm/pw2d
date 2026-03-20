@@ -137,42 +137,23 @@
 
 {{-- ── AI suggestion: click to navigate ──────────────────────────────────── --}}
 @elseif($aiSuggestion)
-    <div class="p-4">
-        <div class="flex items-center gap-2 mb-3">
-            <span class="text-[10px] font-bold uppercase tracking-widest text-slate-400">AI Best Match</span>
-            <span class="inline-flex items-center gap-1 bg-indigo-50 text-indigo-600 text-[10px] font-semibold px-2 py-0.5 rounded-full">
-                <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                          d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                </svg>
-                AI
-            </span>
-        </div>
-        <a href="{{ $aiSuggestion['url'] }}"
-           class="flex items-center gap-3.5 p-3.5 rounded-xl bg-white
-                  border border-slate-200 shadow-sm
-                  hover:border-indigo-300 hover:shadow-md hover:bg-indigo-50/50
-                  transition-all duration-200 group">
-            <div class="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
-                <span class="text-lg">🎯</span>
-            </div>
-            <div class="flex-1 min-w-0">
-                <div class="font-semibold text-slate-900 text-sm leading-tight">
-                    {{ $aiSuggestion['category_name'] }}
-                    @if($aiSuggestion['preset_name'])
-                        <span class="inline-flex items-center ml-1.5 px-2 py-0.5 bg-indigo-50 text-indigo-600 text-[10px] font-semibold rounded-full">{{ $aiSuggestion['preset_name'] }}</span>
-                    @endif
-                </div>
-                @if($aiSuggestion['reasoning'])
-                    <p class="text-xs text-slate-500 mt-1 leading-relaxed line-clamp-2">{{ $aiSuggestion['reasoning'] }}</p>
-                @endif
-            </div>
-            <svg class="w-5 h-5 text-slate-300 group-hover:text-indigo-500 group-hover:translate-x-0.5 transition-all shrink-0"
-                 fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-            </svg>
-        </a>
+    <div class="px-4 pt-2 pb-1">
+        <span class="text-[10px] font-bold uppercase tracking-widest text-gray-400">AI Match</span>
     </div>
+    <a href="{{ $aiSuggestion['url'] }}"
+       class="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors group">
+        <span class="text-base">✨</span>
+        <span class="text-sm font-medium text-gray-800 group-hover:text-indigo-600 transition-colors flex-1 truncate">
+            {{ $aiSuggestion['category_name'] }}
+            @if(!empty($aiSuggestion['preset_name']))
+                <span class="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-50 text-indigo-600">{{ $aiSuggestion['preset_name'] }}</span>
+            @endif
+        </span>
+        <svg class="w-4 h-4 text-gray-300 group-hover:text-indigo-400 transition-colors shrink-0"
+             fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+        </svg>
+    </a>
 
 {{-- ── AI error ────────────────────────────────────────────────────────────── --}}
 @elseif($aiError)
@@ -189,23 +170,10 @@
 {{-- ── CTA: no DB results, AI not yet triggered ──────────────────────────── --}}
 @else
     <div wire:click="triggerAiSearch"
-         class="px-5 py-4 flex items-center gap-3.5 cursor-pointer hover:bg-slate-50 transition-colors duration-150">
-        <div class="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
-            <svg class="w-4.5 h-4.5 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M13 10V3L4 14h7v7l9-11h-7z"/>
-            </svg>
-        </div>
-        <div class="flex-1 min-w-0">
-            <p class="text-sm text-slate-600">
-                No exact matches. Press
-                <kbd class="inline-flex items-center px-1.5 py-0.5 mx-0.5 bg-white border border-slate-200 rounded shadow-sm text-[10px] font-semibold text-slate-500">Enter</kbd>
-                or click to let AI find the best match for:
-            </p>
-            <p class="text-sm font-semibold text-indigo-600 truncate mt-0.5">"{{ $query }}"</p>
-        </div>
-        <svg class="w-4 h-4 text-slate-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-        </svg>
+         class="group flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-slate-50 transition-colors">
+        <span class="text-base">✨</span>
+        <span class="text-sm text-slate-500">No exact matches. Press
+            <kbd class="px-1.5 py-0.5 text-[11px] font-medium text-slate-500 bg-slate-100 border border-slate-200 rounded">Enter</kbd>
+            for AI search</span>
     </div>
 @endif

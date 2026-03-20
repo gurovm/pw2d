@@ -89,9 +89,10 @@
                 placeholder="Search categories or products…"
                 autocomplete="off"
                 @focus="if ($wire.query.length >= 3) open = true"
-                class="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-full bg-gray-50
-                       focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30
-                       focus:border-blue-400 shadow-sm text-sm transition-all duration-200"
+                class="w-full pl-10 pr-4 py-2 border border-gray-200 bg-gray-50
+                       focus:bg-white focus:outline-none focus:ring-0 focus:border-gray-200
+                       shadow-sm text-sm transition-all duration-200"
+                :class="open ? 'rounded-t-lg rounded-b-none border-b-transparent' : 'rounded-lg'"
             >
             <div wire:loading wire:target="updatedQuery"
                  class="absolute inset-y-0 right-0 pr-3 flex items-center">
@@ -111,8 +112,8 @@
              x-transition:leave-start="opacity-100 translate-y-0"
              x-transition:leave-end="opacity-0 translate-y-1"
              style="display:none"
-             class="absolute top-full mt-2 w-full bg-white rounded-2xl shadow-xl
-                    border border-gray-100 overflow-hidden max-h-112 overflow-y-auto">
+             class="absolute top-full w-full bg-white rounded-b-lg shadow-lg
+                    border border-gray-200 border-t-0 overflow-hidden max-h-112 overflow-y-auto">
             @include('livewire.global-search-results')
         </div>
 
