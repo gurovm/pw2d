@@ -182,4 +182,27 @@
         </svg>
         <p class="text-sm text-gray-600">{{ $aiError }}</p>
     </div>
+
+{{-- ── CTA: no DB results, AI not yet triggered ──────────────────────────── --}}
+@else
+    <div wire:click="triggerAiSearch"
+         class="px-5 py-4 flex items-center gap-3 cursor-pointer hover:bg-gray-50 transition-colors">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center shrink-0">
+            <svg class="w-4 h-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M13 10V3L4 14h7v7l9-11h-7z"/>
+            </svg>
+        </div>
+        <div class="flex-1 min-w-0">
+            <p class="text-sm text-gray-700">
+                No exact matches. Press
+                <kbd class="inline-flex items-center px-1.5 py-0.5 bg-gray-100 border border-gray-200 rounded text-[10px] font-semibold text-gray-500 mx-0.5">Enter</kbd>
+                to let AI find the best match for:
+            </p>
+            <p class="text-sm font-semibold text-blue-600 truncate mt-0.5">"{{ $query }}"</p>
+        </div>
+        <svg class="w-4 h-4 text-gray-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+        </svg>
+    </div>
 @endif

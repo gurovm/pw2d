@@ -42,14 +42,18 @@ class GlobalSearch extends Component
 
     /**
      * Called by hint-chip buttons on the home/parent-category pages.
-     * Those buttons live in a different Livewire component (Home / ProductCompare)
-     * which dispatches 'set-search-query'; this listener picks it up.
+     * Hint chips represent complete user intent, so we run DB search
+     * first, and auto-fire AI if no DB results are found.
      */
     #[On('set-search-query')]
     public function setQuery(string $query): void
     {
         $this->query = $query;
         $this->search();
+
+        if (empty($this->dbResults)) {
+            $this->triggerAiSearch();
+        }
     }
 
     /**
@@ -63,8 +67,8 @@ class GlobalSearch extends Component
     }
 
     /**
-     * Phase 1 — instant DB search.
-     * Public so the hero form's @submit.prevent and Alpine can call it directly.
+     * Phase 1 — instant DB search (reactive, fires on every debounced keystroke).
+     * Never triggers AI automatically.
      */
     public function search(): void
     {
@@ -80,15 +84,29 @@ class GlobalSearch extends Component
 
         $this->open = true;
         $this->runDbSearch();
-
-        if (empty($this->dbResults)) {
-            $this->isAiSearching = true;
-        }
     }
 
     /**
-     * Phase 2 — AI fallback.
-     * Called by Alpine after a 1-second idle window when isAiSearching is true.
+     * Explicit AI trigger — called by Enter key or CTA click.
+     * Validates query, shows labor-illusion, then runs AI.
+     */
+    public function triggerAiSearch(): void
+    {
+        if (mb_strlen(trim($this->query)) < 3 || $this->isAiSearching) {
+            return;
+        }
+
+        $this->dbResults     = [];
+        $this->aiSuggestion  = null;
+        $this->aiError       = null;
+        $this->isAiSearching = true;
+        $this->open          = true;
+
+        $this->performAiSearch();
+    }
+
+    /**
+     * Phase 2 — AI fallback. Called by triggerAiSearch().
      */
     public function performAiSearch(): void
     {

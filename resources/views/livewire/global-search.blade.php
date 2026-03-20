@@ -1,27 +1,11 @@
 {{--
   GlobalSearch — two visual variants, identical behaviour:
-    400 ms debounce → DB search
-    no results → 1 s idle wait → AI search → click-to-navigate result (no redirect)
+    400 ms debounce → DB search (reactive)
+    Enter key / CTA click → AI search (explicit, no auto-trigger)
 --}}
-<div x-data="{
-         open: @entangle('open'),
-         _aiTimer: null,
-         init() {
-             {{-- When isAiSearching flips true (DB returned nothing), wait 1 s
-                  before calling the AI. Any new keystroke within that second
-                  resets isAiSearching → false, which cancels the timer. --}}
-             $watch('$wire.isAiSearching', val => {
-                 clearTimeout(this._aiTimer);
-                 if (val) {
-                     this._aiTimer = setTimeout(() => {
-                         if ($wire.isAiSearching) $wire.performAiSearch();
-                     }, 1000);
-                 }
-             });
-         }
-     }"
-     @click.outside="open = false; clearTimeout(_aiTimer)"
-     @keydown.escape.window="open = false; clearTimeout(_aiTimer)"
+<div x-data="{ open: @entangle('open') }"
+     @click.outside="open = false"
+     @keydown.escape.window="open = false"
      class="{{ $variant === 'hero' ? 'w-full flex flex-col items-center' : 'relative w-full max-w-lg z-50' }}">
 
     {{-- ══════════════════════════════════════════════════════════════════ --}}
@@ -29,7 +13,7 @@
     {{-- ══════════════════════════════════════════════════════════════════ --}}
     @if($variant === 'hero')
 
-        <form @submit.prevent="$wire.search()" class="search-wrapper">
+        <form @submit.prevent="$wire.triggerAiSearch()" class="search-wrapper">
             <div class="search-shadow"></div>
 
             <div class="search-box"
@@ -80,11 +64,10 @@
             </div>
 
             {{-- Results panel: inline below the search-box, inherits wrapper width --}}
-            @if(!empty($dbResults) || $isAiSearching || $aiSuggestion || $aiError)
-                <div class="mt-3 w-full bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden relative z-10">
-                    @include('livewire.global-search-results')
-                </div>
-            @endif
+            <div x-show="open" x-cloak
+                 class="mt-3 w-full bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden relative z-10">
+                @include('livewire.global-search-results')
+            </div>
         </form>
 
     {{-- ══════════════════════════════════════════════════════════════════ --}}
@@ -102,6 +85,7 @@
             <input
                 type="search"
                 wire:model.live.debounce.400ms="query"
+                wire:keydown.enter.prevent="triggerAiSearch"
                 placeholder="Search categories or products…"
                 autocomplete="off"
                 @focus="if ($wire.query.length >= 3) open = true"
