@@ -276,7 +276,7 @@ class GlobalSearch extends Component
                 'name'          => $product->name,
                 'category_name' => $product->category?->name,
                 'image'         => $product->external_image_path,
-                'url'           => route('category.show', $product->category?->slug ?? '#'),
+                'url'           => route('category.show', $product->category?->slug ?? '#') . '?focus=' . $product->slug,
             ];
         }
 

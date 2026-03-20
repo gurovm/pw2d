@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Http;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\On;
 use Livewire\Attributes\Computed;
+use Livewire\Attributes\Session;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 
@@ -41,12 +42,22 @@ class ProductCompare extends Component
     #[Url(as: 'preset')]
     public ?string $activePresetSlug = null;
 
+    // Focus: auto-pin a product from GlobalSearch (cleared after mount to keep URLs clean)
+    #[Url]
+    public string $focus = '';
+
     // AI Concierge properties
     public $aiMessage = '';
     public $userInput = '';
     public $chatHistory = [];
     public $isAiProcessing = false;
     public $showAiChat = false;
+
+    // Head-to-Head compare list (max 4, persisted in session across navigations)
+    #[Session]
+    public array $compareList = [];
+    #[Session]
+    public bool $isComparing = false;
 
     // Filters
     public $filterBrand = '';
@@ -159,7 +170,34 @@ class ProductCompare extends Component
     #[Computed]
     public function visibleProducts()
     {
-        $topScored = $this->scoredProducts->take($this->displayLimit);
+        // H2H Arena mode: show only the pinned products (still dynamically scored)
+        if ($this->isComparing && !empty($this->compareList)) {
+            $compareIds = collect($this->compareList);
+            $scored = $this->scoredProducts->whereIn('id', $compareIds);
+            $scoreMap = $scored->keyBy('id');
+
+            $fullProducts = Product::whereIn('id', $compareIds)
+                ->with(['brand', 'featureValues.feature'])
+                ->get()
+                ->keyBy('id');
+
+            return $scored->pluck('id')->map(function ($id) use ($fullProducts, $scoreMap) {
+                $product = $fullProducts[$id];
+                $product->match_score = $scoreMap[$id]->match_score;
+                $product->feature_scores = $scoreMap[$id]->feature_scores;
+                return $product;
+            });
+        }
+
+        $scored = $this->scoredProducts;
+
+        // Staging mode: bump pinned products to the top while keeping score order for the rest
+        if (!empty($this->compareList)) {
+            $pinned = $this->compareList;
+            $scored = $scored->sortByDesc(fn($p) => in_array($p->id, $pinned) ? 1 : 0)->values();
+        }
+
+        $topScored = $scored->take($this->displayLimit);
         $topIds = $topScored->pluck('id');
         $scoreMap = $topScored->keyBy('id');
 
@@ -256,6 +294,57 @@ class ProductCompare extends Component
         $this->displayLimit = max(12, min(120, $this->displayLimit));
         // Round down to the nearest page boundary so ?limit=13 doesn't sneak in
         $this->displayLimit = (int) ceil($this->displayLimit / 12) * 12;
+
+        // Focus & Bump: auto-pin a product from GlobalSearch, then clear the URL param
+        if (!empty($this->focus)) {
+            $focusedProduct = Product::where('slug', $this->focus)
+                ->where('category_id', $this->category->id)
+                ->whereNull('status')
+                ->where('is_ignored', false)
+                ->first();
+
+            if ($focusedProduct && !in_array($focusedProduct->id, $this->compareList) && count($this->compareList) < 4) {
+                $this->compareList[] = $focusedProduct->id;
+            }
+
+            $this->focus = '';
+        }
+    }
+
+    public function toggleCompare(int $productId): void
+    {
+        if (in_array($productId, $this->compareList)) {
+            $this->compareList = array_values(array_filter(
+                $this->compareList,
+                fn($id) => $id !== $productId
+            ));
+            return;
+        }
+
+        if (count($this->compareList) >= 4) {
+            $this->dispatch('compare-limit-reached');
+            return;
+        }
+
+        $this->compareList[] = $productId;
+    }
+
+    public function clearCompare(): void
+    {
+        $this->compareList = [];
+        $this->isComparing = false;
+    }
+
+    public function startComparison(): void
+    {
+        if (count($this->compareList) >= 2) {
+            $this->isComparing = true;
+        }
+    }
+
+    public function stopComparison(): void
+    {
+        $this->isComparing = false;
     }
 
     public function clearFilters()

@@ -341,16 +341,50 @@
                                 @endif
                         </div>
 
+                        {{-- H2H Arena header (inline, minimal — only when actively comparing) --}}
+                        @if ($isComparing && count($compareList) > 0)
+                            <div class="flex justify-between items-end mb-6 border-b border-slate-200 pb-4">
+                                <div>
+                                    <h2 class="text-2xl font-black text-slate-800 tracking-tight">Head-to-Head</h2>
+                                    <p class="text-sm text-slate-500">Comparing {{ count($compareList) }} products</p>
+                                </div>
+                                <button wire:click="stopComparison"
+                                        class="bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg px-4 py-2 text-sm font-semibold shadow-sm transition-colors cursor-pointer">
+                                    Back to Catalog
+                                </button>
+                            </div>
+                        @endif
+
                         @if ($this->scoredProducts->count() > 0 && $features->count() > 0)
+                                @php
+                                    $bestMatchId = empty($compareList)
+                                        ? $this->visibleProducts->sortByDesc('match_score')->first()?->id
+                                        : null;
+                                @endphp
                                 <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-1.5 md:gap-5" x-data
                                         x-init="import('https://cdn.jsdelivr.net/npm/@formkit/auto-animate').then(module => module.default($el))">
                     @foreach ($this->visibleProducts as $product)
-                        <div wire:key="product-{{ $product->id }}" class="product-card bg-white rounded-2xl shadow-sm hover:shadow-[0_12px_40px_rgba(255,153,0,0.2)] transition-all duration-300 overflow-hidden flex flex-col h-full border hover:border-amber-400 group relative {{ $loop->first ? 'border-2 border-amber-400 shadow-[0_4px_20px_rgba(245,158,11,0.15)]' : 'border-gray-100' }}">
-                            @if ($loop->first)
+                        @php $inCompare = in_array($product->id, $compareList); @endphp
+                        <div wire:key="product-{{ $product->id }}" class="product-card bg-white rounded-2xl shadow-sm hover:shadow-[0_12px_40px_rgba(255,153,0,0.2)] transition-all duration-300 overflow-hidden flex flex-col h-full border hover:border-amber-400 group relative {{ $inCompare ? 'border-2 border-slate-800 shadow-[0_4px_20px_rgba(30,41,59,0.15)]' : ($product->id === $bestMatchId ? 'border-2 border-amber-400 shadow-[0_4px_20px_rgba(245,158,11,0.15)]' : 'border-gray-100') }}">
+                            @if ($product->id === $bestMatchId)
                                 <div class="absolute top-2.5 left-2.5 z-10 bg-amber-500 text-white text-[10px] md:text-xs font-black px-2.5 py-1 rounded-full shadow-md tracking-wide">
                                     ⭐ Best Match
                                 </div>
                             @endif
+
+                            {{-- H2H Compare toggle: hidden until hover, visible when active --}}
+                            <button wire:click.stop="toggleCompare({{ $product->id }})"
+                                    class="absolute top-2 right-2 z-20 flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold transition-all duration-200 cursor-pointer
+                                        {{ $inCompare
+                                            ? 'bg-slate-800 text-white hover:bg-slate-900 shadow-md border border-slate-800'
+                                            : 'bg-white/90 backdrop-blur-sm text-slate-400 hover:text-slate-600 border border-slate-200 shadow-sm md:opacity-0 md:group-hover:opacity-100' }}">
+                                @if($inCompare)
+                                    <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>
+                                    VS
+                                @else
+                                    + VS
+                                @endif
+                            </button>
                             @if ($product->image_url)
                                 <a href="/product/{{ $product->slug }}"
                                    wire:click.prevent="openProduct('{{ $product->slug }}')"
@@ -425,7 +459,7 @@
                         </div> @endforeach
                         </div>
 
-                        @if($this->scoredProducts->count() > $displayLimit)
+                        @if($this->scoredProducts->count() > $displayLimit && !$isComparing)
                         <div class="mt-12 flex justify-center pb-8">
                                 <a href="{{ request()->fullUrlWithQuery(['limit' => $displayLimit + 12]) }}"
                                    wire:click.prevent="loadMore"
@@ -448,6 +482,24 @@
                         @endif
                 </div>
         </div>
+
+        {{-- H2H Staging floating pill (cart-style, bottom-right above slider FAB) --}}
+        @if (count($compareList) > 0 && !$isComparing)
+            <div class="fixed bottom-24 right-4 z-50 bg-slate-900 text-white rounded-full px-5 py-3 flex items-center gap-4 shadow-2xl transition-all border border-slate-700">
+                <span class="text-sm font-medium">{{ count($compareList) }} / 4 Selected</span>
+                @if (count($compareList) >= 2)
+                    <button wire:click="startComparison"
+                            class="bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold py-1.5 px-4 rounded-full transition-colors cursor-pointer">
+                        Compare Now
+                    </button>
+                @endif
+                <button wire:click="clearCompare"
+                        class="text-slate-400 hover:text-white transition-colors cursor-pointer"
+                        title="Clear selection">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+        @endif
 
         @if ($this->selectedProduct)
                 <div class="fixed inset-0 z-70 flex items-center justify-center sm:p-6"
@@ -752,6 +804,22 @@
                         </div>{{-- /card --}}
                 </div>{{-- /outer container --}}
         @endif
+
+        {{-- H2H limit toast --}}
+        <div x-data="{ show: false }"
+             x-on:compare-limit-reached.window="show = true; setTimeout(() => show = false, 3000)"
+             x-show="show"
+             x-transition:enter="transition ease-out duration-300"
+             x-transition:enter-start="opacity-0 -translate-y-2"
+             x-transition:enter-end="opacity-100 translate-y-0"
+             x-transition:leave="transition ease-in duration-200"
+             x-transition:leave-start="opacity-100 translate-y-0"
+             x-transition:leave-end="opacity-0 -translate-y-2"
+             style="display: none;"
+             class="fixed top-4 left-1/2 -translate-x-1/2 z-[100] bg-gray-900 text-white text-sm font-medium px-5 py-3 rounded-xl shadow-2xl flex items-center gap-2">
+            <svg class="w-4 h-4 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M12 3l9.09 16H2.91L12 3z"></path></svg>
+            You can compare up to 4 products at a time.
+        </div>
 
         <script>
                 document.addEventListener('livewire:initialized', () => {

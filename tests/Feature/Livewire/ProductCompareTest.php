@@ -138,6 +138,176 @@ class ProductCompareTest extends TestCase
     }
 
     /** @test */
+    public function toggle_compare_adds_and_removes_product()
+    {
+        $category = Category::factory()->create(['slug' => 'laptops']);
+        $brand = Brand::factory()->create();
+        $feature = Feature::factory()->create(['category_id' => $category->id]);
+        $product = Product::factory()->create([
+            'category_id' => $category->id,
+            'brand_id' => $brand->id,
+            'slug' => 'laptop-a',
+        ]);
+
+        Livewire::test(ProductCompare::class, ['slug' => 'laptops'])
+            ->assertSet('compareList', [])
+            ->call('toggleCompare', $product->id)
+            ->assertSet('compareList', [$product->id])
+            ->call('toggleCompare', $product->id)
+            ->assertSet('compareList', []);
+    }
+
+    /** @test */
+    public function toggle_compare_caps_at_four_products()
+    {
+        $category = Category::factory()->create(['slug' => 'laptops']);
+        $brand = Brand::factory()->create();
+        Feature::factory()->create(['category_id' => $category->id]);
+
+        $products = collect();
+        for ($i = 1; $i <= 5; $i++) {
+            $products->push(Product::factory()->create([
+                'category_id' => $category->id,
+                'brand_id' => $brand->id,
+                'slug' => "laptop-{$i}",
+            ]));
+        }
+
+        $component = Livewire::test(ProductCompare::class, ['slug' => 'laptops']);
+
+        foreach ($products->take(4) as $p) {
+            $component->call('toggleCompare', $p->id);
+        }
+
+        $component
+            ->assertCount('compareList', 4)
+            ->call('toggleCompare', $products[4]->id)
+            ->assertCount('compareList', 4)
+            ->assertDispatched('compare-limit-reached');
+    }
+
+    /** @test */
+    public function clear_compare_resets_list_and_is_comparing()
+    {
+        $category = Category::factory()->create(['slug' => 'laptops']);
+        $brand = Brand::factory()->create();
+        Feature::factory()->create(['category_id' => $category->id]);
+
+        $products = collect();
+        for ($i = 1; $i <= 3; $i++) {
+            $products->push(Product::factory()->create([
+                'category_id' => $category->id,
+                'brand_id' => $brand->id,
+                'slug' => "laptop-{$i}",
+            ]));
+        }
+
+        $component = Livewire::test(ProductCompare::class, ['slug' => 'laptops']);
+
+        foreach ($products as $p) {
+            $component->call('toggleCompare', $p->id);
+        }
+
+        $component
+            ->call('startComparison')
+            ->assertSet('isComparing', true)
+            ->call('clearCompare')
+            ->assertSet('compareList', [])
+            ->assertSet('isComparing', false);
+    }
+
+    /** @test */
+    public function start_comparison_requires_at_least_two_products()
+    {
+        $category = Category::factory()->create(['slug' => 'laptops']);
+        $brand = Brand::factory()->create();
+        Feature::factory()->create(['category_id' => $category->id]);
+        $product = Product::factory()->create([
+            'category_id' => $category->id,
+            'brand_id' => $brand->id,
+            'slug' => 'laptop-solo',
+        ]);
+
+        Livewire::test(ProductCompare::class, ['slug' => 'laptops'])
+            ->call('toggleCompare', $product->id)
+            ->call('startComparison')
+            ->assertSet('isComparing', false);
+    }
+
+    /** @test */
+    public function stop_comparison_keeps_compare_list()
+    {
+        $category = Category::factory()->create(['slug' => 'laptops']);
+        $brand = Brand::factory()->create();
+        Feature::factory()->create(['category_id' => $category->id]);
+
+        $products = collect();
+        for ($i = 1; $i <= 2; $i++) {
+            $products->push(Product::factory()->create([
+                'category_id' => $category->id,
+                'brand_id' => $brand->id,
+                'slug' => "laptop-{$i}",
+            ]));
+        }
+
+        $component = Livewire::test(ProductCompare::class, ['slug' => 'laptops']);
+
+        foreach ($products as $p) {
+            $component->call('toggleCompare', $p->id);
+        }
+
+        $component
+            ->call('startComparison')
+            ->assertSet('isComparing', true)
+            ->call('stopComparison')
+            ->assertSet('isComparing', false)
+            ->assertCount('compareList', 2);
+    }
+
+    /** @test */
+    public function focus_param_auto_pins_product_and_clears_url()
+    {
+        $category = Category::factory()->create(['slug' => 'laptops']);
+        $brand = Brand::factory()->create();
+        Feature::factory()->create(['category_id' => $category->id]);
+        $product = Product::factory()->create([
+            'category_id' => $category->id,
+            'brand_id' => $brand->id,
+            'slug' => 'target-laptop',
+        ]);
+
+        Livewire::test(ProductCompare::class, ['slug' => 'laptops'])
+            ->set('focus', 'target-laptop')
+            // focus is processed in mount, so we simulate via withQueryParams
+            ;
+
+        // Test via fresh mount with the focus param set
+        Livewire::withQueryParams(['focus' => 'target-laptop'])
+            ->test(ProductCompare::class, ['slug' => 'laptops'])
+            ->assertSet('focus', '')
+            ->assertSet('compareList', [$product->id]);
+    }
+
+    /** @test */
+    public function focus_param_ignores_product_from_wrong_category()
+    {
+        $category = Category::factory()->create(['slug' => 'laptops']);
+        $otherCategory = Category::factory()->create(['slug' => 'mice']);
+        $brand = Brand::factory()->create();
+        Feature::factory()->create(['category_id' => $category->id]);
+        Product::factory()->create([
+            'category_id' => $otherCategory->id,
+            'brand_id' => $brand->id,
+            'slug' => 'wrong-category-product',
+        ]);
+
+        Livewire::withQueryParams(['focus' => 'wrong-category-product'])
+            ->test(ProductCompare::class, ['slug' => 'laptops'])
+            ->assertSet('focus', '')
+            ->assertSet('compareList', []);
+    }
+
+    /** @test */
     public function it_handles_missing_seo_data_gracefully()
     {
         // Category with NO buying guide data
