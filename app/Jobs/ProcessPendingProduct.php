@@ -250,6 +250,11 @@ class ProcessPendingProduct implements ShouldQueue
 
             Storage::disk('public')->put($path, $response->body());
 
+            // Optimize: convert to WebP, resize to 800px max width
+            $absolutePath = Storage::disk('public')->path($path);
+            $webpPath = \App\Services\ImageOptimizer::toWebp($absolutePath);
+            $path = str_replace(Storage::disk('public')->path(''), '', $webpPath);
+
             $product->update(['image_path' => $path]);
 
             Log::info('ProcessPendingProduct: image stored', ['path' => $path]);
