@@ -323,6 +323,7 @@
                                                min="0"
                                                max="{{ $maxPrice }}"
                                                step="5"
+                                               aria-label="Maximum price filter"
                                                class="w-24 md:w-32 accent-blue-500 cursor-pointer">
                                         <span class="text-sm font-semibold text-gray-700 w-16 text-right">${{ number_format($selectedPrice) }}</span>
                                 </div>
@@ -367,7 +368,7 @@
                         @php $inCompare = in_array($product->id, $compareList); @endphp
                         <div wire:key="product-{{ $product->id }}" class="product-card bg-white rounded-2xl shadow-sm hover:shadow-[0_12px_40px_rgba(255,153,0,0.2)] transition-all duration-300 overflow-hidden flex flex-col h-full border hover:border-amber-400 group relative {{ $inCompare ? 'border-2 border-slate-800 shadow-[0_4px_20px_rgba(30,41,59,0.15)]' : ($product->id === $bestMatchId ? 'border-2 border-amber-400 shadow-[0_4px_20px_rgba(245,158,11,0.15)]' : 'border-gray-100') }}">
                             @if ($product->id === $bestMatchId)
-                                <div class="absolute top-2.5 left-2.5 z-10 bg-amber-600 text-white text-[10px] md:text-xs font-black px-2.5 py-1 rounded-full shadow-md tracking-wide">
+                                <div class="absolute top-2.5 left-2.5 z-10 bg-amber-700 text-white text-[10px] md:text-xs font-black px-2.5 py-1 rounded-full shadow-md tracking-wide">
                                     ⭐ Best Match
                                 </div>
                             @endif
@@ -417,7 +418,7 @@
                                    wire:click.prevent="openProduct('{{ $product->slug }}')"
                                    @click="window.history.pushState({ returnUrl: window.location.href }, '', '/product/{{ $product->slug }}')"
                                    class="block outline-none">
-                                    <h3 class="text-[11px] md:text-sm font-semibold text-gray-900 mb-1.5 leading-tight line-clamp-2 min-h-8 md:min-h-10">{{ $product->name }}</h3>
+                                    <h2 class="text-[11px] md:text-sm font-semibold text-gray-900 mb-1.5 leading-tight line-clamp-2 min-h-8 md:min-h-10">{{ $product->name }}</h2>
                                 </a>
 
                                 @php
@@ -452,6 +453,7 @@
 
                             @if ($product->affiliate_url)
                                 <a href="{{ $product->affiliate_url }}" target="_blank" rel="noopener noreferrer"
+                                   aria-label="Check current price for {{ $product->name }}"
                                    class="amazon-cta block w-full text-center bg-[#FF9900] text-gray-900 py-2.5 md:py-3 font-bold text-xs md:text-sm transition-all duration-200 hover:bg-[#E68A00]">
                                     Check Current Price →
                                 </a>
