@@ -538,6 +538,7 @@
                                         <span class="font-semibold text-sm text-gray-800 truncate pr-2">{{ $this->selectedProduct->name }}</span>
                                         <button type="button"
                                                 @click="window.history.pushState({}, '', window.history.state?.returnUrl ?? '/compare/{{ $category->slug }}'); $wire.closeProduct()"
+                                                aria-label="Close product details"
                                                 class="p-2 hover:bg-gray-100 rounded-full text-gray-500 hover:text-gray-900 transition-all cursor-pointer shrink-0">
                                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path>
@@ -555,6 +556,7 @@
                                                 @if ($this->selectedProduct->image_url)
                                                         <img src="{{ $this->selectedProduct->image_url }}"
                                                                 alt="{{ $this->selectedProduct->name }}"
+                                                                width="400" height="400"
                                                                 class="w-full max-h-[300px] object-contain mix-blend-multiply drop-shadow-xl hover:scale-105 transition-transform duration-700 ease-out">
                                                 @else
                                                         <svg class="w-24 h-24 text-gray-300" fill="none"
@@ -584,7 +586,7 @@
                                                         </div>
                                                         <a href="{{ $this->selectedProduct->affiliate_url }}"
                                                                 target="_blank" rel="noopener noreferrer"
-                                                                class="w-full bg-[#FF9900] hover:bg-[#E68A00] text-white shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 rounded-xl py-2.5 px-4 md:py-3.5 md:px-6 text-sm md:text-base font-bold flex items-center justify-center gap-2">
+                                                                class="w-full bg-[#FF9900] hover:bg-[#E68A00] text-gray-900 shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 rounded-xl py-2.5 px-4 md:py-3.5 md:px-6 text-sm md:text-base font-bold flex items-center justify-center gap-2">
                                                                 <span>Check Current Price</span>
                                                                 <svg class="w-4 h-4" fill="none"
                                                                         stroke="currentColor" viewBox="0 0 24 24">
@@ -629,7 +631,7 @@
                                                                 </svg>
                                                                 {{ number_format($this->selectedProduct->amazon_rating, 1) }}
                                                                 <span
-                                                                        class="text-gray-400 font-normal ml-1">({{ number_format($this->selectedProduct->amazon_reviews_count) }})</span>
+                                                                        class="text-gray-500 font-normal ml-1">({{ number_format($this->selectedProduct->amazon_reviews_count) }})</span>
                                                         </div>
                                                 @endif
                                         </div>
@@ -649,9 +651,9 @@
                                                                                 stroke-width="2"
                                                                                 d="M13 10V3L4 14h7v7l9-11h-7z"></path>
                                                                 </svg>
-                                                                <h4
+                                                                <h3
                                                                         class="text-xs font-bold text-indigo-900 uppercase tracking-widest">
-                                                                        The Verdict</h4>
+                                                                        The Verdict</h3>
                                                         </div>
                                                         <p
                                                                 class="text-indigo-900 text-sm leading-relaxed font-medium relative z-10 whitespace-pre-line">
@@ -753,7 +755,7 @@
                                                                                         class="text-sm font-semibold text-gray-700">{{ $feature->name }}</span>
                                                                                 <span
                                                                                         class="text-sm font-bold text-gray-900">{{ $rawValue }}<span
-                                                                                                class="text-gray-400 font-medium text-xs ml-0.5">{{ $feature->unit }}</span></span>
+                                                                                                class="text-gray-500 font-medium text-xs ml-0.5">{{ $feature->unit }}</span></span>
                                                                         </div>
                                                                         <div
                                                                                 class="w-full bg-gray-100 h-2 rounded-full overflow-hidden">
@@ -793,7 +795,7 @@
                                                 @endif
                                                 <a href="{{ $this->selectedProduct->affiliate_url }}"
                                                         target="_blank" rel="noopener noreferrer"
-                                                        class="flex-1 bg-[#FF9900] hover:bg-[#E68A00] text-white rounded-xl py-3 px-4 text-sm font-bold flex items-center justify-center gap-2">
+                                                        class="flex-1 bg-[#FF9900] hover:bg-[#E68A00] text-gray-900 rounded-xl py-3 px-4 text-sm font-bold flex items-center justify-center gap-2">
                                                         <span>Check Current Price</span>
                                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M14 5l7 7m0 0l-7 7m7-7H3"></path>
