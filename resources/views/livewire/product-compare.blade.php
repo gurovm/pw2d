@@ -367,7 +367,7 @@
                         @php $inCompare = in_array($product->id, $compareList); @endphp
                         <div wire:key="product-{{ $product->id }}" class="product-card bg-white rounded-2xl shadow-sm hover:shadow-[0_12px_40px_rgba(255,153,0,0.2)] transition-all duration-300 overflow-hidden flex flex-col h-full border hover:border-amber-400 group relative {{ $inCompare ? 'border-2 border-slate-800 shadow-[0_4px_20px_rgba(30,41,59,0.15)]' : ($product->id === $bestMatchId ? 'border-2 border-amber-400 shadow-[0_4px_20px_rgba(245,158,11,0.15)]' : 'border-gray-100') }}">
                             @if ($product->id === $bestMatchId)
-                                <div class="absolute top-2.5 left-2.5 z-10 bg-amber-500 text-white text-[10px] md:text-xs font-black px-2.5 py-1 rounded-full shadow-md tracking-wide">
+                                <div class="absolute top-2.5 left-2.5 z-10 bg-amber-600 text-white text-[10px] md:text-xs font-black px-2.5 py-1 rounded-full shadow-md tracking-wide">
                                     ⭐ Best Match
                                 </div>
                             @endif
@@ -390,7 +390,7 @@
                                    wire:click.prevent="openProduct('{{ $product->slug }}')"
                                    @click="window.history.pushState({ returnUrl: window.location.href }, '', '/product/{{ $product->slug }}')"
                                    class="h-44 md:h-52 w-full flex justify-center items-center bg-white overflow-hidden group-hover:bg-gray-50/50 transition-colors block outline-none">
-                                    <img src="{{ $product->image_url }}" alt="{{ $product->name }}" class="h-full w-auto object-contain mix-blend-multiply">
+                                    <img src="{{ $product->image_url }}" alt="{{ $product->name }}" class="h-full w-auto object-contain mix-blend-multiply" width="400" height="400" loading="lazy">
                                 </a>
                             @else
                                 <a href="/product/{{ $product->slug }}"
@@ -428,8 +428,8 @@
                                 @endphp
                                 <div class="mb-3">
                                     <div class="flex justify-between items-end mb-1">
-                                        <span class="text-[10px] md:text-xs font-medium text-gray-400">Personal Match Score</span>
-                                        <span class="text-base md:text-lg font-black {{ $matchScore >= 85 ? 'text-green-600' : 'text-gray-800' }}">{{ number_format($matchScore, 0) }}%</span>
+                                        <span class="text-[10px] md:text-xs font-medium text-gray-500">Personal Match Score</span>
+                                        <span class="text-base md:text-lg font-black {{ $matchScore >= 85 ? 'text-green-700' : 'text-gray-800' }}">{{ number_format($matchScore, 0) }}%</span>
                                     </div>
                                     <div class="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
                                         <div class="h-full {{ $scoreColor }} transition-all duration-500 rounded-full" style="width: {{ $matchScore }}%"></div>
@@ -439,7 +439,7 @@
                                 <div class="mt-auto pt-2 border-t border-gray-100">
                                     @if ($product->price_tier)
                                         <div>
-                                            <p class="text-[10px] font-bold tracking-wider uppercase text-gray-400 leading-none mb-1">Price Range</p>
+                                            <p class="text-[10px] font-bold tracking-wider uppercase text-gray-500 leading-none mb-1">Price Range</p>
                                             <div class="flex items-center gap-px leading-none">
                                                 <span class="text-lg font-black text-gray-900">$</span>
                                                 <span class="text-lg font-black {{ $product->price_tier >= 2 ? 'text-gray-900' : 'text-gray-300' }}">$</span>
@@ -452,7 +452,7 @@
 
                             @if ($product->affiliate_url)
                                 <a href="{{ $product->affiliate_url }}" target="_blank" rel="noopener noreferrer"
-                                   class="amazon-cta block w-full text-center bg-[#FF9900] text-white py-2.5 md:py-3 font-bold text-xs md:text-sm transition-all duration-200 hover:bg-[#E68A00]">
+                                   class="amazon-cta block w-full text-center bg-[#FF9900] text-gray-900 py-2.5 md:py-3 font-bold text-xs md:text-sm transition-all duration-200 hover:bg-[#E68A00]">
                                     Check Current Price →
                                 </a>
                             @endif

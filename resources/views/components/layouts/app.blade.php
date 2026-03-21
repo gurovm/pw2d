@@ -91,7 +91,7 @@
                 <!-- Brand -->
                 <div class="flex flex-col items-center sm:items-start">
                     <span class="text-white font-bold text-lg tracking-tight">Pw2D</span>
-                    <span class="text-gray-500 text-xs mt-0.5">Power to Decide</span>
+                    <span class="text-gray-400 text-xs mt-0.5">Power to Decide</span>
                 </div>
 
                 <!-- Nav Links -->
@@ -105,7 +105,7 @@
 
             <!-- Divider + Copyright -->
             <div class="border-t border-gray-800 mt-8 pt-6 text-center">
-                <p class="text-gray-600 text-xs">&copy; {{ date('Y') }} Pw2D &mdash; Power to Decide. All rights reserved.</p>
+                <p class="text-gray-400 text-xs">&copy; {{ date('Y') }} Pw2D &mdash; Power to Decide. All rights reserved.</p>
             </div>
         </div>
     </footer>

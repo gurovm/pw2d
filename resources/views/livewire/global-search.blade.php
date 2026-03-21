@@ -53,6 +53,7 @@
                     type="text"
                     wire:model.live.debounce.400ms="query"
                     x-bind:placeholder="typedText"
+                    aria-label="Search products and categories"
                     autocomplete="off"
                     @focus="if ($wire.query.length >= 3) open = true"
                 >
@@ -87,6 +88,7 @@
                 wire:model.live.debounce.400ms="query"
                 wire:keydown.enter.prevent="triggerAiSearch"
                 placeholder="Search categories or products…"
+                aria-label="Search categories or products"
                 autocomplete="off"
                 @focus="if ($wire.query.length >= 3) open = true"
                 class="w-full pl-10 pr-4 py-2 border border-gray-200 bg-gray-50
