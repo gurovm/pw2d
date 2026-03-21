@@ -13,12 +13,15 @@ use Symfony\Component\Finder\Finder;
 class RegenerateWebpImages extends Command
 {
     protected $signature = 'images:regenerate
-                            {--dry-run : List files that would be converted without actually converting}';
+                            {--dry-run : List files that would be processed without actually converting}
+                            {--reoptimize : Re-encode existing .webp files at 800px max width}';
 
-    protected $description = 'Recursively convert all PNG/JPG files in public/images/ and storage/app/public/ to optimized WebP, then update DB references.';
+    protected $description = 'Convert PNG/JPG to WebP and optionally re-optimize existing WebP files.';
 
     public function handle(): int
     {
+        $reoptimize = (bool) $this->option('reoptimize');
+
         $directories = array_filter([
             public_path('images'),
             storage_path('app/public'),
@@ -31,30 +34,30 @@ class RegenerateWebpImages extends Command
 
         $this->info('Scanning: ' . implode(', ', array_map(fn($d) => str_replace(base_path() . '/', '', $d), $directories)));
 
+        $extensions = $reoptimize
+            ? ['*.png', '*.jpg', '*.jpeg', '*.webp']
+            : ['*.png', '*.jpg', '*.jpeg'];
+
         $finder = (new Finder())
             ->files()
             ->in($directories)
-            ->name(['*.png', '*.jpg', '*.jpeg']);
+            ->name($extensions);
 
         $files = iterator_to_array($finder);
 
         if (empty($files)) {
-            $this->info('No PNG/JPG files found. Nothing to do.');
+            $this->info('No matching files found. Nothing to do.');
             return self::SUCCESS;
         }
 
-        $this->info(sprintf('Found %d image(s) to convert.', count($files)));
+        $this->info(sprintf('Found %d file(s) to process.', count($files)));
         $this->newLine();
 
         if ($this->option('dry-run')) {
             foreach ($files as $file) {
                 $relative = str_replace(base_path() . '/', '', $file->getRealPath());
-                $this->line("  Would convert: {$relative} (" . $this->formatBytes($file->getSize()) . ')');
+                $this->line("  Would process: {$relative} (" . $this->formatBytes($file->getSize()) . ')');
             }
-            $this->newLine();
-            $this->info('DB references that would be updated:');
-            $this->line(sprintf('  Categories with .png/.jpg image: %d', Category::where(fn($q) => $q->where('image', 'like', '%.png')->orWhere('image', 'like', '%.jpg')->orWhere('image', 'like', '%.jpeg'))->count()));
-            $this->line(sprintf('  Products with .png/.jpg image_path: %d', Product::where(fn($q) => $q->where('image_path', 'like', '%.png')->orWhere('image_path', 'like', '%.jpg')->orWhere('image_path', 'like', '%.jpeg'))->count()));
             return self::SUCCESS;
         }
 
@@ -66,22 +69,28 @@ class RegenerateWebpImages extends Command
             $sourcePath = $file->getRealPath();
             $originalSize = filesize($sourcePath);
             $relative = str_replace(base_path() . '/', '', $sourcePath);
+            $isWebp = strtolower($file->getExtension()) === 'webp';
 
-            $this->info("Converting: {$relative} (" . $this->formatBytes($originalSize) . ')');
+            $this->info(($isWebp ? 'Re-optimizing: ' : 'Converting: ') . "{$relative} (" . $this->formatBytes($originalSize) . ')');
 
             try {
-                $webpPath = ImageOptimizer::toWebp($sourcePath);
-                $newSize = filesize($webpPath);
+                if ($isWebp) {
+                    ImageOptimizer::reoptimizeWebp($sourcePath);
+                    $resultPath = $sourcePath;
+                } else {
+                    $resultPath = ImageOptimizer::toWebp($sourcePath);
+                }
 
+                $newSize = filesize($resultPath);
                 $saved = $originalSize - $newSize;
-                $totalSaved += $saved;
+                $totalSaved += max(0, $saved);
                 $reduction = $originalSize > 0
                     ? round((1 - $newSize / $originalSize) * 100)
                     : 0;
 
                 $this->line(sprintf(
                     '  -> %s (%s, %d%% smaller)',
-                    basename($webpPath),
+                    basename($resultPath),
                     $this->formatBytes($newSize),
                     $reduction,
                 ));
@@ -93,30 +102,32 @@ class RegenerateWebpImages extends Command
             }
         }
 
-        // Update DB references: categories.image and products.image_path
-        $this->newLine();
-        $this->info('Updating database references...');
+        // Update DB references for any PNG/JPG → WebP conversions
+        if (!$reoptimize) {
+            $this->newLine();
+            $this->info('Updating database references...');
 
-        $catUpdated = Category::where(fn($q) => $q->where('image', 'like', '%.png')->orWhere('image', 'like', '%.jpg')->orWhere('image', 'like', '%.jpeg'))
-            ->get()
-            ->each(fn(Category $c) => $c->update([
-                'image' => preg_replace('/\.(png|jpe?g)$/i', '.webp', $c->image),
-            ]))
-            ->count();
+            $catUpdated = Category::where(fn($q) => $q->where('image', 'like', '%.png')->orWhere('image', 'like', '%.jpg')->orWhere('image', 'like', '%.jpeg'))
+                ->get()
+                ->each(fn(Category $c) => $c->update([
+                    'image' => preg_replace('/\.(png|jpe?g)$/i', '.webp', $c->image),
+                ]))
+                ->count();
 
-        $prodUpdated = Product::where(fn($q) => $q->where('image_path', 'like', '%.png')->orWhere('image_path', 'like', '%.jpg')->orWhere('image_path', 'like', '%.jpeg'))
-            ->get()
-            ->each(fn(Product $p) => $p->update([
-                'image_path' => preg_replace('/\.(png|jpe?g)$/i', '.webp', $p->image_path),
-            ]))
-            ->count();
+            $prodUpdated = Product::where(fn($q) => $q->where('image_path', 'like', '%.png')->orWhere('image_path', 'like', '%.jpg')->orWhere('image_path', 'like', '%.jpeg'))
+                ->get()
+                ->each(fn(Product $p) => $p->update([
+                    'image_path' => preg_replace('/\.(png|jpe?g)$/i', '.webp', $p->image_path),
+                ]))
+                ->count();
 
-        $this->line("  Categories updated: {$catUpdated}");
-        $this->line("  Products updated: {$prodUpdated}");
+            $this->line("  Categories updated: {$catUpdated}");
+            $this->line("  Products updated: {$prodUpdated}");
+        }
 
         $this->newLine();
         $this->info(sprintf(
-            'Done. Converted: %d, Failed: %d, Space saved: %s',
+            'Done. Processed: %d, Failed: %d, Space saved: %s',
             $converted,
             $failed,
             $this->formatBytes($totalSaved),
