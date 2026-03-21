@@ -124,6 +124,11 @@ class EditCategory extends EditRecord
         $filename = 'categories/images/' . $record->slug . '-ai.' . $extension;
         Storage::disk('public')->put($filename, base64_decode($imageData));
 
+        // Optimize: convert to WebP, resize to 800px, delete original
+        $absolutePath = Storage::disk('public')->path($filename);
+        $webpPath = \App\Services\ImageOptimizer::toWebp($absolutePath);
+        $filename = str_replace(Storage::disk('public')->path(''), '', $webpPath);
+
         $record->update(['image' => $filename]);
 
         return $filename;
