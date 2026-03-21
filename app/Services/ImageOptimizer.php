@@ -18,7 +18,7 @@ class ImageOptimizer
     public static function toWebp(
         string $sourcePath,
         int $quality = 80,
-        int $maxWidth = 1200,
+        int $maxWidth = 800,
         bool $deleteOriginal = true,
     ): string {
         if (!file_exists($sourcePath)) {

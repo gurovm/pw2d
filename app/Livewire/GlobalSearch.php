@@ -20,6 +20,7 @@ class GlobalSearch extends Component
     public array  $samplePrompts = [];
     public ?int   $parentId = null;
     public string $parentName = '';
+    public ?int   $browsingCategoryId = null; // Category the user is currently viewing (for search boost)
     public bool   $open = false;
     public bool   $isAiSearching = false;
     public ?array $aiSuggestion = null;
@@ -37,6 +38,13 @@ class GlobalSearch extends Component
 
         if ($parentId) {
             $this->parentName = Category::find($parentId)?->name ?? '';
+        }
+
+        // Resolve current browsing category once at mount (initial page load).
+        // On category pages (/compare/{slug}), this lets us boost matching products in search.
+        $slug = request()->segment(2);
+        if ($slug && request()->segment(1) === 'compare') {
+            $this->browsingCategoryId = Category::where('slug', $slug)->value('id');
         }
     }
 
@@ -270,6 +278,12 @@ class GlobalSearch extends Component
         if ($this->parentId) {
             $productQ->whereHas('category', fn ($q) => $q->where('parent_id', $this->parentId));
         }
+
+        // Boost products from the category the user is currently browsing
+        if ($this->browsingCategoryId) {
+            $productQ->orderByRaw('category_id = ? DESC', [$this->browsingCategoryId]);
+        }
+
         foreach ($productQ->limit(4)->get(['id', 'name', 'slug', 'category_id', 'external_image_path']) as $product) {
             $results[] = [
                 'type'          => 'product',

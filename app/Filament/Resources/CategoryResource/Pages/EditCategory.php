@@ -199,6 +199,11 @@ class EditCategory extends EditRecord
         }
     }
 
+    private function imagePrompt(string $categoryName): string
+    {
+        return "Top-down flat lay of premium {$categoryName}, on a pristine clean white background. Minimalist tech aesthetic, soft diffused studio lighting, highly realistic professional product photography, clean composition with elegant negative space, crisp focus, no text.";
+    }
+
     // ─── ACTION 1: Generate Category Image ─────────────────────
 
     private function generateImageAction(): Action
@@ -206,7 +211,7 @@ class EditCategory extends EditRecord
         return Action::make('generateImage')
             ->label('🖼️ Generate Image')
             ->form(function ($record) {
-                $defaultPrompt = "Top-down flat lay of premium {$record->name}, on a pristine clean white background. Minimalist tech aesthetic, soft diffused studio lighting, highly realistic professional product photography, clean composition with elegant negative space, 4k resolution, no text.";
+                $defaultPrompt = $this->imagePrompt($record->name);
 
                 return [
                     Textarea::make('image_prompt')
@@ -372,7 +377,7 @@ class EditCategory extends EditRecord
 
                     // Build feature name-to-model map from existing DB features
                     $mappedFeatures = $record->features()->get()
-                        ->keyBy(fn ($f) => strtolower($f->name))
+                        ->keyBy(fn($f) => strtolower($f->name))
                         ->all();
 
                     $this->syncPresetsToRecord($decoded, $record, $mappedFeatures);
@@ -462,8 +467,7 @@ class EditCategory extends EditRecord
 
                     // Optionally generate the hero image
                     if ($data['generate_image']) {
-                        $imagePrompt = "Top-down flat lay of premium {$record->name}, on a pristine clean white background. Minimalist tech aesthetic, soft diffused studio lighting, highly realistic professional product photography, clean composition with elegant negative space, 4k resolution, no text.";
-                        $this->callGeminiImage($imagePrompt, $record);
+                        $this->callGeminiImage($this->imagePrompt($record->name), $record);
 
                         Notification::make()->title('Category Image Generated')->success()->send();
                     }
