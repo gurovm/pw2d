@@ -5,20 +5,21 @@
 
         <div class="hero-eyebrow">✦ The Smart Way to Shop</div>
 
-        <h1>Compare with <span>Intelligence</span></h1>
+        <h1>{!! tenant('hero_headline') ?? 'Compare with <span>Intelligence</span>' !!}</h1>
 
         <p class="hero-sub">
-            Stop digging through endless spec sheets. Tell our AI what you're doing, and we'll instantly find the right
-            category and rank items for you.
+            {{ tenant('hero_subheadline') ?? 'Stop digging through endless spec sheets. Tell our AI what you\'re doing, and we\'ll instantly find the right category and rank items for you.' }}
         </p>
 
         <livewire:global-search variant="hero" :sample-prompts="$samplePrompts" />
 
-        <div class="search-hints hidden sm:flex">
-            <button type="button" class="hint-chip" wire:click="setQueryAndSearch('quiet mechanical keyboard')"><b>→</b> quiet mechanical keyboard</button>
-            <button type="button" class="hint-chip" wire:click="setQueryAndSearch('4k webcam for streaming')"><b>→</b> 4k webcam for streaming</button>
-            <button type="button" class="hint-chip" wire:click="setQueryAndSearch('wireless headset for gaming')"><b>→</b> wireless headset for gaming</button>
-        </div>
+        @if(!empty($searchHints))
+            <div class="search-hints hidden sm:flex">
+                @foreach($searchHints as $hint)
+                    <button type="button" class="hint-chip" wire:click="setQueryAndSearch('{{ addslashes($hint) }}')"><b>→</b> {{ $hint }}</button>
+                @endforeach
+            </div>
+        @endif
     </section>
 
     <section class="how-section">
@@ -64,7 +65,7 @@
     <section class="categories-section">
         <div class="section-label">Popular Categories</div>
         <h2 class="section-title">Ready to Compare</h2>
-        
+
         @if($popularCategories->count() > 0)
             <div class="categories-grid">
                 @foreach($popularCategories as $category)
@@ -73,7 +74,7 @@
                             @if($category->image)
                                 <img src="{{ Storage::url($category->image) }}" alt="{{ $category->name }}">
                             @else
-                                <div class="w-full h-full bg-gradient-to-br from-blue-600 to-blue-800"></div>
+                                <div class="w-full h-full" style="background: linear-gradient(135deg, var(--color-primary), var(--color-text));"></div>
                             @endif
                         </div>
                         <div class="cat-body">

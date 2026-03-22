@@ -71,6 +71,7 @@ class BatchImportController extends Controller
                 } else {
                     // Scenario A: New product — create stub and queue for AI scoring.
                     $product = Product::create([
+                        'tenant_id'            => $category->tenant_id,
                         'external_id'          => $p['asin'],
                         'category_id'          => $category->id,
                         'name'                 => mb_substr($p['title'], 0, 255),

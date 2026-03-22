@@ -178,6 +178,7 @@ Here are the specific features you need to score:\n\n"
                     Product::updateOrCreate(
                         ['external_id' => $externalId, 'category_id' => $categoryId],
                         [
+                            'tenant_id'   => $category->tenant_id,
                             'is_ignored'  => true,
                             'name'        => 'Ignored: ' . $externalId,
                             'slug'        => 'ignored-' . Str::slug($externalId) . '-' . Str::random(4),
@@ -256,14 +257,15 @@ Here are the specific features you need to score:\n\n"
                 // Continue without image
             }
 
-            // Create or find brand
+            // Create or find brand (scoped to the same tenant as the category)
             $brand = Brand::firstOrCreate(
-                ['name' => $parsed['brand']],
-                ['name' => $parsed['brand']]
+                ['name' => $parsed['brand'], 'tenant_id' => $category->tenant_id],
+                ['name' => $parsed['brand'], 'tenant_id' => $category->tenant_id]
             );
 
             $productData = [
-                'category_id' => $category->id, // Ensure category from request is used
+                'tenant_id' => $category->tenant_id,
+                'category_id' => $category->id,
                 'brand_id' => $brand->id,
                 'name' => $parsed['name'],
                 'slug' => Str::slug($parsed['name'] . '-' . Str::random(5)), // Create safe slug

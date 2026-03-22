@@ -4,10 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
+use Stancl\Tenancy\Database\Concerns\BelongsToTenant;
 
 class Setting extends Model
 {
-    protected $fillable = ['key', 'value'];
+    use BelongsToTenant;
+    protected $fillable = ['tenant_id', 'key', 'value'];
 
     /**
      * Get a setting value by key — cached to avoid per-request DB hits.

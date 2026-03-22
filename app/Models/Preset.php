@@ -3,10 +3,12 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Stancl\Tenancy\Database\Concerns\BelongsToTenant;
 
 class Preset extends Model
 {
-    protected $fillable = ['category_id', 'name', 'sort_order', 'seo_description'];
+    use BelongsToTenant;
+    protected $fillable = ['tenant_id', 'category_id', 'name', 'sort_order', 'seo_description'];
 
     public function category()
     {

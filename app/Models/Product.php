@@ -9,10 +9,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Support\Facades\Storage;
+use Stancl\Tenancy\Database\Concerns\BelongsToTenant;
 
 class Product extends Model
 {
-    use HasFactory;
+    use HasFactory, BelongsToTenant;
 
     protected static function booted(): void
     {
@@ -24,6 +25,7 @@ class Product extends Model
     }
 
     protected $fillable = [
+        'tenant_id',
         'external_id',
         'category_id',
         'brand_id',

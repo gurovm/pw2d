@@ -2,6 +2,8 @@
 
 namespace App\Providers\Filament;
 
+use App\Models\Tenant;
+use Filament\Events\TenantSet;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -16,6 +18,7 @@ use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
+use Illuminate\Support\Facades\Event;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 
 class AdminPanelProvider extends PanelProvider
@@ -31,6 +34,7 @@ class AdminPanelProvider extends PanelProvider
             ->colors([
                 'primary' => Color::Amber,
             ])
+            ->tenant(Tenant::class)
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
             ->pages([
@@ -55,5 +59,16 @@ class AdminPanelProvider extends PanelProvider
             ->authMiddleware([
                 Authenticate::class,
             ]);
+    }
+
+    public function boot(): void
+    {
+        /**
+         * Bridge: when Filament sets the active tenant (via the dropdown),
+         * initialize stancl/tenancy so BelongsToTenant model scoping kicks in.
+         */
+        Event::listen(TenantSet::class, function (TenantSet $event) {
+            tenancy()->initialize($event->getTenant());
+        });
     }
 }

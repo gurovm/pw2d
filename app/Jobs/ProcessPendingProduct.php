@@ -142,7 +142,10 @@ class ProcessPendingProduct implements ShouldQueue
                 throw new \Exception('Invalid AI response: missing name or brand field');
             }
 
-            $brand = Brand::firstOrCreate(['name' => $parsed['brand']], ['name' => $parsed['brand']]);
+            $brand = Brand::firstOrCreate(
+                ['name' => $parsed['brand'], 'tenant_id' => $product->tenant_id],
+                ['name' => $parsed['brand'], 'tenant_id' => $product->tenant_id]
+            );
 
             $product->update([
                 'name'                 => $parsed['name'],

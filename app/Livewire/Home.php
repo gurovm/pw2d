@@ -51,9 +51,16 @@ class Home extends Component
             $samplePrompts = ['Tell me what you need...', 'What are you shopping for?'];
         }
 
+        // Derive search hints from already-loaded categories (no extra query)
+        $searchHints = $popularCategories->shuffle()->take(3)
+            ->map(fn ($c) => 'best ' . strtolower($c->name))
+            ->values()
+            ->toArray();
+
         return view('livewire.home', [
             'popularCategories' => $popularCategories,
             'samplePrompts'     => $samplePrompts,
+            'searchHints'       => $searchHints,
         ]);
     }
 }

@@ -12,8 +12,16 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        $middleware->web(append: [
+            \App\Http\Middleware\InitializeTenancyIfApplicable::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        // Auto-refresh on expired CSRF token (419) instead of showing a dead-end page
+        $exceptions->respond(function (\Symfony\Component\HttpFoundation\Response $response) {
+            if ($response->getStatusCode() === 419) {
+                return redirect()->back();
+            }
+            return $response;
+        });
     })->create();

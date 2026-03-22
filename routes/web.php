@@ -1,5 +1,17 @@
 <?php
 
+/*
+|--------------------------------------------------------------------------
+| Web Routes
+|--------------------------------------------------------------------------
+|
+| Front-end routes for all domains. On tenant domains, the
+| InitializeTenancyByDomain middleware (from TenancyServiceProvider)
+| initializes tenancy so BelongsToTenant scoping kicks in.
+| On central domains, tenancy is not initialized — queries run unscoped.
+|
+*/
+
 use App\Http\Controllers\SitemapController;
 use App\Livewire\Home;
 use App\Livewire\ProductCompare;

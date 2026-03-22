@@ -14,10 +14,7 @@
 >
     @php $categoryName = \App\Models\Category::find($categoryId)->name ?? 'Unknown Category'; @endphp
 
-    <!-- ═══════════════════════════════════════════════════════ -->
-    <!-- FLOATING ACTION BUTTON (FAB)                           -->
-    <!-- ═══════════════════════════════════════════════════════ -->
-
+    <!-- FAB -->
     <div class="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-2.5"
          x-data="{ showTip: true }"
          x-init="setTimeout(() => showTip = false, 4000)">
@@ -30,32 +27,29 @@
              x-transition:leave="transition ease-in duration-200"
              x-transition:leave-start="opacity-100"
              x-transition:leave-end="opacity-0"
-             class="bg-[#7C3AED] text-white text-xs font-bold px-4 py-1.5 rounded-xl shadow-lg pointer-events-none">
+             class="text-white text-xs font-bold px-4 py-1.5 rounded-xl shadow-lg pointer-events-none"
+             style="background: var(--color-primary);">
             ✦ Adjust rankings to your needs
         </div>
 
         <!-- FAB Button -->
         <div class="relative">
-            <!-- Teaser ping ring (returning visitors) -->
             <span
                 x-show="teaser && !showPreferences"
-                class="absolute inset-0 rounded-2xl bg-[#7C3AED] animate-ping opacity-30 pointer-events-none"
-                style="display:none;"
+                class="absolute inset-0 rounded-2xl animate-ping opacity-30 pointer-events-none"
+                style="background: var(--color-primary); display:none;"
             ></span>
             <button
                 @click="showPreferences = true; teaser = false; showTip = false; if(typeof posthog !== 'undefined') posthog.capture('customize_modal_opened', { category: '{{ addslashes($categoryName) }}' });"
                 :class="teaser && !showPreferences ? 'animate-bounce' : ''"
                 aria-label="Customize ranking preferences"
-                class="w-14 h-14 md:w-16 md:h-16 rounded-2xl bg-[#7C3AED] text-white flex items-center justify-center shadow-[0_8px_24px_rgba(124,58,237,0.4)] hover:scale-110 hover:bg-[#6D28D9] active:scale-95 transition-all duration-300 cursor-pointer"
+                class="w-14 h-14 md:w-16 md:h-16 rounded-2xl text-white flex items-center justify-center hover:scale-110 active:scale-95 transition-all duration-300 cursor-pointer"
+                style="background: var(--color-primary); box-shadow: 0 8px 24px color-mix(in srgb, var(--color-primary) 40%, transparent);"
             >
                 <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
             </button>
         </div>
     </div>
-
-    <!-- ═══════════════════════════════════════════════════════ -->
-    <!-- PREFERENCES SIDE PANEL                                 -->
-    <!-- ═══════════════════════════════════════════════════════ -->
 
     <!-- Backdrop -->
     <div
@@ -66,7 +60,7 @@
         style="display: none;"
     ></div>
 
-    <!-- Side Panel (slides from right) -->
+    <!-- Side Panel -->
     <div
         x-show="showPreferences"
         x-transition:enter="transition ease-out duration-400"
@@ -75,7 +69,7 @@
         x-transition:leave="transition ease-in duration-300"
         x-transition:leave-start="translate-x-0"
         x-transition:leave-end="translate-x-full"
-        class="fixed top-0 sm:top-20 right-0 bottom-0 z-50 w-100 max-w-[82vw] bg-white border-l border-gray-200 shadow-[-10px_0_30px_rgba(0,0,0,0.05)] flex flex-col"
+        class="fixed inset-y-0 right-0 z-[70] w-100 max-w-[82vw] bg-white border-l border-gray-200 shadow-[-10px_0_30px_rgba(0,0,0,0.05)] flex flex-col"
         style="display: none;"
     >
         <!-- Panel Header -->
@@ -89,34 +83,29 @@
             </button>
         </div>
 
-        <!-- Panel Body — Single unified panel, no tabs -->
+        <!-- Panel Body -->
         <div class="flex-1 overflow-y-auto px-4 py-3 space-y-4 sm:px-6 sm:py-5 sm:space-y-7">
 
-            <!-- ─────────────────────────────────────────────── -->
-            <!-- SECTION 1: AI CONCIERGE                        -->
-            <!-- ─────────────────────────────────────────────── -->
+            <!-- SECTION 1: AI CONCIERGE -->
             <div>
                 <p class="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2 sm:mb-3">✦ Tell us what you need</p>
 
-                <!-- AI Response -->
                 @if($aiMessage && !$isThinking)
-                    <div class="p-3 bg-indigo-50 border border-indigo-100/50 rounded-xl text-sm text-indigo-900 shadow-sm mb-3">
+                    <div class="p-3 bg-tenant-secondary/50 border border-tenant-primary/10 rounded-xl text-sm shadow-sm mb-3" style="color: var(--color-text);">
                         <div class="flex items-start gap-2">
-                            <span class="shrink-0 text-indigo-500 mt-0.5">✨</span>
+                            <span class="shrink-0 mt-0.5" style="color: var(--color-primary);">✨</span>
                             <p class="leading-relaxed">{{ $aiMessage }}</p>
                         </div>
                     </div>
                 @endif
 
-                <!-- Loading -->
                 @if($isThinking)
-                    <div class="p-3 bg-indigo-50/70 border border-indigo-100/50 rounded-xl text-sm text-indigo-900 shadow-sm flex items-center gap-3 mb-3">
-                        <svg class="animate-spin h-5 w-5 text-indigo-500 shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                        <p class="animate-pulse font-medium text-indigo-800">Analyzing your request...</p>
+                    <div class="p-3 bg-tenant-secondary/50 border border-tenant-primary/10 rounded-xl text-sm shadow-sm flex items-center gap-3 mb-3" style="color: var(--color-text);">
+                        <svg class="animate-spin h-5 w-5 shrink-0" style="color: var(--color-primary);" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                        <p class="animate-pulse font-medium">Analyzing your request...</p>
                     </div>
                 @endif
 
-                <!-- Chat Input -->
                 <form wire:submit.prevent="submitAiPrompt" @submit="$refs.aiInput.blur()"
                       x-data="{
                           prompts: @js($samplePrompts),
@@ -152,51 +141,37 @@
                         type="text"
                         wire:model="aiPrompt"
                         x-bind:placeholder="typedText"
-                        class="flex-1 border border-gray-200 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 focus:bg-white outline-none transition-all"
+                        class="flex-1 border border-gray-200 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:bg-white outline-none transition-all"
+                        style="--tw-ring-color: color-mix(in srgb, var(--color-primary) 20%, transparent);"
+                        onfocus="this.style.borderColor='var(--color-primary)'; this.style.boxShadow='0 0 0 3px var(--tw-ring-color)'"
+                        onblur="this.style.borderColor=''; this.style.boxShadow=''"
                     >
                     <button
                         type="submit"
                         @if($isThinking) disabled @endif
-                        class="px-5 py-3 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-xl text-sm font-bold hover:shadow-md transition-all shrink-0 cursor-pointer @if($isThinking) opacity-75 cursor-not-allowed @endif"
+                        class="px-5 py-3 text-white rounded-xl text-sm font-bold hover:shadow-md transition-all shrink-0 cursor-pointer @if($isThinking) opacity-75 cursor-not-allowed @endif"
+                        style="background: var(--color-primary);"
                     >Ask</button>
                 </form>
             </div>
 
-            <!-- ─────────────────────────────────────────────── -->
-            <!-- SECTION 2: QUICK PRESETS (Pill chips)          -->
-            <!-- ─────────────────────────────────────────────── -->
+            <!-- SECTION 2: QUICK PRESETS -->
             <div>
                 <p class="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2 sm:mb-3">⚡ Quick Presets</p>
                 <div class="flex flex-wrap gap-2">
-
                     @forelse($presets as $preset)
                         <button
                             wire:click="applyPreset('{{ $preset->id }}')"
-                            class="px-3.5 py-1.5 rounded-full text-[13px] font-semibold border transition-all duration-200 cursor-pointer {{ $presetSlug === Str::slug($preset->name) ? 'bg-purple-100 border-[#7C3AED] text-[#7C3AED]' : 'bg-gray-100 border-transparent text-gray-600 hover:bg-gray-200' }}"
+                            class="px-3.5 py-1.5 rounded-full text-[13px] font-semibold border transition-all duration-200 cursor-pointer {{ $presetSlug === Str::slug($preset->name) ? 'bg-tenant-secondary border-tenant-primary text-tenant-primary' : 'bg-gray-100 border-transparent text-gray-600 hover:bg-gray-200' }}"
                         >✨ {{ $preset->name }}</button>
                     @empty
                         <p class="text-xs text-gray-400 italic">No presets defined for this category yet.</p>
                     @endforelse
-
                 </div>
             </div>
 
-            <!-- ─────────────────────────────────────────────── -->
-            <!-- SECTION 3: SLIDERS (always visible)            -->
-            <!-- ─────────────────────────────────────────────── -->
+            <!-- SECTION 3: SLIDERS -->
             <div>
-                {{--
-                    wire:ignore: Alpine owns this subtree entirely. Without it, Livewire's DOM morph
-                    (triggered when fire() dispatches weights-updated) re-initialises x-data from the
-                    server-rendered values (price: 50) and snaps the sliders back after mouse release.
-                    wire:ignore tells the morphing algorithm to leave this div untouched; Alpine's
-                    window event listeners continue working normally because they are not DOM bindings.
-
-                    isDirty tracks whether any slider has been changed from the neutral 50% state,
-                    either by manual drag (fire()) or by a preset/AI (alpine-sliders-dirty event).
-                    It is cleared by alpine-sliders-reset, dispatched from resetWeights() on the server.
-                    This drives the Reset button visibility entirely within Alpine — no Blade @if needed.
-                --}}
                 <div wire:ignore
                      x-data="{
                          w: @js($weights),
@@ -207,9 +182,6 @@
 
                          fire() {
                              this.isDirty = true;
-                             // One-shot: clear the active preset the first time a slider is dragged.
-                             // $wire.clearPreset() is called only once per drag session to avoid
-                             // a Livewire round-trip on every slider tick.
                              if (!this.presetCleared) {
                                  this.presetCleared = true;
                                  $wire.clearPreset();
@@ -245,7 +217,6 @@
                      x-on:alpine-sliders-reset.window="isDirty = false"
                      x-on:alpine-preset-applied.window="presetCleared = false">
 
-                    <!-- Section header: Reset button visibility is driven by Alpine isDirty, not Blade -->
                     <div class="flex items-center justify-between mb-2 sm:mb-4">
                         <p class="text-[10px] font-bold uppercase tracking-widest text-gray-400">🎚 Your Priorities</p>
                         <button
@@ -312,9 +283,9 @@
                         </div>
                     @endforeach
 
-                    </div>{{-- /space-y-5 --}}
-                </div>{{-- /wire:ignore --}}
-            </div>{{-- /sliders section --}}
+                    </div>
+                </div>
+            </div>
 
         </div>
 
@@ -322,7 +293,8 @@
         <div class="px-4 py-3 sm:px-6 sm:py-4 border-t border-gray-100 bg-gray-50/50 shrink-0">
             <button
                 @click="showPreferences = false"
-                class="w-full py-3 bg-gradient-to-r from-indigo-600 to-blue-600 text-white font-bold rounded-xl hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 text-sm flex items-center justify-center gap-2 cursor-pointer"
+                class="w-full py-3 text-white font-bold rounded-xl hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 text-sm flex items-center justify-center gap-2 cursor-pointer"
+                style="background: var(--color-primary);"
             >
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
                 Apply & Rank

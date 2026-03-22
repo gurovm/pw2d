@@ -18,6 +18,11 @@ export default {
             colors: {
                 'deep-blue': '#001F3F',
                 'electric-blue': '#007AFF',
+                tenant: {
+                    primary: 'var(--color-primary)',
+                    secondary: 'var(--color-secondary)',
+                    text: 'var(--color-text)',
+                },
             },
             keyframes: {
                 'fade-in-down': {

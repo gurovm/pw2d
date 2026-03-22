@@ -32,7 +32,7 @@ class ProductCompareIntegrationTest extends TestCase
         ]);
 
         // Hit the Route
-        $response = $this->get(route('category.show', $category->slug));
+        $response = $this->get('/compare/' . $category->slug);
 
         // Assert Page Loads
         $response->assertStatus(200);
