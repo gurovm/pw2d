@@ -283,7 +283,8 @@ async function fetchCategories() {
             categories = data.categories;
             populateCategorySelect(categories);
         } else {
-            showError('Failed to load categories.');
+            console.error('Categories API response:', response.status, data);
+            showError(data.error || 'Failed to load categories.');
         }
     } catch (error) {
         showError('Could not connect to PW2D API. Is the server running?');

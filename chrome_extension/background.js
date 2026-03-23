@@ -14,16 +14,24 @@ const API_CONFIG = {
 };
 let currentEnv = 'local';
 let baseUrl = API_CONFIG.local;
+let EXTENSION_TOKEN = '';
+let TENANT_ID = '';
 
 // Initialize from storage
-chrome.storage.local.get(['env'], (result) => {
+chrome.storage.local.get(['env', 'extensionToken', 'tenantId'], (result) => {
     if (result.env && API_CONFIG[result.env]) {
         currentEnv = result.env;
         baseUrl = API_CONFIG[result.env];
     }
+    EXTENSION_TOKEN = result.extensionToken || '';
+    TENANT_ID = result.tenantId || '';
 });
 
-const EXTENSION_TOKEN = 'c281be4e696db9cb6a7354749521da5030ab2071e6d8a49aea4b4c184f2479b4'; // Must match .env CHROME_EXTENSION_KEY
+// Sync token/tenant whenever popup saves new values
+chrome.storage.onChanged.addListener((changes) => {
+    if (changes.extensionToken) EXTENSION_TOKEN = changes.extensionToken.newValue || '';
+    if (changes.tenantId) TENANT_ID = changes.tenantId.newValue || '';
+});
 
 // Listen for messages from Popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -32,6 +40,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             currentEnv = request.env;
             baseUrl = API_CONFIG[request.env];
         }
+        // Reload token and tenant in case they changed
+        chrome.storage.local.get(['extensionToken', 'tenantId'], (r) => {
+            EXTENSION_TOKEN = r.extensionToken || '';
+            TENANT_ID = r.tenantId || '';
+        });
         sendResponse({ success: true });
         return true;
     } else if (request.action === "START_BATCH") {
@@ -215,6 +228,7 @@ async function handleScrapeComplete(payload) {
                 'Content-Type': 'application/json',
                 'Accept': 'application/json',
                 'X-Extension-Token': EXTENSION_TOKEN,
+                'X-Tenant-Id': TENANT_ID,
             },
             body: JSON.stringify({
                 raw_text: payload.rawText,
@@ -319,7 +333,10 @@ function scanNextPage(tabId) {
         try {
             // Check existing ASINs
             const apiRes = await fetch(`${baseUrl}/api/existing-asins?category_id=${currentCategoryId}`, {
-                headers: { 'X-Extension-Token': EXTENSION_TOKEN }
+                headers: {
+                    'X-Extension-Token': EXTENSION_TOKEN,
+                    'X-Tenant-Id': TENANT_ID,
+                }
             });
             const data = await apiRes.json();
 
