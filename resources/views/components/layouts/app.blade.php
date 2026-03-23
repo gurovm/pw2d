@@ -43,7 +43,19 @@
         @if (isset($schemaJson))
                 <script type="application/ld+json">{!! $schemaJson !!}</script>
         @endif
-        @if (config('services.posthog.key'))
+
+        @php
+                $posthogKey = \App\Models\Setting::get('posthog_key');
+                $posthogHost = \App\Models\Setting::get('posthog_host', 'https://eu.posthog.com');
+                $gaId = \App\Models\Setting::get('ga_measurement_id');
+                $gscCode = \App\Models\Setting::get('google_site_verification');
+        @endphp
+
+        @if ($gscCode)
+                <meta name="google-site-verification" content="{{ $gscCode }}">
+        @endif
+
+        @if ($posthogKey)
                 <script>
                         ! function(t, e) {
                                 var o, n, p, r;
@@ -71,15 +83,15 @@
                                         e._i.push([i, s, a])
                                 }, e.__SV = 1)
                         }(document, window.posthog || []);
-                        posthog.init('{{ config('services.posthog.key') }}', {
-                                api_host: '{{ config('services.posthog.host') }}',
-                                person_profiles: 'identified_only' // חוסך בעלויות, מזהה משתמשים בעילום שם בהתחלה
+                        posthog.init('{{ $posthogKey }}', {
+                                api_host: '{{ $posthogHost }}',
+                                person_profiles: 'identified_only'
                         })
                 </script>
         @endif
 
-        @if (config('services.google.analytics_id'))
-                <script async src="https://www.googletagmanager.com/gtag/js?id={{ config('services.google.analytics_id') }}"></script>
+        @if ($gaId)
+                <script async src="https://www.googletagmanager.com/gtag/js?id={{ $gaId }}"></script>
                 <script>
                         window.dataLayer = window.dataLayer || [];
 
@@ -88,7 +100,7 @@
                         }
                         gtag('js', new Date());
 
-                        gtag('config', '{{ config('services.google.analytics_id') }}');
+                        gtag('config', '{{ $gaId }}');
                 </script>
         @endif
 
