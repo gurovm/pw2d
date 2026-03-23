@@ -240,6 +240,24 @@ function extractSerpProducts() {
 
             if (!title || title.length < 3) return; // no usable title — skip
 
+            // ── Garbage filter ────────────────────────────────
+            // Skip sponsored labels, ad widgets, and non-product cards
+            const titleLower = title.toLowerCase();
+            if (/^sponsored$/i.test(title)) return;
+            if (titleLower.length < 10 && !/\d/.test(title)) return; // too short and no model number
+            // Skip if the element is a tiny widget (no price, no reviews, small area)
+            const rect = el.getBoundingClientRect();
+            if (rect.height < 80 || rect.width < 100) return;
+            // Deduplicate: some cards repeat the title text — trim to first occurrence
+            const halfLen = Math.floor(title.length / 2);
+            if (halfLen > 30) {
+                const firstHalf = title.substring(0, halfLen);
+                const secondHalf = title.substring(halfLen);
+                if (secondHalf.startsWith(firstHalf.substring(0, 30))) {
+                    title = firstHalf.trim();
+                }
+            }
+
             // ── Price ─────────────────────────────────────────
             const price = extractPrice(el);
 
