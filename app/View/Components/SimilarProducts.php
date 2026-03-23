@@ -17,7 +17,7 @@ class SimilarProducts extends Component
         // links are randomised once (distributing PageRank evenly) then frozen
         // so Googlebot always sees stable, persistent internal links.
         $this->similar = Cache::remember(
-            'similar_products_' . $product->id,
+            tenant_cache_key('similar_products_' . $product->id),
             now()->addDays(7),
             function () use ($product) {
                 // Priority 1: same category + same price tier

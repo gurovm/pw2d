@@ -109,7 +109,7 @@ class ProductCompare extends Component
         // Cache raw product data as plain arrays (not Eloquent models).
         // Eloquent unserialize for 2000+ objects takes ~90ms; plain arrays take ~5ms.
         // Scoring still runs fresh (weights change), but the DB round-trip is skipped.
-        $cacheKey = "products:cat{$this->category->id}:b{$this->filterBrand}:p{$this->selectedPrice}";
+        $cacheKey = tenant_cache_key("products:cat{$this->category->id}:b{$this->filterBrand}:p{$this->selectedPrice}");
         $rawData = Cache::remember($cacheKey, 90, function () {
             return Product::where('category_id', $this->category->id)
                 ->where('is_ignored', false)

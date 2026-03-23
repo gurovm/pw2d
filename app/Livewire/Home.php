@@ -4,6 +4,7 @@ namespace App\Livewire;
 
 use App\Models\Category;
 use App\Traits\NormalizesPrompts;
+use Illuminate\Support\Facades\Cache;
 use Livewire\Component;
 
 class Home extends Component
@@ -21,37 +22,45 @@ class Home extends Component
 
     public function render()
     {
-        $popularCategories = Category::whereHas('products')
-            ->withCount('products')
-            ->orderByDesc('products_count')
-            ->limit(8)
-            ->get(['id', 'name', 'slug', 'description', 'image']);
+        $popularCategories = Cache::remember(
+            tenant_cache_key('home:popular_categories'),
+            3600,
+            fn () => Category::whereHas('products')
+                ->withCount('products')
+                ->orderByDesc('products_count')
+                ->limit(8)
+                ->get(['id', 'name', 'slug', 'description', 'image'])
+        );
 
-        $samplePrompts = Category::whereNotNull('sample_prompts')
-            ->get(['id', 'sample_prompts'])
-            ->pluck('sample_prompts')
-            ->map(fn ($v) => self::normalizePrompts($v))
-            ->flatten()
-            ->filter()
-            ->shuffle()
-            ->take(8)
-            ->values()
-            ->toArray();
+        $samplePrompts = Cache::remember(
+            tenant_cache_key('home:sample_prompts'),
+            3600,
+            function () {
+                $prompts = Category::whereNotNull('sample_prompts')
+                    ->get(['id', 'sample_prompts'])
+                    ->pluck('sample_prompts')
+                    ->map(fn ($v) => self::normalizePrompts($v))
+                    ->flatten()
+                    ->filter()
+                    ->shuffle()
+                    ->take(8)
+                    ->values()
+                    ->toArray();
 
-        if (empty($samplePrompts)) {
-            $samplePrompts = Category::inRandomOrder()
-                ->limit(6)
-                ->pluck('name')
-                ->map(fn ($name) => 'best ' . strtolower($name) . ' for my needs')
-                ->values()
-                ->toArray();
-        }
+                if (empty($prompts)) {
+                    $prompts = Category::inRandomOrder()
+                        ->limit(6)
+                        ->pluck('name')
+                        ->map(fn ($name) => 'best ' . strtolower($name) . ' for my needs')
+                        ->values()
+                        ->toArray();
+                }
 
-        if (empty($samplePrompts)) {
-            $samplePrompts = ['Tell me what you need...', 'What are you shopping for?'];
-        }
+                return $prompts ?: ['Tell me what you need...', 'What are you shopping for?'];
+            }
+        );
 
-        // Derive search hints from already-loaded categories (no extra query)
+        // Derive search hints from already-cached categories (no extra query)
         $searchHints = $popularCategories->shuffle()->take(3)
             ->map(fn ($c) => 'best ' . strtolower($c->name))
             ->values()

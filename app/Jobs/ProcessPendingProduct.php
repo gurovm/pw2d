@@ -10,6 +10,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use App\Services\GeminiService;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -21,6 +22,7 @@ class ProcessPendingProduct implements ShouldQueue
 
     public int $tries   = 3;
     public int $timeout = 60;
+    public array $backoff = [10, 60, 300]; // 10s, 1min, 5min
 
     public function __construct(
         private readonly int $productId,
@@ -109,24 +111,9 @@ class ProcessPendingProduct implements ShouldQueue
                 . '"price_tier": 2, "amazon_rating": null, "amazon_reviews_count": null, '
                 . '"features": {"Feature_Name": {"score": 75, "reason": "One sentence."}, "Other_Feature": null}}';
 
-            $apiKey   = config('services.gemini.api_key');
-            $model    = config('services.gemini.site_model');
-            $response = Http::timeout(30)->post(
-                "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}",
-                [
-                    'contents'         => [['parts' => [['text' => $prompt]]]],
-                    'generationConfig' => ['temperature' => 0.3, 'maxOutputTokens' => 3000],
-                ]
-            );
-
-            if (!$response->successful()) {
-                throw new \Exception('Gemini API error: ' . $response->status());
-            }
-
-            $content = trim(preg_replace('/^```json\s*|\s*```$/m', '', trim(
-                $response->json('candidates.0.content.parts.0.text', '')
-            )));
-            $parsed = json_decode($content, true);
+            $gemini = app(GeminiService::class);
+            $result = $gemini->generate($prompt, ['maxOutputTokens' => 3000]);
+            $parsed = $result['parsed'];
 
             // AI identified this as an accessory — suppress it
             if (($parsed['status'] ?? null) === 'ignored') {
@@ -213,13 +200,7 @@ class ProcessPendingProduct implements ShouldQueue
         try {
             // SSRF protection: only allow known Amazon CDN domains
             $host = parse_url($imageUrl, PHP_URL_HOST);
-            $allowedHosts = [
-                'm.media-amazon.com',
-                'images-na.ssl-images-amazon.com',
-                'images-eu.ssl-images-amazon.com',
-                'images-fe.ssl-images-amazon.com',
-            ];
-            if (!in_array($host, $allowedHosts)) {
+            if (!in_array($host, config('services.amazon.allowed_image_hosts', []))) {
                 Log::warning('ProcessPendingProduct: image host not allowed', ['host' => $host]);
                 return;
             }

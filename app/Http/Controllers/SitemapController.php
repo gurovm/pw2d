@@ -15,7 +15,7 @@ class SitemapController extends Controller
         $products   = Product::where('is_ignored', false)
                         ->whereNull('status')
                         ->select(['slug', 'updated_at'])
-                        ->get();
+                        ->cursor();
 
         // Preset pages: each preset generates a distinct ?preset= URL worth indexing.
         // Only include leaf categories (no children) — parent hub pages have no sliders.

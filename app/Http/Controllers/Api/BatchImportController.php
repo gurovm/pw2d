@@ -3,10 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\BatchImportRequest;
 use App\Jobs\ProcessPendingProduct;
 use App\Models\Category;
 use App\Models\Product;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -18,18 +18,9 @@ class BatchImportController extends Controller
      * Saves each as a stub record with status='pending_ai' and dispatches a
      * queue job to run AI feature scoring for each one.
      */
-    public function import(Request $request)
+    public function import(BatchImportRequest $request)
     {
-        $validated = $request->validate([
-            'category_id'                => 'required|exists:categories,id',
-            'products'                   => 'required|array|min:1|max:100',
-            'products.*.asin'            => 'required|string|max:20',
-            'products.*.title'           => 'required|string|min:3|max:500',
-            'products.*.price'           => 'nullable|numeric|min:0',
-            'products.*.rating'          => 'nullable|numeric|min:0|max:5',
-            'products.*.reviews_count'   => 'nullable|integer|min:0',
-            'products.*.image_url'       => 'nullable|url|max:1000',
-        ]);
+        $validated = $request->validated();
 
         $category = Category::with('features')->findOrFail($validated['category_id']);
 

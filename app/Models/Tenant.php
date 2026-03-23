@@ -62,4 +62,19 @@ class Tenant extends BaseTenant implements TenantWithDatabase
     {
         return $this->hasMany(Setting::class);
     }
+
+    /**
+     * Validate and sanitize a CSS color value to prevent CSS injection.
+     *
+     * Only allows hex (#fff, #ffffff, #ffffffff), rgb(), and hsl() formats.
+     * Returns a safe default color if the value is invalid or missing.
+     */
+    public static function sanitizeColor(?string $value, string $default = '#6366f1'): string
+    {
+        if ($value && preg_match('/^(#[0-9a-fA-F]{3,8}|rgb\(\d{1,3},\s?\d{1,3},\s?\d{1,3}\)|hsl\(\d{1,3},\s?\d{1,3}%,\s?\d{1,3}%\))$/', $value)) {
+            return $value;
+        }
+
+        return $default;
+    }
 }

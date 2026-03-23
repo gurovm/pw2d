@@ -3,7 +3,8 @@ const API_CONFIG = {
     production: 'https://pw2d.com'
 };
 
-const EXTENSION_TOKEN = '626f897ea3ed362449c7c06625633db8a2e7405e88ec2cac8ad7152ea9d619f9'; // Must match .env CHROME_EXTENSION_KEY
+let EXTENSION_TOKEN = ''; // Loaded from chrome.storage.local — set via popup settings
+let TENANT_ID = ''; // Loaded from chrome.storage.local — set via popup settings
 
 // State
 let currentEnv = 'local';
@@ -35,8 +36,22 @@ let extractedProducts = []; // Bulk SERP extraction results
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
-    // Load saved environment first
-    chrome.storage.local.get(['env'], async (result) => {
+    // Load saved token, tenant ID, and environment
+    chrome.storage.local.get(['extensionToken', 'tenantId', 'env'], async (result) => {
+        EXTENSION_TOKEN = result.extensionToken || '';
+        TENANT_ID = result.tenantId || '';
+
+        // Populate the settings inputs if they exist
+        const tokenInput = document.getElementById('tokenInput');
+        if (tokenInput && EXTENSION_TOKEN) {
+            tokenInput.value = EXTENSION_TOKEN;
+        }
+
+        const tenantInput = document.getElementById('tenantInput');
+        if (tenantInput && TENANT_ID) {
+            tenantInput.value = TENANT_ID;
+        }
+
         if (result.env && API_CONFIG[result.env]) {
             currentEnv = result.env;
             baseUrl = API_CONFIG[result.env];
@@ -128,7 +143,10 @@ if (startBatchBtn) {
         try {
             // Fetch already-imported ASINs for display purposes only (not for filtering)
             const asinRes = await fetch(`${baseUrl}/api/existing-asins?category_id=${selectedCategoryId}`, {
-                headers: { 'X-Extension-Token': EXTENSION_TOKEN },
+                headers: {
+                    'X-Extension-Token': EXTENSION_TOKEN,
+                    'X-Tenant-Id': TENANT_ID,
+                },
             });
             const asinData = await asinRes.json();
             const existingAsins = (asinData.success && asinData.asins) ? asinData.asins : [];
@@ -143,6 +161,7 @@ if (startBatchBtn) {
                     'Content-Type': 'application/json',
                     'Accept': 'application/json',
                     'X-Extension-Token': EXTENSION_TOKEN,
+                    'X-Tenant-Id': TENANT_ID,
                 },
                 body: JSON.stringify({
                     category_id: selectedCategoryId,
@@ -253,7 +272,10 @@ if (categorySearch) {
 async function fetchCategories() {
     try {
         const response = await fetch(`${baseUrl}/api/categories`, {
-            headers: { 'X-Extension-Token': EXTENSION_TOKEN },
+            headers: {
+                'X-Extension-Token': EXTENSION_TOKEN,
+                'X-Tenant-Id': TENANT_ID,
+            },
         });
         const data = await response.json();
 
@@ -326,6 +348,50 @@ function showError(msg) {
     statusDiv.className = 'error';
 }
 
+// Settings Toggle
+const settingsToggle = document.getElementById('settingsToggle');
+const settingsPanel = document.getElementById('settingsPanel');
+if (settingsToggle && settingsPanel) {
+    settingsToggle.addEventListener('click', () => {
+        const isHidden = settingsPanel.style.display === 'none';
+        settingsPanel.style.display = isHidden ? 'block' : 'none';
+    });
+}
+
+// Save Token
+const saveTokenBtn = document.getElementById('saveTokenBtn');
+if (saveTokenBtn) {
+    saveTokenBtn.addEventListener('click', () => {
+        const tokenInput = document.getElementById('tokenInput');
+        const val = tokenInput ? tokenInput.value.trim() : '';
+        EXTENSION_TOKEN = val;
+        chrome.storage.local.set({ extensionToken: val }, () => {
+            statusDiv.textContent = 'API token saved.';
+            statusDiv.className = 'success';
+            setTimeout(() => { if (statusDiv.textContent === 'API token saved.') statusDiv.textContent = ''; }, 3000);
+        });
+    });
+}
+
+// Save Tenant ID
+const saveTenantBtn = document.getElementById('saveTenantBtn');
+if (saveTenantBtn) {
+    saveTenantBtn.addEventListener('click', () => {
+        const tenantInput = document.getElementById('tenantInput');
+        const val = tenantInput ? tenantInput.value.trim() : '';
+        TENANT_ID = val;
+        chrome.storage.local.set({ tenantId: val }, async () => {
+            statusDiv.textContent = 'Tenant ID saved.';
+            statusDiv.className = 'success';
+            setTimeout(() => { if (statusDiv.textContent === 'Tenant ID saved.') statusDiv.textContent = ''; }, 3000);
+
+            // Re-fetch categories for the new tenant
+            categorySelect.innerHTML = '<option value="" disabled selected>Loading...</option>';
+            await fetchCategories();
+        });
+    });
+}
+
 // Scrape Button Click
 scrapeBtn.addEventListener('click', async () => {
     if (!selectedCategoryId) {
@@ -365,6 +431,7 @@ scrapeBtn.addEventListener('click', async () => {
                         'Content-Type': 'application/json',
                         'Accept': 'application/json',
                         'X-Extension-Token': EXTENSION_TOKEN,
+                        'X-Tenant-Id': TENANT_ID,
                     },
                     body: JSON.stringify({
                         raw_text: response.rawText, // Changed from response.title + ...

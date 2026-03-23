@@ -5,7 +5,7 @@
 
         <div class="hero-eyebrow">✦ The Smart Way to Shop</div>
 
-        <h1>{!! tenant('hero_headline') ?? 'Compare with <span>Intelligence</span>' !!}</h1>
+        <h1>{!! strip_tags(tenant('hero_headline') ?? 'Compare with <span>Intelligence</span>', '<span><br><em><strong>') !!}</h1>
 
         <p class="hero-sub">
             {{ tenant('hero_subheadline') ?? 'Stop digging through endless spec sheets. Tell our AI what you\'re doing, and we\'ll instantly find the right category and rank items for you.' }}

@@ -16,7 +16,7 @@ class Setting extends Model
      */
     public static function get(string $key, $default = null)
     {
-        return Cache::rememberForever("setting:{$key}", function () use ($key, $default) {
+        return Cache::rememberForever(tenant_cache_key("setting:{$key}"), function () use ($key, $default) {
             $setting = static::where('key', $key)->first();
             return $setting ? $setting->value : $default;
         });
@@ -27,7 +27,7 @@ class Setting extends Model
      */
     public static function set(string $key, $value)
     {
-        Cache::forget("setting:{$key}");
+        Cache::forget(tenant_cache_key("setting:{$key}"));
 
         return static::updateOrCreate(
             ['key' => $key],

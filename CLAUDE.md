@@ -126,3 +126,18 @@ categories ──< features ──< product_feature_values >── products >─
    - **Normalization:** Cleans and normalizes brand names (e.g., "RØDE" → "Rode").
 4. **Scoring:** For valid products, Gemini returns the cleaned name, brand, an AI summary (2 sentences), and feature scores (0–100) based on the specific category's parameters.
 5. **Finalize:** Job creates/finds `Brand`, updates the `Product` record (sets `status=null`), saves `ProductFeatureValue` rows, and successfully downloads the hi-res image to local storage.
+
+## Agent Team
+
+This project uses a multi-agent system. Each agent has a defined role:
+
+| Agent | Trigger | Responsibility |
+|-------|---------|----------------|
+| **architect** | "plan", "design", "architect" | Designs features, writes specs to `docs/specs/` |
+| **builder** | "build", "implement", "code" | Implements specs, writes actual Laravel code |
+| **reviewer** | "review", "check", "quality" | Reviews code quality and Laravel conventions |
+| **tester** | "write tests", "test coverage" | Writes PHPUnit/Pest tests |
+| **security** | "security check", "audit" | Audits for vulnerabilities |
+| **documenter** | "document", "API docs" | Writes docs, PHPDoc, README |
+| **performance** | "performance", "optimize", "slow", "N+1", "cache" | Audits for bottlenecks, N+1 queries, caching gaps |
+| **frontend** | "blade", "view", "UI", "component", "tailwind", "page", "form", "alpine" | Builds Blade templates, Tailwind styling, Alpine.js interactivity |

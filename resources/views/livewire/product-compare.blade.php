@@ -173,7 +173,7 @@
                                                             [&_ul]:space-y-2 [&_ul]:my-3 [&_li]:text-[12px] sm:[&_li]:text-[13px] [&_li]:text-gray-600 [&_li]:leading-relaxed [&_li]:ml-4 [&_li]:list-disc [&_li]:pl-1
                                                             [&_p]:text-[12px] sm:[&_p]:text-[13px] [&_p]:leading-relaxed [&_p]:text-gray-600 [&_p]:mb-3 [&_p]:last:mb-0
                                                             [&_strong]:text-gray-900 [&_strong]:font-semibold">
-                                                                                                        {!! $data['content'] !!}
+                                                                                                        {!! strip_tags($data['content'], '<p><br><ul><ol><li><strong><em><h3><h4><a>') !!}
                                                                                                 </div>
                                                                                         @endif
                                                                                 @endforeach

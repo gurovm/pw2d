@@ -8,7 +8,8 @@ use App\Models\Category;
 use App\Models\Preset;
 use App\Models\Product;
 use App\Models\SearchLog;
-use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Cache;
+use App\Services\GeminiService;
 use Illuminate\Support\Str;
 use Livewire\Attributes\On;
 use Livewire\Component;
@@ -123,8 +124,12 @@ class GlobalSearch extends Component
         }
 
         try {
-            $categories = Category::with('presets:id,category_id,name')
-                ->get(['id', 'name', 'slug', 'description']);
+            $categories = Cache::remember(
+                tenant_cache_key('search:categories_with_presets'),
+                3600,
+                fn () => Category::with('presets:id,category_id,name')
+                    ->get(['id', 'name', 'slug', 'description'])
+            );
 
             $categoryContext = $categories->map(fn (Category $c) => [
                 'name'        => $c->name,
@@ -136,40 +141,26 @@ class GlobalSearch extends Component
                 ])->values()->toArray(),
             ])->values()->toArray();
 
-            $apiKey   = config('services.gemini.api_key');
-            $model    = config('services.gemini.site_model');
-            $response = Http::timeout(15)->post(
-                "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}",
+            $gemini = app(GeminiService::class);
+            $result = $gemini->generate(
+                $this->buildPrompt($categoryContext),
                 [
-                    'contents'         => [['parts' => [['text' => $this->buildPrompt($categoryContext)]]]],
-                    'generationConfig' => [
-                        'temperature'      => 0.3,
-                        'maxOutputTokens'  => 1024,
-                        'thinkingConfig'   => ['thinkingBudget' => 0],
-                    ],
+                    'maxOutputTokens' => 1024,
+                    'thinkingConfig'  => ['thinkingBudget' => 0],
+                    'timeout'         => 15,
                 ]
             );
+            $parsed = $result['parsed'];
 
-            if (!$response->successful()) {
-                throw new \Exception($response->status() === 429
-                    ? 'AI rate limit hit. Please try again in a moment.'
-                    : 'AI service unavailable.');
-            }
-
-            $raw = $response->json()['candidates'][0]['content']['parts'][0]['text'] ?? '';
-
-            // Extract the first JSON object, handling markdown fences and surrounding prose
-            if (preg_match('/```(?:json)?\s*(\{.*?\})\s*```/s', $raw, $m)) {
-                $jsonStr = $m[1];
-            } elseif (preg_match('/(\{.*\})/s', $raw, $m)) {
-                $jsonStr = $m[1];
-            } else {
-                $jsonStr = $raw;
-            }
-            $parsed = json_decode(trim($jsonStr), true);
-
-            if ($parsed === null) {
-                \Log::error('GlobalSearch: failed to parse AI JSON', ['raw' => $raw]);
+            // Fallback: if simple fence stripping failed, try robust JSON extraction
+            if ($parsed === null && !empty($result['content'])) {
+                $raw = $result['content'];
+                if (preg_match('/(\{.*\})/s', $raw, $m)) {
+                    $parsed = json_decode(trim($m[1]), true);
+                }
+                if ($parsed === null) {
+                    \Log::error('GlobalSearch: failed to parse AI JSON', ['raw' => $raw]);
+                }
             }
 
             $categorySlug = $parsed['suggested_category_slug']
@@ -246,7 +237,7 @@ class GlobalSearch extends Component
 
     private function runDbSearch(): void
     {
-        $term    = $this->query;
+        $term    = str_replace(['%', '_'], ['\%', '\_'], $this->query);
         $results = [];
 
         $catQ = Category::where('name', 'like', "%{$term}%");

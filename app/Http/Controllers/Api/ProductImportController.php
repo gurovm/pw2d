@@ -1,35 +1,34 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Brand;
+use App\Http\Requests\ProductImportRequest;
+use App\Jobs\ProcessPendingProduct;
 use App\Models\Category;
 use App\Models\Product;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class ProductImportController extends Controller
 {
     /**
-     * Get all categories with their feature counts
+     * Get all categories with their feature counts.
      */
-    public function categories()
+    public function categories(): JsonResponse
     {
         $categories = Category::withCount('features')
             ->orderBy('name')
             ->get()
-            ->map(function ($category) {
-                return [
-                    'id' => $category->id,
-                    'name' => $category->name,
-                    'slug' => $category->slug,
-                    'features_count' => $category->features_count,
-                ];
-            });
+            ->map(fn ($category) => [
+                'id' => $category->id,
+                'name' => $category->name,
+                'slug' => $category->slug,
+                'features_count' => $category->features_count,
+            ]);
 
         return response()->json([
             'success' => true,
@@ -38,9 +37,9 @@ class ProductImportController extends Controller
     }
 
     /**
-     * Get list of all existing external IDs (ASINs) to prevent duplicate scraping
+     * Get list of all existing external IDs (ASINs) to prevent duplicate scraping.
      */
-    public function existingAsins(Request $request)
+    public function existingAsins(Request $request): JsonResponse
     {
         $query = Product::whereNotNull('external_id');
 
@@ -56,321 +55,51 @@ class ProductImportController extends Controller
         ]);
     }
 
-    public function import(Request $request)
+    /**
+     * Import a single product: create a stub and queue AI processing.
+     *
+     * This endpoint creates the product record with status=pending_ai and
+     * dispatches ProcessPendingProduct to handle Gemini scoring, brand
+     * normalization, and image download asynchronously.
+     */
+    public function import(ProductImportRequest $request): JsonResponse
     {
-        // Validate input
-        $validated = $request->validate([
-            'category_id' => 'required|exists:categories,id',
-            'raw_text'    => 'required|string|min:50|max:50000',
-            'image_url'   => 'required|url',
-            'product_url' => 'nullable|url|max:1000',
-        ]);
+        $validated = $request->validated();
+        $category = Category::with('features')->findOrFail($validated['category_id']);
 
-        try {
-            // Load category with features
-            $category = Category::with('features')->findOrFail($validated['category_id']);
-
-            if ($category->features->isEmpty()) {
-                return response()->json([
-                    'success' => false,
-                    'error' => 'No Features',
-                    'message' => 'The selected category has no features defined.',
-                ], 400);
-            }
-
-            // Build feature map for Gemini prompt
-            $featureMap = $category->features->mapWithKeys(function ($feature) {
-                return [$feature->name => [
-                    'unit' => $feature->unit,
-                    'is_higher_better' => $feature->is_higher_better,
-                ]];
-            })->toArray();
-
-            // Build system prompt
-            $systemPrompt = "You are a ruthless, highly skeptical technology appraiser for a premium comparison website.
-Your primary job is to score products based on your vast WORLD KNOWLEDGE of brands and market tiers, using the provided raw text mainly for exact prices and real-time review counts.
-
-Here are the specific features you need to score:\n\n"
-                . json_encode($featureMap, JSON_PRETTY_PRINT)
-                . "\n\nCRITICAL SCORING RULES:\n"
-                . "1. WORLD KNOWLEDGE OVERRIDES TEXT: The provided raw text is written by marketers. You MUST IGNORE subjective adjectives like 'crystal clear', 'premium', or 'ultimate'. Rely on your internal knowledge of the brand. If it's a known budget brand (e.g., Tonor, Fifine, generic Chinese letters), its 'Sound Quality' or 'Build Quality' MUST NOT exceed 55-65. Scores of 80-100 are strictly reserved for industry-leading premium brands (e.g., Sony, Shure, Bose).\n"
-                . "2. ABSOLUTE SCORING (1-100): 50 represents an average, mediocre product. A cheap product physically cannot score 90 in qualitative features, even if reviewers say 'it is good for the price'. Value for money is NOT what you are scoring. Score the ABSOLUTE quality.\n"
-                . "3. OBSCURE PRODUCTS: If you do not recognize the brand or model at all, use the raw text to understand basic specs, but penalize it. Give it neutral/low scores (40-50) for quality features. Do not hallucinate greatness.\n"
-                . "4. REAL-TIME DATA EXTRACTION: You must find and extract the exact current 'price', 'amazon_rating', and 'amazon_reviews_count' from the raw text.\n"
-                . "5. FEATURE VALUES FORMAT (CRITICAL — DO NOT USE PLAIN NUMBERS): Every feature value in the 'features' object MUST be either:\n"
-                . "   - An object: {\"score\": <number 1-100>, \"reason\": \"<one sentence explanation>\"}\n"
-                . "   - OR null if the feature is completely irrelevant to this product.\n"
-                . "   NEVER return a plain number like \"Feature_Name\": 85. This will be rejected. Always use the object format.\n"
-                . "6. PHYSICAL REALITY & STRICT TRADE-OFFS: You must identify the inherent technological limits of the product before scoring. Do not conflate internal spec terminology with real-world user experience (e.g., 'low self-noise' does not equal 'background noise isolation', '4K resolution' does not equal 'anti-glare'). If a product's core physical design inherently contradicts a feature (e.g., condenser mics picking up room noise, open-back headphones leaking sound, clicky mechanical keyboards being loud in an office), you MUST score it strictly and lowly (30-60) for that specific feature. Base your reasoning on the harsh physical reality of the technology type, ignoring the manufacturer's marketing workarounds.\n"
-                . "- PRODUCT NAME: Create a SHORT, meaningful product name (5-6 words max). Brand + Model + Key Feature. Example: 'Sony WH-1000XM5 Wireless Headphones'.\n"
-                . "- THE VERDICT (ai_summary): Write a critical but practical 2-sentence summary. Be honest about the compromises (e.g., 'plasticky build', 'flat sound'), but explicitly identify WHO should buy it (e.g., 'Ideal for students on a strict budget' or 'A reliable backup for basic office calls'). Avoid marketing fluff, but validate the product's value within its specific price tier.\n"
-                . "Return ONLY a valid JSON object in this EXACT format (notice every feature is an OBJECT, not a number):\n"
-                . '{"name": "Clean Product Name", "brand": "Brand Name", "ai_summary": "Brutal 2-sentence summary...", "price_tier": 2, "amazon_rating": 4.8, "amazon_reviews_count": 1500, "features": {"price": 149.99, "Feature_Name_1": {"score": 85, "reason": "Solid metal construction but slightly heavy."}, "Feature_Name_2": {"score": 42, "reason": "Budget driver delivers flat, tinny audio."}, "Feature_Name_3": null}}'
-                . "\n\nIMPORTANT: Do not use markdown or code blocks. Just raw JSON.\n\n"
-                . ' CRITICAL RULE: Check if the product is an accessory, mount, cable, replacement part, or stand. If it is NOT a main device for this category, you MUST NOT score the features. Instead, return EXACTLY this JSON structure: {"status": "ignored", "reason": "This is an accessory, not a main\n'
-                . "Raw product text:\n" . $validated['raw_text'];
-
-            // Call Gemini API
-            $apiKey = config('services.gemini.api_key');
-            $response = Http::timeout(30)->post(
-                "https://generativelanguage.googleapis.com/v1beta/models/" . config('services.gemini.site_model') . ":generateContent?key={$apiKey}",
-                [
-                    'contents' => [
-                        [
-                            'parts' => [
-                                ['text' => $systemPrompt]
-                            ]
-                        ]
-                    ],
-                    'generationConfig' => [
-                        'temperature' => 0.3,
-                        'maxOutputTokens' => 4000,
-                    ],
-                ]
-            );
-
-            if (!$response->successful()) {
-                Log::error('Gemini API Error in API Import', [
-                    'status' => $response->status(),
-                    'body' => $response->body(),
-                ]);
-
-                return response()->json([
-                    'success' => false,
-                    'error' => 'AI Service Error',
-                    'message' => 'Failed to process product data with AI.',
-                ], 500);
-            }
-
-            $result = $response->json();
-
-            // Check for truncation
-            $finishReason = $result['candidates'][0]['finishReason'] ?? 'UNKNOWN';
-            if ($finishReason === 'MAX_TOKENS') {
-                Log::warning('AI Import - Response Truncated', [
-                    'finishReason' => $finishReason,
-                    'usageMetadata' => $result['usageMetadata'] ?? [],
-                ]);
-
-                return response()->json([
-                    'success' => false,
-                    'error' => 'Response Truncated',
-                    'message' => 'The product description is too long. Try with a shorter page.',
-                ], 400);
-            }
-
-            $content = $result['candidates'][0]['content']['parts'][0]['text'] ?? '';
-
-            // Strip markdown code blocks if present
-            $content = preg_replace('/^```json\s*|\s*```$/m', '', trim($content));
-            $content = trim($content);
-
-            // Parse JSON response
-            $parsed = json_decode($content, true);
-
-            // Handle accessories / non-main-device response from AI
-            if (($parsed['status'] ?? null) === 'ignored') {
-                $externalId = $request->input('external_id');
-                $categoryId = $category->id;
-
-                // Save a stub record so this ASIN is never re-scanned
-                if ($externalId) {
-                    Product::updateOrCreate(
-                        ['external_id' => $externalId, 'category_id' => $categoryId],
-                        [
-                            'tenant_id'   => $category->tenant_id,
-                            'is_ignored'  => true,
-                            'name'        => 'Ignored: ' . $externalId,
-                            'slug'        => 'ignored-' . Str::slug($externalId) . '-' . Str::random(4),
-                            'brand_id'    => null,
-                        ]
-                    );
-                }
-
-                Log::info('AI Import - Product ignored as accessory', [
-                    'external_id' => $externalId,
-                    'reason'      => $parsed['reason'] ?? 'no reason given',
-                ]);
-
-                return response()->json([
-                    'success' => true,
-                    'action'  => 'ignored',
-                    'reason'  => $parsed['reason'] ?? 'Identified as an accessory or non-main device.',
-                ]);
-            }
-
-            Log::debug('AI Import - Raw feature values', ['features' => $parsed['features'] ?? []]);
-
-            if (!isset($parsed['name']) || !isset($parsed['brand'])) {
-                Log::error('Invalid AI Response in API Import', [
-                    'content' => $content,
-                    'parsed' => $parsed,
-                ]);
-
-                return response()->json([
-                    'success' => false,
-                    'error' => 'Invalid AI Response',
-                    'message' => 'Could not parse product data from AI response.',
-                ], 400);
-            }
-
-            // Download and store image — SSRF protection: only allow known Amazon CDN domains
-            $imagePath = null;
-            $allowedImageHosts = [
-                'm.media-amazon.com',
-                'images-na.ssl-images-amazon.com',
-                'images-eu.ssl-images-amazon.com',
-                'images-fe.ssl-images-amazon.com',
-            ];
-            try {
-                $parsedHost = parse_url($validated['image_url'], PHP_URL_HOST);
-                if (!in_array($parsedHost, $allowedImageHosts)) {
-                    throw new \Exception('Image host not in allowed list: ' . $parsedHost);
-                }
-
-                $imageResponse = Http::timeout(15)->get($validated['image_url']);
-
-                if ($imageResponse->successful()) {
-                    $contentType = $imageResponse->header('Content-Type');
-                    if (!str_starts_with($contentType, 'image/')) {
-                        throw new \Exception('URL does not point to an image');
-                    }
-
-                    $extension = match (true) {
-                        str_contains($contentType, 'jpeg'), str_contains($contentType, 'jpg') => 'jpg',
-                        str_contains($contentType, 'png') => 'png',
-                        str_contains($contentType, 'webp') => 'webp',
-                        default => 'jpg',
-                    };
-
-                    $filename = Str::ulid() . '.' . $extension;
-                    $path = 'products/images/' . $filename;
-                    Storage::disk('public')->put($path, $imageResponse->body());
-                    $imagePath = $path;
-                    Log::info('Image downloaded successfully', ['path' => $imagePath]);
-                }
-            } catch (\Exception $e) {
-                Log::warning('Image download skipped', [
-                    'url'   => $validated['image_url'],
-                    'error' => $e->getMessage(),
-                ]);
-                // Continue without image
-            }
-
-            // Create or find brand (scoped to the same tenant as the category)
-            $brand = Brand::firstOrCreate(
-                ['name' => $parsed['brand'], 'tenant_id' => $category->tenant_id],
-                ['name' => $parsed['brand'], 'tenant_id' => $category->tenant_id]
-            );
-
-            $productData = [
-                'tenant_id' => $category->tenant_id,
-                'category_id' => $category->id,
-                'brand_id' => $brand->id,
-                'name' => $parsed['name'],
-                'slug' => Str::slug($parsed['name'] . '-' . Str::random(5)), // Create safe slug
-                'ai_summary' => $parsed['ai_summary'] ?? null,
-                'image_path' => $imagePath, // Update image if new one downloaded
-                'external_image_path' => $validated['image_url'], // Always save original external URL
-                'affiliate_url' => $validated['product_url'] ?? null,
-                'price_tier' => $parsed['price_tier'] ?? null,
-                'amazon_rating' => $parsed['amazon_rating'] ?? null,
-                'amazon_reviews_count' => $parsed['amazon_reviews_count'] ?? 0,
-            ];
-
-            // Anti-Duplicate Logic: Update or Create
-            // Priority 1: Check by distinct external_id (ASIN)
-            $externalId = $request->input('external_id');
-            $categoryId = $category->id;
-
-            if ($externalId) {
-                $product = Product::updateOrCreate(
-                    [
-                        'external_id' => $externalId,
-                        'category_id' => $categoryId
-                    ],
-                    $productData
-                );
-            } else {
-                // Priority 2: Fallback to Name + Brand (if no ASIN)
-                $product = Product::updateOrCreate(
-                    [
-                        'name' => $parsed['name'],
-                        'brand_id' => $brand->id,
-                        'category_id' => $categoryId
-                    ],
-                    $productData
-                );
-            }
-            // Attach feature values (Sync/Update)
-            $attachedCount = 0;
-            $features = $parsed['features'] ?? [];
-
-            foreach ($features as $featureName => $value) {
-                if ($value === null) {
-                    continue;
-                }
-
-                // Skip 'price' feature - we use price_tier instead
-                if (strtolower($featureName) === 'price') {
-                    continue;
-                }
-
-                // Handle both object format {"score": 85, "reason": "..."} and flat number fallback
-                if (is_array($value)) {
-                    $score = isset($value['score']) ? (float) $value['score'] : null;
-                    $reason = $value['reason'] ?? null;
-                } else {
-                    $score = (float) $value;
-                    $reason = null;
-                }
-
-                if ($score === null) {
-                    continue;
-                }
-
-                // Find feature by name
-                $feature = $category->features->firstWhere('name', $featureName);
-
-                if ($feature) {
-                    $product->featureValues()->updateOrCreate(
-                        ['feature_id' => $feature->id],
-                        ['raw_value' => $score, 'explanation' => $reason]
-                    );
-                    $attachedCount++;
-                }
-            }
-
-            Log::info('Product imported/updated successfully via API', [
-                'product_id' => $product->id,
-                'external_id' => $product->external_id,
-                'action' => $product->wasRecentlyCreated ? 'created' : 'updated',
-                'features_processed' => $attachedCount,
-            ]);
-
-            return response()->json([
-                'success' => true,
-                'action' => $product->wasRecentlyCreated ? 'created' : 'updated',
-                'product' => [
-                    'id' => $product->id,
-                    'external_id' => $product->external_id,
-                    'name' => $product->name,
-                    'brand' => $brand->name,
-                    'image_path' => $imagePath,
-                    'features_attached' => $attachedCount,
-                ],
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Product import failed', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-
+        if ($category->features->isEmpty()) {
             return response()->json([
                 'success' => false,
-                'error'   => 'Import Failed',
-                'message' => 'An error occurred while processing this product. Please try again.',
-            ], 500);
+                'error'   => 'No Features',
+                'message' => 'The selected category has no features defined.',
+            ], 400);
         }
+
+        $product = Product::updateOrCreate(
+            ['external_id' => $validated['external_id'], 'category_id' => $category->id],
+            [
+                'tenant_id'            => $category->tenant_id,
+                'name'                 => mb_substr($validated['title'], 0, 255),
+                'slug'                 => Str::slug(Str::limit($validated['title'], 80)) . '-' . strtolower($validated['external_id']),
+                'external_image_path'  => $validated['image_url'] ?? null,
+                'amazon_rating'        => $validated['rating'] ?? null,
+                'amazon_reviews_count' => $validated['reviews_count'] ?? 0,
+                'scraped_price'        => $validated['price'] ?? null,
+                'price_tier'           => $category->priceTierFor($validated['price'] ?? null),
+                'status'               => 'pending_ai',
+                'is_ignored'           => false,
+            ]
+        );
+
+        ProcessPendingProduct::dispatch($product->id, $category->id);
+
+        return response()->json([
+            'success' => true,
+            'action'  => $product->wasRecentlyCreated ? 'queued_new' : 'queued_rescan',
+            'product' => [
+                'id'          => $product->id,
+                'external_id' => $product->external_id,
+            ],
+        ]);
     }
 }

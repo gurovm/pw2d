@@ -23,7 +23,7 @@ chrome.storage.local.get(['env'], (result) => {
     }
 });
 
-const EXTENSION_TOKEN = '626f897ea3ed362449c7c06625633db8a2e7405e88ec2cac8ad7152ea9d619f9'; // Must match .env CHROME_EXTENSION_KEY
+const EXTENSION_TOKEN = 'c281be4e696db9cb6a7354749521da5030ab2071e6d8a49aea4b4c184f2479b4'; // Must match .env CHROME_EXTENSION_KEY
 
 // Listen for messages from Popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -58,8 +58,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         if (!isProcessing && queue.length > 0) {
             isProcessing = true;
             broadcastStatus("Resuming Batch...");
-            // Retry the current tab or move to next? 
-            // Better to close current (user solved it) and process next, 
+            // Retry the current tab or move to next?
+            // Better to close current (user solved it) and process next,
             // OR re-scrape current if user solved it on that tab.
             // Let's assume user solved it and wants to retry scraping THIS tab.
             // But getting back to the product page might be tricky.

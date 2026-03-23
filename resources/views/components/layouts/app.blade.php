@@ -99,9 +99,9 @@
         <!-- Tenant dynamic palette -->
         <style>
                 :root {
-                        --color-primary: {{ tenant('primary_color') ?? '#FF9900' }};
-                        --color-secondary: {{ tenant('secondary_background_color') ?? '#F3F4F6' }};
-                        --color-text: {{ tenant('text_color') ?? '#111827' }};
+                        --color-primary: {{ \App\Models\Tenant::sanitizeColor(tenant('primary_color'), '#FF9900') }};
+                        --color-secondary: {{ \App\Models\Tenant::sanitizeColor(tenant('secondary_background_color'), '#F3F4F6') }};
+                        --color-text: {{ \App\Models\Tenant::sanitizeColor(tenant('text_color'), '#111827') }};
                 }
         </style>
 

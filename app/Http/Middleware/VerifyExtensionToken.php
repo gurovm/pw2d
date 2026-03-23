@@ -17,8 +17,7 @@ class VerifyExtensionToken
             return response()->json(['error' => 'Extension token not configured.'], 403);
         }
 
-        $provided = $request->header('X-Extension-Token')
-            ?? $request->query('token');
+        $provided = $request->header('X-Extension-Token') ?? '';
 
         if (!hash_equals($expected, (string) $provided)) {
             return response()->json(['error' => 'Unauthorized.'], 403);

@@ -9,7 +9,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\Http;
+use App\Services\GeminiService;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -30,6 +30,7 @@ class RescanProductFeatures implements ShouldQueue
 
     public int $tries   = 3;
     public int $timeout = 60;
+    public array $backoff = [10, 60, 300]; // 10s, 1min, 5min
 
     public function __construct(
         private readonly int $productId,
@@ -86,24 +87,9 @@ class RescanProductFeatures implements ShouldQueue
                 . "Return ONLY a valid JSON object (no markdown, no code blocks):\n"
                 . '{"features": {"Feature_Name": {"score": 75, "reason": "One sentence."}, "Other_Feature": null}}';
 
-            $apiKey   = config('services.gemini.api_key');
-            $model    = config('services.gemini.site_model');
-            $response = Http::timeout(30)->post(
-                "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}",
-                [
-                    'contents'         => [['parts' => [['text' => $prompt]]]],
-                    'generationConfig' => ['temperature' => 0.3, 'maxOutputTokens' => 1500],
-                ]
-            );
-
-            if (!$response->successful()) {
-                throw new \Exception('Gemini API error: ' . $response->status());
-            }
-
-            $content = trim(preg_replace('/^```json\s*|\s*```$/m', '', trim(
-                $response->json('candidates.0.content.parts.0.text', '')
-            )));
-            $parsed = json_decode($content, true);
+            $gemini = app(GeminiService::class);
+            $result = $gemini->generate($prompt, ['maxOutputTokens' => 1500]);
+            $parsed = $result['parsed'];
 
             if (empty($parsed['features']) || !is_array($parsed['features'])) {
                 throw new \Exception('Invalid AI response: missing features object');

@@ -7,6 +7,7 @@ use App\Filament\Widgets\ProductStatsWidget;
 use Filament\Actions;
 use Filament\Forms;
 use Filament\Resources\Pages\ListRecords;
+use Illuminate\Support\Str;
 
 class ListProducts extends ListRecords
 {
@@ -153,22 +154,23 @@ class ListProducts extends ListRecords
                             return;
                         }
                         
-                        // Find or create brand
+                        // Find or create brand (scoped to tenant)
                         $brand = \App\Models\Brand::firstOrCreate(
-                            ['name' => $parsed['brand']],
-                            ['name' => $parsed['brand']]
+                            ['name' => $parsed['brand'], 'tenant_id' => tenant('id')],
+                            ['name' => $parsed['brand'], 'tenant_id' => tenant('id')]
                         );
                         
-                        // Create product
+                        // Create product with direct category_id FK
                         $product = \App\Models\Product::create([
+                            'tenant_id' => tenant('id'),
+                            'category_id' => $data['category_id'],
                             'name' => $parsed['name'],
                             'brand_id' => $brand->id,
+                            'slug' => Str::slug($parsed['name'] . '-' . Str::random(5)),
                             'amazon_rating' => 0,
                             'amazon_reviews_count' => 0,
+                            'status' => null,
                         ]);
-                        
-                        // Attach category
-                        $product->categories()->attach($data['category_id']);
                         
                         // Log parsed data for debugging
                         \Log::info('AI Import - Parsed Data', [

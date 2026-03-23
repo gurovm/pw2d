@@ -102,6 +102,29 @@
     </div>
 
     <div id="status"></div>
+
+    <hr style="margin: 15px 0; border: 0; border-top: 1px solid #eee;">
+
+    <!-- Settings (collapsed by default) -->
+    <div style="text-align: right;">
+        <button id="settingsToggle"
+            style="width: auto; background: none; color: #666; font-size: 12px; padding: 4px 8px; font-weight: normal;"
+            aria-label="Toggle settings">Settings</button>
+    </div>
+    <div id="settingsPanel" style="display: none; margin-top: 8px;">
+        <label for="tenantInput"
+            style="display:block; margin-bottom:5px; font-size:12px; font-weight:bold; color:#333;">Tenant ID</label>
+        <input type="text" id="tenantInput" placeholder="e.g. pw2d, coffee-decide..."
+            style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; margin-bottom:8px; box-sizing: border-box; font-size: 12px;">
+        <button id="saveTenantBtn" style="background: #6366f1; font-size: 12px; padding: 8px; margin-bottom: 12px;">Save Tenant ID</button>
+
+        <label for="tokenInput"
+            style="display:block; margin-bottom:5px; font-size:12px; font-weight:bold; color:#333;">API Token</label>
+        <input type="password" id="tokenInput" placeholder="Paste your API token..."
+            style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; margin-bottom:8px; box-sizing: border-box; font-size: 12px;">
+        <button id="saveTokenBtn" style="background: #10b981; font-size: 12px; padding: 8px;">Save Token</button>
+    </div>
+
     <script src="popup.js"></script>
 </body>
 
