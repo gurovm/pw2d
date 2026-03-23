@@ -112,7 +112,7 @@ class ProcessPendingProduct implements ShouldQueue
                 . '"features": {"Feature_Name": {"score": 75, "reason": "One sentence."}, "Other_Feature": null}}';
 
             $gemini = app(GeminiService::class);
-            $result = $gemini->generate($prompt, ['maxOutputTokens' => 3000]);
+            $result = $gemini->generate($prompt, ['maxOutputTokens' => 4096]);
             $parsed = $result['parsed'];
 
             // AI identified this as an accessory — suppress it
@@ -129,14 +129,22 @@ class ProcessPendingProduct implements ShouldQueue
                 throw new \Exception('Invalid AI response: missing name or brand field');
             }
 
+            // Guard: if AI returned just the brand name (e.g. "Breville") instead of a
+            // real product name, keep the original scraped title which has more detail.
+            $aiName = $parsed['name'];
+            $originalName = $product->name;
+            if (mb_strlen($aiName) < 20 && mb_strlen($originalName) > mb_strlen($aiName)) {
+                $aiName = mb_substr($originalName, 0, 255);
+            }
+
             $brand = Brand::firstOrCreate(
                 ['name' => $parsed['brand'], 'tenant_id' => $product->tenant_id],
                 ['name' => $parsed['brand'], 'tenant_id' => $product->tenant_id]
             );
 
             $product->update([
-                'name'                 => $parsed['name'],
-                'slug'                 => Str::slug($parsed['name'] . '-' . Str::random(5)),
+                'name'                 => $aiName,
+                'slug'                 => Str::slug($aiName . '-' . Str::random(5)),
                 'brand_id'             => $brand->id,
                 'ai_summary'           => $parsed['ai_summary'] ?? null,
                 'price_tier'           => $parsed['price_tier']           ?? $product->price_tier,
