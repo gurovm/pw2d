@@ -56,10 +56,12 @@ class ProcessPendingProduct implements ShouldQueue
                 $f->name => ['unit' => $f->unit, 'is_higher_better' => $f->is_higher_better],
             ])->toArray();
 
+            $budgetMax   = $category->budget_max ?? 50;
+            $midrangeMax = $category->midrange_max ?? 150;
             $priceNote = match ($product->price_tier) {
-                1       => 'Budget (under $50)',
-                2       => 'Mid-range ($50–$150)',
-                3       => 'Premium (over $150)',
+                1       => "Budget (under \${$budgetMax})",
+                2       => "Mid-range (\${$budgetMax}–\${$midrangeMax})",
+                3       => "Premium (over \${$midrangeMax})",
                 default => 'unknown price',
             };
             $ratingNote = $product->amazon_rating
@@ -70,6 +72,7 @@ class ProcessPendingProduct implements ShouldQueue
                 . "Your primary job is to score this product using your WORLD KNOWLEDGE of the brand and model.\n"
                 . "You are also the last line of defense against dirty, polluted data entering our database.\n\n"
                 . "Product name: \"{$product->name}\"\n"
+                . "Scraped price: \${$product->scraped_price}\n"
                 . "Price tier: {$priceNote}\n"
                 . "Amazon rating: {$ratingNote}\n\n"
                 . "Category features to score:\n"

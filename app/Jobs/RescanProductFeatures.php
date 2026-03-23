@@ -62,10 +62,12 @@ class RescanProductFeatures implements ShouldQueue
                 $f->name => ['unit' => $f->unit, 'is_higher_better' => $f->is_higher_better],
             ])->toArray();
 
+            $budgetMax   = $category->budget_max ?? 50;
+            $midrangeMax = $category->midrange_max ?? 150;
             $priceNote = match ($product->price_tier) {
-                1       => 'Budget',
-                2       => 'Mid-range',
-                3       => 'Premium',
+                1       => "Budget (under \${$budgetMax})",
+                2       => "Mid-range (\${$budgetMax}–\${$midrangeMax})",
+                3       => "Premium (over \${$midrangeMax})",
                 default => 'unknown price tier',
             };
             $ratingNote = $product->amazon_rating
