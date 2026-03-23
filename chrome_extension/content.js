@@ -191,11 +191,30 @@ function extractSerpProducts() {
 
             // ── Title (fallback chain) ────────────────────────
             let title = null;
-            // 1. Hidden full-text span Amazon includes for screen readers — most reliable
+
+            // 1. Hidden full-text span Amazon includes for screen readers
             const fullSpan = el.querySelector('h2 .a-truncate-full');
             if (fullSpan) title = fullSpan.textContent.trim();
 
-            // 2. h2 innerText (stripped of duplicate hidden spans)
+            // 2. The main product title link text (span.a-text-normal inside h2 > a)
+            if (!title) {
+                const titleSpan = el.querySelector('h2 a span.a-text-normal');
+                if (titleSpan) title = titleSpan.textContent.trim();
+            }
+
+            // 3. Newer Amazon "recipe" card title
+            if (!title) {
+                const recipe = el.querySelector('[data-cy="title-recipe"] a span, [data-cy="title-recipe-title"]');
+                if (recipe) title = recipe.textContent.trim();
+            }
+
+            // 4. Any span inside an anchor pointing to /dp/
+            if (!title) {
+                const dpLink = el.querySelector('a[href*="/dp/"] span.a-text-normal, a[href*="/dp/"] span');
+                if (dpLink) title = dpLink.textContent.trim();
+            }
+
+            // 5. h2 full innerText (may contain just brand on newer layouts — used as fallback)
             if (!title) {
                 const h2 = el.querySelector('h2');
                 if (h2) {
@@ -205,19 +224,7 @@ function extractSerpProducts() {
                 }
             }
 
-            // 3. Newer Amazon "recipe" card title attribute
-            if (!title) {
-                const recipe = el.querySelector('[data-cy="title-recipe-title"]');
-                if (recipe) title = recipe.textContent.trim();
-            }
-
-            // 4. Any span inside an anchor pointing to /dp/ (sponsored/carousel cards)
-            if (!title) {
-                const dpLink = el.querySelector('a[href*="/dp/"] span, a[href*="/gp/product/"] span');
-                if (dpLink) title = dpLink.textContent.trim();
-            }
-
-            // 5. Carousel-style truncated title spans
+            // 6. Carousel-style truncated title spans
             if (!title) {
                 const trunc = el.querySelector(
                     '.p13n-sc-truncate, .a-size-base-plus, .a-size-medium, [class*="truncate"]'
@@ -225,10 +232,10 @@ function extractSerpProducts() {
                 if (trunc) title = trunc.textContent.trim();
             }
 
-            // 6. Last resort: image alt text
+            // 7. Last resort: image alt text (usually the full product name)
             if (!title) {
                 const img = el.querySelector('img[alt]');
-                if (img?.alt) title = img.alt.trim();
+                if (img?.alt && img.alt.length > 5) title = img.alt.trim();
             }
 
             if (!title || title.length < 3) return; // no usable title — skip
