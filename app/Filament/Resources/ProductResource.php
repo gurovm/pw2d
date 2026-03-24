@@ -226,6 +226,24 @@ class ProductResource extends Resource
                                 ->send();
                         })
                         ->deselectRecordsAfterCompletion(),
+                    Tables\Actions\BulkAction::make('markIgnored')
+                        ->label('Mark as Ignored')
+                        ->icon('heroicon-o-eye-slash')
+                        ->color('danger')
+                        ->requiresConfirmation()
+                        ->modalHeading('Mark selected products as ignored?')
+                        ->modalDescription('These products will be hidden from the site, search, and sitemap. Their ASINs are kept to prevent re-scanning.')
+                        ->action(function (Collection $records) {
+                            $count = $records->count();
+                            foreach ($records as $record) {
+                                $record->update(['is_ignored' => true, 'status' => null]);
+                            }
+                            Notification::make()
+                                ->title("{$count} products marked as ignored")
+                                ->success()
+                                ->send();
+                        })
+                        ->deselectRecordsAfterCompletion(),
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ]);

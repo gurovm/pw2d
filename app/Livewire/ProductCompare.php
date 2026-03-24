@@ -251,7 +251,7 @@ class ProductCompare extends Component
     {
         if ($product && $product->exists) {
             if ($product->is_ignored) {
-                abort(404);
+                abort(410, 'This product is no longer available in our catalog.');
             }
             $this->selectedProductSlug = $product->slug;
             $this->category = $product->category;
