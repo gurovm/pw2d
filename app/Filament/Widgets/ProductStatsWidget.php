@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\DB;
 
 class ProductStatsWidget extends BaseWidget
 {
-    protected static bool $isLazy = false;
+    protected static bool $isLazy = true;
 
     protected function getStats(): array
     {
