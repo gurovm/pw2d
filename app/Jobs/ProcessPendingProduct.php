@@ -52,7 +52,7 @@ class ProcessPendingProduct implements ShouldQueue
         }
 
         try {
-            $featureMap = $category->features->mapWithKeys(fn ($f) => [
+            $featureMap = $category->features->mapWithKeys(fn($f) => [
                 $f->name => ['unit' => $f->unit, 'is_higher_better' => $f->is_higher_better],
             ])->toArray();
 
@@ -98,7 +98,7 @@ class ProcessPendingProduct implements ShouldQueue
                 . "- Remove subsidiary/division suffixes: 'AKG Professional' → 'AKG', 'Blue Microphones' → 'Blue'.\n"
                 . "- Resolve umbrella brands: '512 Audio by Warm Audio' → 'Warm Audio'.\n"
                 . "- Always use the parent consumer brand, not the Amazon storefront name.\n"
-                . "- Capitalize correctly: 'FIFINE' → 'Fifine', 'MAONO' → 'Maono', 'TONOR' → 'Tonor'.\n\n"
+                . "- Capitalize correctly: 'BRANDNAME' → 'Brandname'.\n\n"
                 . "=== STAGE 2.5: NAME NORMALIZATION (derive the 'name' field) ===\n\n"
                 . "The raw Amazon title is verbose marketing copy. You MUST produce a clean, short product name:\n"
                 . "- Keep ONLY: Brand + Model name + essential differentiator (e.g. color or size variant if it's the main SKU distinction).\n"
@@ -181,7 +181,6 @@ class ProcessPendingProduct implements ShouldQueue
                 'product_id' => $product->id,
                 'name'       => $product->name,
             ]);
-
         } catch (\Exception $e) {
             Log::error('ProcessPendingProduct: failed', [
                 'product_id' => $this->productId,
@@ -256,7 +255,6 @@ class ProcessPendingProduct implements ShouldQueue
             $product->update(['image_path' => $path]);
 
             Log::info('ProcessPendingProduct: image stored', ['path' => $path]);
-
         } catch (\Exception $e) {
             Log::warning('ProcessPendingProduct: image download skipped', [
                 'product_id' => $product->id,
