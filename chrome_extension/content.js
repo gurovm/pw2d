@@ -248,13 +248,17 @@ function extractSerpProducts() {
             // Skip if the element is a tiny widget (no price, no reviews, small area)
             const rect = el.getBoundingClientRect();
             if (rect.height < 80 || rect.width < 100) return;
-            // Deduplicate: some cards repeat the title text — trim to first occurrence
-            const halfLen = Math.floor(title.length / 2);
-            if (halfLen > 30) {
-                const firstHalf = title.substring(0, halfLen);
-                const secondHalf = title.substring(halfLen);
-                if (secondHalf.startsWith(firstHalf.substring(0, 30))) {
-                    title = firstHalf.trim();
+            // Deduplicate: Amazon sometimes concatenates the title with a truncated copy
+            // e.g. "HIBREW H10Plus - Espresso Machine...HIBREW H10Plus - Espresso Machine..."
+            // Strategy: find longest repeated prefix (min 20 chars) and keep just the first copy
+            if (title.length > 60) {
+                for (let len = Math.floor(title.length / 2); len >= 20; len--) {
+                    const prefix = title.substring(0, len);
+                    const rest = title.substring(len);
+                    if (rest.startsWith(prefix.substring(0, Math.min(20, prefix.length)))) {
+                        title = prefix.trim().replace(/[-–,]\s*$/, '').trim();
+                        break;
+                    }
                 }
             }
 
@@ -295,6 +299,9 @@ function extractSerpProducts() {
                     image_url = src || null;
                 }
             } catch (e) {}
+
+            // Skip products with no reviews — likely new/fake listings with no real data
+            if (!reviews_count || reviews_count < 5) return;
 
             products.push({ asin, title, price, rating, reviews_count, image_url, status: 'pending_ai' });
 
