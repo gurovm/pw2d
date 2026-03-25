@@ -33,10 +33,22 @@ class ProblemProducts extends Page implements HasTable
     /** Suspect keywords that indicate accessories/bundles/parts */
     private const SUSPECT_KEYWORDS = [
         'bundle', 'kit', 'set of', 'pack of', 'replacement',
-        'filter', 'stand', 'mount', 'case', 'cable', 'adapter',
+        'filter', 'stand', 'mount', 'cable', 'adapter',
         'mat', 'cleaning', 'descaler', 'charcoal', 'tablets',
         'knock box', 'tamper', 'portafilter basket',
     ];
+
+    /**
+     * Build a MySQL REGEXP pattern with word boundaries for each keyword.
+     * Uses [[:<:]] and [[:>:]] which are MySQL's word boundary anchors.
+     */
+    private static function keywordRegex(): string
+    {
+        return implode('|', array_map(
+            fn (string $kw) => '[[:<:]]' . preg_quote($kw, '/') . '[[:>:]]',
+            self::SUSPECT_KEYWORDS
+        ));
+    }
 
     public static function getNavigationBadge(): ?string
     {
@@ -54,17 +66,17 @@ class ProblemProducts extends Page implements HasTable
      */
     private static function problemQuery(): Builder
     {
-        $keywordRegex = implode('|', self::SUSPECT_KEYWORDS);
+        $regex = static::keywordRegex();
 
         return Product::query()
             ->where('is_ignored', false)
             ->whereNull('status')
-            ->where(function (Builder $q) use ($keywordRegex) {
+            ->where(function (Builder $q) use ($regex) {
                 $q->whereNull('scraped_price')
                   ->orWhereRaw('scraped_price < (SELECT COALESCE(budget_max, 50) * 0.5 FROM categories WHERE categories.id = products.category_id)')
                   ->orWhereNull('image_path')
                   ->orWhereNull('ai_summary')
-                  ->orWhereRaw('LOWER(name) REGEXP ?', [strtolower($keywordRegex)]);
+                  ->orWhereRaw('LOWER(name) REGEXP ?', [$regex]);
             });
     }
 
@@ -94,7 +106,7 @@ class ProblemProducts extends Page implements HasTable
 
         $nameLower = strtolower($record->name ?? '');
         foreach (self::SUSPECT_KEYWORDS as $kw) {
-            if (str_contains($nameLower, $kw)) {
+            if (preg_match('/\b' . preg_quote($kw, '/') . '\b/', $nameLower)) {
                 $problems[] = 'Suspect: "' . $kw . '"';
                 break; // one keyword is enough
             }
@@ -109,8 +121,9 @@ class ProblemProducts extends Page implements HasTable
             ->query(static::problemQuery())
             ->defaultPaginationPageOption(25)
             ->paginationPageOptions([10, 25, 50, 100])
+            ->defaultSort('created_at', 'desc')
             ->modifyQueryUsing(fn (Builder $query) => $query
-                ->select(['id', 'tenant_id', 'name', 'external_id', 'brand_id', 'category_id', 'image_path', 'scraped_price', 'ai_summary', 'amazon_rating', 'amazon_reviews_count', 'is_ignored'])
+                ->select(['id', 'tenant_id', 'name', 'external_id', 'brand_id', 'category_id', 'image_path', 'scraped_price', 'ai_summary', 'amazon_rating', 'amazon_reviews_count', 'is_ignored', 'created_at'])
                 ->with(['category:id,name,tenant_id,budget_max', 'brand:id,name,tenant_id'])
             )
             ->columns([
@@ -165,6 +178,11 @@ class ProblemProducts extends Page implements HasTable
                         default => 'gray',
                     })
                     ->getStateUsing(fn (Product $record) => static::detectProblems($record)),
+
+                TextColumn::make('created_at')
+                    ->label('Added')
+                    ->since()
+                    ->sortable(),
             ])
             ->filters([
                 SelectFilter::make('problem_type')
@@ -178,14 +196,14 @@ class ProblemProducts extends Page implements HasTable
                     ])
                     ->query(function (Builder $query, array $data) {
                         if (empty($data['value'])) return;
-                        $keywordRegex = implode('|', self::SUSPECT_KEYWORDS);
+                        $regex = static::keywordRegex();
                         match ($data['value']) {
                             'no_price'   => $query->whereNull('scraped_price'),
                             'low_price'  => $query->whereNotNull('scraped_price')
                                 ->whereRaw('scraped_price < (SELECT COALESCE(budget_max, 50) * 0.5 FROM categories WHERE categories.id = products.category_id)'),
                             'no_image'   => $query->whereNull('image_path'),
                             'no_summary' => $query->whereNull('ai_summary'),
-                            'suspect'    => $query->whereRaw('LOWER(name) REGEXP ?', [strtolower($keywordRegex)]),
+                            'suspect'    => $query->whereRaw('LOWER(name) REGEXP ?', [$regex]),
                             default      => null,
                         };
                     }),
