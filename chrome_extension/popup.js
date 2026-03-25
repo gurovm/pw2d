@@ -393,40 +393,38 @@ if (saveTenantBtn) {
     });
 }
 
-// Scrape Button Click
+// Import Single Product — extracts lightweight data from the current product page
+// and sends it to the batch-import API (same as SERP scan, but for 1 product).
+// If the ASIN already exists, its price/rating/reviews are refreshed.
 scrapeBtn.addEventListener('click', async () => {
     if (!selectedCategoryId) {
         showError('Please select a category first.');
         return;
     }
 
-    statusDiv.textContent = 'Scraping...';
+    statusDiv.textContent = 'Extracting product data...';
     statusDiv.className = '';
 
     try {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!tab) { showError('No active tab found.'); return; }
 
-        if (!tab) {
-            showError('Error: No active tab found');
-            return;
-        }
-
-        // Send message to content script
-        chrome.tabs.sendMessage(tab.id, { action: "extract_all" }, async (response) => {
+        chrome.tabs.sendMessage(tab.id, { action: 'EXTRACT_PRODUCT_PAGE' }, async (response) => {
             if (chrome.runtime.lastError) {
-                showError('Error: ' + chrome.runtime.lastError.message + '. Try refreshing the page.');
+                showError('Error: ' + chrome.runtime.lastError.message + '. Try refreshing the Amazon page.');
                 return;
             }
 
-            if (!response) {
-                showError('Error: No response from content script.');
+            if (!response?.success || !response.product) {
+                showError(response?.error || 'Could not extract product data. Make sure you are on an Amazon product page.');
                 return;
             }
 
-            statusDiv.textContent = 'Sending to PW2D...';
+            const product = response.product;
+            statusDiv.textContent = `Sending "${product.title?.substring(0, 40)}..." to PW2D...`;
 
             try {
-                const apiResponse = await fetch(`${baseUrl}/api/product-import`, {
+                const apiResponse = await fetch(`${baseUrl}/api/products/batch-import`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -435,21 +433,19 @@ scrapeBtn.addEventListener('click', async () => {
                         'X-Tenant-Id': TENANT_ID,
                     },
                     body: JSON.stringify({
-                        raw_text: response.rawText, // Changed from response.title + ...
-                        image_url: response.imageUrl, // Changed from response.image
-                        product_url: response.productUrl, // Changed from response.url
-                        external_id: response.external_id,
-                        category_id: selectedCategoryId
+                        category_id: selectedCategoryId,
+                        products: [product],
                     })
                 });
 
                 const result = await apiResponse.json();
 
                 if (apiResponse.ok && result.success) {
-                    statusDiv.textContent = 'Success! Product imported.';
+                    const action = result.created > 0 ? 'Queued for AI' : 'Price refreshed';
+                    statusDiv.textContent = `${action}: ${product.title?.substring(0, 50)}`;
                     statusDiv.className = 'success';
                 } else {
-                    showError('API Error: ' + (result.message || 'Unknown error'));
+                    showError('API Error: ' + (result.message || result.error || 'Unknown error'));
                 }
             } catch (error) {
                 showError('Network Error: Is the server running?');

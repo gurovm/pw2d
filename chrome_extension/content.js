@@ -314,11 +314,77 @@ function extractSerpProducts() {
     return products;
 }
 
+// ── Single product page data extraction ───────────────────────
+
+function extractProductPageData() {
+    const asin = getASIN();
+    if (!asin) return null;
+
+    // Title — from #productTitle or meta title
+    let title = null;
+    const titleEl = document.querySelector('#productTitle');
+    if (titleEl) title = titleEl.textContent.trim();
+    if (!title) {
+        const metaTitle = document.querySelector('meta[name="title"]');
+        if (metaTitle) title = metaTitle.getAttribute('content')?.trim();
+    }
+    if (!title) title = document.title.replace(/ *: *Amazon.*$/i, '').trim();
+
+    // Price — reuse extractPrice with document.body as root, plus product-page specific selectors
+    let price = null;
+    const priceEl = document.querySelector(
+        '.a-price .a-offscreen, #priceblock_ourprice, #priceblock_dealprice, ' +
+        '.priceToPay .a-offscreen, [data-a-color="price"] .a-offscreen, ' +
+        '#corePrice_feature_div .a-offscreen, #apex_offerDisplay_desktop .a-offscreen'
+    );
+    if (priceEl) {
+        const p = parseFloat(priceEl.textContent.replace(/[^0-9.]/g, ''));
+        if (p > 0) price = p;
+    }
+
+    // Rating
+    let rating = null;
+    const ratingEl = document.querySelector('#acrPopover, [data-action="acrStars498-popover"]');
+    if (ratingEl) {
+        const m = (ratingEl.getAttribute('title') || ratingEl.textContent).match(/([\d.]+)\s+out\s+of\s+5/i);
+        if (m) rating = parseFloat(m[1]);
+    }
+    if (!rating) {
+        const starSpan = document.querySelector('.a-icon-star .a-icon-alt, .a-icon-star-small .a-icon-alt');
+        if (starSpan) {
+            const m = starSpan.textContent.match(/([\d.]+)/);
+            if (m) rating = parseFloat(m[1]);
+        }
+    }
+
+    // Reviews count
+    let reviews_count = 0;
+    const reviewEl = document.querySelector('#acrCustomerReviewText');
+    if (reviewEl) {
+        const m = reviewEl.textContent.match(/([\d,]+)/);
+        if (m) reviews_count = parseInt(m[1].replace(/,/g, ''));
+    }
+
+    // Image
+    const image_url = getImageUrl();
+
+    return { asin, title, price, rating, reviews_count, image_url, status: 'pending_ai' };
+}
+
 // ── Message router ────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
-    if (request.action === 'extract_all') {
+    if (request.action === 'EXTRACT_PRODUCT_PAGE') {
+        if (checkForRobot()) { sendResponse({ success: false, robot: true }); return; }
+        const data = extractProductPageData();
+        if (data) {
+            sendResponse({ success: true, product: data });
+        } else {
+            sendResponse({ success: false, error: 'Could not extract product data. Is this an Amazon product page?' });
+        }
+
+    } else if (request.action === 'extract_all') {
         if (checkForRobot()) { sendResponse({ robot: true }); return; }
         sendResponse({
             rawText:    document.body.innerText,
