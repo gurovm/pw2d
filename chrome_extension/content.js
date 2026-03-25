@@ -330,16 +330,32 @@ function extractProductPageData() {
     }
     if (!title) title = document.title.replace(/ *: *Amazon.*$/i, '').trim();
 
-    // Price — reuse extractPrice with document.body as root, plus product-page specific selectors
+    // Price — scoped to main product section to avoid carousel/sidebar prices
     let price = null;
-    const priceEl = document.querySelector(
-        '.a-price .a-offscreen, #priceblock_ourprice, #priceblock_dealprice, ' +
-        '.priceToPay .a-offscreen, [data-a-color="price"] .a-offscreen, ' +
-        '#corePrice_feature_div .a-offscreen, #apex_offerDisplay_desktop .a-offscreen'
-    );
-    if (priceEl) {
-        const p = parseFloat(priceEl.textContent.replace(/[^0-9.]/g, ''));
-        if (p > 0) price = p;
+    const priceContainers = [
+        '#corePrice_feature_div',          // most common modern layout
+        '#apex_offerDisplay_desktop',       // deal/offer display
+        '#priceblock_ourprice',             // older layout
+        '#priceblock_dealprice',            // deal price
+        '#price_inside_buybox',             // buy box
+        '#newBuyBoxPrice',                  // new buy box
+    ];
+    for (const sel of priceContainers) {
+        const container = document.querySelector(sel);
+        if (!container) continue;
+        const offscreen = container.querySelector('.a-offscreen');
+        if (offscreen) {
+            const p = parseFloat(offscreen.textContent.replace(/[^0-9.]/g, ''));
+            if (p > 0) { price = p; break; }
+        }
+        // Fallback: whole + fraction inside this container
+        const whole = container.querySelector('.a-price-whole');
+        if (whole) {
+            const w = whole.textContent.replace(/[^0-9]/g, '');
+            const f = container.querySelector('.a-price-fraction')?.textContent.replace(/[^0-9]/g, '') || '00';
+            const p = parseFloat(`${w}.${f}`);
+            if (p > 0) { price = p; break; }
+        }
     }
 
     // Rating
