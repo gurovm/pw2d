@@ -421,6 +421,12 @@ scrapeBtn.addEventListener('click', async () => {
             }
 
             const product = response.product;
+
+            if (product.unavailable) {
+                showError('Product is currently unavailable on Amazon — skipped.');
+                return;
+            }
+
             statusDiv.textContent = `Sending "${product.title?.substring(0, 40)}..." to PW2D...`;
 
             try {

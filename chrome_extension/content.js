@@ -320,6 +320,15 @@ function extractProductPageData() {
     const asin = getASIN();
     if (!asin) return null;
 
+    // Check if product is unavailable
+    const availEl = document.querySelector('#availability, #outOfStock');
+    if (availEl) {
+        const text = availEl.textContent.toLowerCase();
+        if (text.includes('currently unavailable') || text.includes('out of stock')) {
+            return { unavailable: true, asin };
+        }
+    }
+
     // Title — from #productTitle or meta title
     let title = null;
     const titleEl = document.querySelector('#productTitle');
