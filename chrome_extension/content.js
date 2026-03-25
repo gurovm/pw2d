@@ -244,6 +244,7 @@ function extractSerpProducts() {
             // Skip sponsored labels, ad widgets, and non-product cards
             const titleLower = title.toLowerCase();
             if (/^sponsored$/i.test(title)) return;
+            if (/\b(refurbished|renewed|renewed|certified refurbished)\b/i.test(title)) return;
             if (titleLower.length < 10 && !/\d/.test(title)) return; // too short and no model number
             // Skip if the element is a tiny widget (no price, no reviews, small area)
             const rect = el.getBoundingClientRect();
