@@ -122,6 +122,10 @@ class ProductResource extends Resource
         return $table
             ->defaultPaginationPageOption(25)
             ->paginationPageOptions([10, 25, 50, 100])
+            ->modifyQueryUsing(fn (Builder $query) => $query
+                ->select(['id', 'tenant_id', 'name', 'brand_id', 'category_id', 'image_path', 'is_ignored', 'amazon_rating', 'amazon_reviews_count', 'created_at'])
+                ->with(['brand:id,name,tenant_id', 'category:id,name,tenant_id'])
+            )
             ->columns([
                 Tables\Columns\ImageColumn::make('image_path')
                     ->label('Image')
@@ -132,18 +136,17 @@ class ProductResource extends Resource
                 Tables\Columns\TextColumn::make('name')
                     ->searchable()
                     ->sortable()
-                    ->weight('bold'),
-                
+                    ->weight('bold')
+                    ->limit(60),
+
                 Tables\Columns\TextColumn::make('brand.name')
                     ->label('Brand')
-                    ->sortable()
-                    ->searchable(),
-                
+                    ->sortable(),
+
                 Tables\Columns\TextColumn::make('category.name')
                     ->label('Category')
                     ->badge()
-                    ->sortable()
-                    ->searchable(),
+                    ->sortable(),
                 
                 Tables\Columns\IconColumn::make('is_ignored')
                     ->label('Ignored')
