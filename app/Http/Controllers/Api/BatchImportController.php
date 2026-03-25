@@ -67,10 +67,7 @@ class BatchImportController extends Controller
                     ];
                     $refreshed++;
                 } else {
-                    // Scenario A: New product — skip if no price (unavailable).
-                    if (empty($p['price'])) {
-                        continue;
-                    }
+                    // Scenario A: New product — create even without price (extraction may have failed).
                     $product = Product::create([
                         'tenant_id'            => $category->tenant_id,
                         'external_id'          => $p['asin'],
@@ -80,8 +77,8 @@ class BatchImportController extends Controller
                         'external_image_path'  => $p['image_url'] ?? null,
                         'amazon_rating'        => $p['rating'] ?? null,
                         'amazon_reviews_count' => $p['reviews_count'] ?? 0,
-                        'scraped_price'        => $p['price'],
-                        'price_tier'           => $category->priceTierFor($p['price']),
+                        'scraped_price'        => $p['price'] ?? null,
+                        'price_tier'           => $category->priceTierFor($p['price'] ?? null),
                         'status'               => 'pending_ai',
                         'is_ignored'           => false,
                     ]);
