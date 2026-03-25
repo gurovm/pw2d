@@ -330,17 +330,21 @@ function extractProductPageData() {
     }
     if (!title) title = document.title.replace(/ *: *Amazon.*$/i, '').trim();
 
-    // Price — scoped to main product section to avoid carousel/sidebar prices
+    // Price — scoped to main product area to avoid carousel/sidebar prices
     let price = null;
+    // Strategy 1: Look inside known price containers
     const priceContainers = [
-        '#corePrice_feature_div',          // most common modern layout
-        '#apex_offerDisplay_desktop',       // deal/offer display
-        '#priceblock_ourprice',             // older layout
-        '#priceblock_dealprice',            // deal price
-        '#price_inside_buybox',             // buy box
-        '#newBuyBoxPrice',                  // new buy box
+        '#corePrice_feature_div',
+        '#apex_offerDisplay_desktop',
+        '#priceblock_ourprice',
+        '#priceblock_dealprice',
+        '#price_inside_buybox',
+        '#newBuyBoxPrice',
+        '#tp_price_block_total_price_ww',
+        '.priceToPay',
     ];
     for (const sel of priceContainers) {
+        if (price) break;
         const container = document.querySelector(sel);
         if (!container) continue;
         const offscreen = container.querySelector('.a-offscreen');
@@ -348,13 +352,33 @@ function extractProductPageData() {
             const p = parseFloat(offscreen.textContent.replace(/[^0-9.]/g, ''));
             if (p > 0) { price = p; break; }
         }
-        // Fallback: whole + fraction inside this container
         const whole = container.querySelector('.a-price-whole');
         if (whole) {
             const w = whole.textContent.replace(/[^0-9]/g, '');
             const f = container.querySelector('.a-price-fraction')?.textContent.replace(/[^0-9]/g, '') || '00';
             const p = parseFloat(`${w}.${f}`);
             if (p > 0) { price = p; break; }
+        }
+    }
+    // Strategy 2: Find .a-price inside the main centerCol but NOT inside carousels/comparisons
+    if (!price) {
+        const mainCol = document.querySelector('#centerCol, #ppd, #dp');
+        if (mainCol) {
+            const allPrices = mainCol.querySelectorAll('.a-price .a-offscreen');
+            for (const el of allPrices) {
+                // Skip if inside a carousel or comparison widget
+                if (el.closest('#sims-consolidated-1_feature_div, #sims-consolidated-2_feature_div, [class*="carousel"], [class*="sims"]')) continue;
+                const p = parseFloat(el.textContent.replace(/[^0-9.]/g, ''));
+                if (p > 0) { price = p; break; }
+            }
+        }
+    }
+    // Strategy 3: Last resort — meta tag or structured data
+    if (!price) {
+        const metaPrice = document.querySelector('meta[itemprop="price"], input#attach-base-product-price');
+        if (metaPrice) {
+            const p = parseFloat(metaPrice.getAttribute('content') || metaPrice.getAttribute('value') || '');
+            if (p > 0) price = p;
         }
     }
 
