@@ -39,13 +39,13 @@ class ProblemProducts extends Page implements HasTable
     ];
 
     /**
-     * Build a MySQL REGEXP pattern with word boundaries for each keyword.
-     * Uses [[:<:]] and [[:>:]] which are MySQL's word boundary anchors.
+     * Build a MySQL 8 REGEXP pattern with word boundary simulation.
+     * Uses (^|[^a-z]) and ([^a-z]|$) since MySQL 8 ICU regex doesn't support \b or [[:<:]]
      */
     private static function keywordRegex(): string
     {
         return implode('|', array_map(
-            fn (string $kw) => '[[:<:]]' . preg_quote($kw, '/') . '[[:>:]]',
+            fn (string $kw) => '(^|[^a-z])' . $kw . '([^a-z]|$)',
             self::SUSPECT_KEYWORDS
         ));
     }
