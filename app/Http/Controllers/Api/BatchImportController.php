@@ -50,17 +50,27 @@ class BatchImportController extends Controller
                 $existing = $existingMap->get($p['asin']);
 
                 if ($existing) {
-                    // Scenario B: Existing product — collect for a single batch UPDATE below.
+                    // Scenario B: Existing product — refresh or ignore if no price.
+                    if (empty($p['price'])) {
+                        // No price = unavailable — mark as ignored
+                        DB::table('products')->where('id', $existing->id)
+                            ->update(['is_ignored' => true, 'updated_at' => $now]);
+                        $refreshed++;
+                        continue;
+                    }
                     $refreshRows[] = [
                         'id'                   => $existing->id,
-                        'scraped_price'        => $p['price'] ?? null,
+                        'scraped_price'        => $p['price'],
                         'amazon_rating'        => $p['rating'] ?? null,
                         'amazon_reviews_count' => $p['reviews_count'] ?? 0,
                         'updated_at'           => $now,
                     ];
                     $refreshed++;
                 } else {
-                    // Scenario A: New product — create stub and queue for AI scoring.
+                    // Scenario A: New product — skip if no price (unavailable).
+                    if (empty($p['price'])) {
+                        continue;
+                    }
                     $product = Product::create([
                         'tenant_id'            => $category->tenant_id,
                         'external_id'          => $p['asin'],
@@ -70,8 +80,8 @@ class BatchImportController extends Controller
                         'external_image_path'  => $p['image_url'] ?? null,
                         'amazon_rating'        => $p['rating'] ?? null,
                         'amazon_reviews_count' => $p['reviews_count'] ?? 0,
-                        'scraped_price'        => $p['price'] ?? null,
-                        'price_tier'           => $category->priceTierFor($p['price'] ?? null),
+                        'scraped_price'        => $p['price'],
+                        'price_tier'           => $category->priceTierFor($p['price']),
                         'status'               => 'pending_ai',
                         'is_ignored'           => false,
                     ]);
