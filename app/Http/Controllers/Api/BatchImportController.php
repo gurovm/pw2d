@@ -67,7 +67,15 @@ class BatchImportController extends Controller
                     ];
                     $refreshed++;
                 } else {
-                    // Scenario A: New product — create even without price (extraction may have failed).
+                    // Skip suspiciously cheap products (price > 0 but less than half of tier 1)
+                    $price = $p['price'] ?? null;
+                    if ($price !== null && $price > 0) {
+                        $budgetMax = $category->budget_max ?? 50;
+                        if ($price < $budgetMax * 0.5) {
+                            continue;
+                        }
+                    }
+
                     $product = Product::create([
                         'tenant_id'            => $category->tenant_id,
                         'external_id'          => $p['asin'],
