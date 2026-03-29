@@ -65,87 +65,12 @@ class ListProducts extends ListRecords
                             ]];
                         })->toArray();
                         
-                        // Build system prompt
-                        $systemPrompt = "You are an expert product data extraction agent. I will provide raw, messy text from an e-commerce page (including descriptions, specs, and review summaries). Extract the product's Name, Brand, and values for these specific features:\n\n" 
-                            . json_encode($featureMap, JSON_PRETTY_PRINT) 
-                            . "\n\nCRITICAL RULES:\n"
-                            . "- Feature Names: You MUST use the exact feature NAMES as shown in the JSON above (e.g., 'Build quality', 'Weight', 'DPI'). These are the keys in the JSON object.\n"
-                            . "- Semantic Matching: If an exact feature name isn't found in the text, look for related terms (e.g., 'Comfort' → 'Ergonomics', 'Feel' → 'Ergonomics') and synthesize them.\n"
-                            . "- Scoring (1-100 scale): For qualitative features (like Ergonomics, Build quality), calculate a score. If you see explicit positive/negative review counts, do the math. If you only see text summaries, estimate a fair score based on sentiment.\n"
-                            . "- Missing Data: If a feature is completely unmentioned, return null for that name. Do not invent facts.\n"
-                            . "- Units: You MUST always convert weight to grams (e.g., convert ounces/lbs to grams). For other units, match the unit specified in the feature definition.\n\n"
-                            . "Return ONLY a valid JSON object in this EXACT format:\n"
-                            . '{"name": "Product Name", "brand": "Brand Name", "features": {"Build quality": 85, "Weight": 141, "DPI": null}}'
-                            . "\n\nIMPORTANT: In the 'features' object, use the exact feature names from the map above (e.g., 'Build quality', 'Weight').\n"
-                            . "Do not use markdown or code blocks. Just raw JSON.\n\n"
-                            . "Raw product text:\n" . $data['raw_text'];
-                        
-                        // Call Gemini API
-                        $apiKey = config('services.gemini.api_key');
-                        $response = \Illuminate\Support\Facades\Http::timeout(30)->post(
-                            "https://generativelanguage.googleapis.com/v1beta/models/" . config('services.gemini.admin_model') . ":generateContent?key={$apiKey}",
-                            [
-                                'contents' => [
-                                    [
-                                        'parts' => [
-                                            ['text' => $systemPrompt]
-                                        ]
-                                    ]
-                                ],
-                                'generationConfig' => [
-                                    'temperature' => 0.3,
-                                    'maxOutputTokens' => 4000,
-                                ],
-                            ]
-                        );
-                        
-                        if (!$response->successful()) {
-                            \Log::error('Gemini API Error in Import', [
-                                'status' => $response->status(),
-                                'body' => $response->body(),
-                            ]);
-                            
-                            \Filament\Notifications\Notification::make()
-                                ->title('AI Service Error')
-                                ->body('Could not connect to AI service. Please try again.')
-                                ->danger()
-                                ->send();
-                            return;
-                        }
-                        
-                        $result = $response->json();
-                        
-                        // Check for truncation
-                        $finishReason = $result['candidates'][0]['finishReason'] ?? 'UNKNOWN';
-                        if ($finishReason === 'MAX_TOKENS') {
-                            \Log::warning('AI Import - Response Truncated', [
-                                'finishReason' => $finishReason,
-                                'usageMetadata' => $result['usageMetadata'] ?? [],
-                            ]);
-                            
-                            \Filament\Notifications\Notification::make()
-                                ->title('AI Response Truncated')
-                                ->body('The product description is too long. Try removing some of the extra text (reviews, related products, etc.) and keep only the main product details.')
-                                ->warning()
-                                ->send();
-                            return;
-                        }
-                        
-                        $content = $result['candidates'][0]['content']['parts'][0]['text'] ?? '';
-                        
-                        // Strip markdown code blocks if present
-                        $content = preg_replace('/^```json\s*|\s*```$/m', '', trim($content));
-                        $content = trim($content);
-                        
-                        // Parse JSON
-                        $parsed = json_decode($content, true);
-                        
+                        // Call AiService
+                        $aiService = app(\App\Services\AiService::class);
+                        $result = $aiService->extractProductFromText($data['raw_text'], $featureMap);
+                        $parsed = $result['parsed'];
+
                         if (!$parsed || !isset($parsed['name']) || !isset($parsed['brand'])) {
-                            \Log::error('Invalid AI Response in Import', [
-                                'content' => $content,
-                                'parsed' => $parsed,
-                            ]);
-                            
                             \Filament\Notifications\Notification::make()
                                 ->title('Invalid AI Response')
                                 ->body('Could not parse AI response. Please try again or enter data manually.')

@@ -9,7 +9,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use App\Services\GeminiService;
+use App\Services\AiService;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -39,7 +39,7 @@ class RescanProductFeatures implements ShouldQueue
 
     public function handle(): void
     {
-        $product  = Product::find($this->productId);
+        $product  = Product::with('offers')->find($this->productId);
         $category = Category::with('features')->find($this->categoryId);
 
         if (!$product || !$category || $category->features->isEmpty()) {
@@ -51,8 +51,8 @@ class RescanProductFeatures implements ShouldQueue
         }
 
         try {
-            // Recalculate price tier from scraped_price + category thresholds (no AI needed)
-            $newPriceTier = $category->priceTierFor($product->scraped_price);
+            // Recalculate price tier from best offer price + category thresholds
+            $newPriceTier = $category->priceTierFor($product->best_price);
             if ($newPriceTier !== null && $newPriceTier !== $product->price_tier) {
                 $product->update(['price_tier' => $newPriceTier]);
                 $product->refresh();
@@ -74,23 +74,8 @@ class RescanProductFeatures implements ShouldQueue
                 ? "{$product->amazon_rating}/5 stars ({$product->amazon_reviews_count} reviews)"
                 : 'no rating data available';
 
-            $prompt = "You are a product scoring expert for a consumer comparison website.\n"
-                . "Score the following product on the listed features using WORLD KNOWLEDGE of this brand and model.\n\n"
-                . "Product: \"{$product->name}\"\n"
-                . "Price tier: {$priceNote}\n"
-                . "Amazon rating: {$ratingNote}\n\n"
-                . "Features to score:\n"
-                . json_encode($featureMap, JSON_PRETTY_PRINT) . "\n\n"
-                . "SCORING RULES:\n"
-                . "1. WORLD KNOWLEDGE OVERRIDES EVERYTHING: Base scores on your internal knowledge of this specific model.\n"
-                . "2. ABSOLUTE SCORING (1-100): 50 = average/mediocre. Budget brands CANNOT score 80+ on quality features.\n"
-                . "3. STRICT TRADE-OFFS: Create contrast. If a feature is irrelevant or bad, score it 20-40.\n"
-                . "4. OBSCURE PRODUCTS: If you don't recognise the model, infer from brand tier + price. Default to 40-50.\n\n"
-                . "Return ONLY a valid JSON object (no markdown, no code blocks):\n"
-                . '{"features": {"Feature_Name": {"score": 75, "reason": "One sentence."}, "Other_Feature": null}}';
-
-            $gemini = app(GeminiService::class);
-            $result = $gemini->generate($prompt, ['maxOutputTokens' => 1500]);
+            $aiService = app(AiService::class);
+            $result = $aiService->rescanFeatures($product->name, $priceNote, $ratingNote, $featureMap);
             $parsed = $result['parsed'];
 
             if (empty($parsed['features']) || !is_array($parsed['features'])) {

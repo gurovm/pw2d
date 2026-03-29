@@ -11,6 +11,12 @@
     "host_permissions": [
         "https://www.amazon.com/*",
         "https://www.amazon.co.uk/*",
+        "https://clivecoffee.com/*",
+        "https://www.clivecoffee.com/*",
+        "https://seattlecoffeegear.com/*",
+        "https://www.seattlecoffeegear.com/*",
+        "https://wholelattelove.com/*",
+        "https://www.wholelattelove.com/*",
         "http://127.0.0.1:8003/*",
         "*://pw2d.com/*",
         "*://209.97.153.234/*"
@@ -31,7 +37,10 @@
             "matches": [
                 "*://*.amazon.com/*",
                 "*://*.amazon.co.uk/*",
-                "*://*.amazon.de/*"
+                "*://*.amazon.de/*",
+                "*://*.clivecoffee.com/*",
+                "*://*.seattlecoffeegear.com/*",
+                "*://*.wholelattelove.com/*"
             ],
             "js": [
                 "content.js"

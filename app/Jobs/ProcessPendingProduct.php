@@ -2,6 +2,8 @@
 
 namespace App\Jobs;
 
+use App\Models\AiCategoryRejection;
+use App\Models\AiMatchingDecision;
 use App\Models\Brand;
 use App\Models\Category;
 use App\Models\Product;
@@ -10,7 +12,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use App\Services\GeminiService;
+use App\Services\AiService;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -31,7 +33,7 @@ class ProcessPendingProduct implements ShouldQueue
 
     public function handle(): void
     {
-        $product  = Product::find($this->productId);
+        $product  = Product::with('offers.store')->find($this->productId);
         $category = Category::with('features')->find($this->categoryId);
 
         if (!$product || !$category || $category->features->isEmpty()) {
@@ -68,57 +70,10 @@ class ProcessPendingProduct implements ShouldQueue
                 ? "{$product->amazon_rating}/5 stars ({$product->amazon_reviews_count} reviews)"
                 : 'no rating data available';
 
-            $prompt = "You are a ruthless, highly skeptical technology appraiser AND data architect for a premium comparison website.\n"
-                . "Your primary job is to score this product using your WORLD KNOWLEDGE of the brand and model.\n"
-                . "You are also the last line of defense against dirty, polluted data entering our database.\n\n"
-                . "Product name: \"{$product->name}\"\n"
-                . "Scraped price: \${$product->scraped_price}\n"
-                . "Price tier: {$priceNote}\n"
-                . "Amazon rating: {$ratingNote}\n\n"
-                . "Category features to score:\n"
-                . json_encode($featureMap, JSON_PRETTY_PRINT) . "\n\n"
-                . "=== STAGE 1: DATA QUALITY GATE ===\n\n"
-                . "CRITICAL: Only ignore products that are CLEARLY not a main device in the \"{$category->name}\" category.\n"
-                . "When in doubt, SCORE the product — do NOT ignore it. False ignores are worse than scoring a marginal product.\n\n"
-                . "IGNORE RULE A — ACCESSORIES ONLY: Ignore ONLY if the product is clearly NOT a standalone main device in \"{$category->name}\":\n"
-                . "  - Replacement parts, spare components, or consumables\n"
-                . "  - Accessories, add-ons, stands, mounts, cases, or cleaning supplies\n"
-                . "  - Cables, adapters, or converters\n"
-                . "  - Multi-item bundles that are NOT centered on a single main device\n"
-                . "DO NOT ignore: color/size variants, refurbished units, or products with verbose titles.\n"
-                . "If the product functions as a standalone {$category->name} device, you MUST score it.\n"
-                . "To ignore, return EXACTLY: " . '{"status": "ignored", "reason": "accessory_or_bundle"}' . "\n\n"
-                . "IGNORE RULE B — GENERIC / WHITE-LABEL: If the product has no recognizable, reputable brand.\n"
-                . "This includes 'Generic', 'Unbranded', random Chinese model numbers as brands, and ultra-cheap no-name products.\n"
-                . "Only ignore true no-name items with titles like 'Generic', 'Unbranded', or random model numbers as the brand.\n"
-                . "To ignore, return EXACTLY: " . '{"status": "ignored", "reason": "generic_white_label"}' . "\n\n"
-                . "=== STAGE 2: BRAND NORMALIZATION (apply before writing the brand field) ===\n\n"
-                . "Unify brand names to their most common, clean English-language form. Strict rules:\n"
-                . "- Strip non-ASCII characters used as stylistic affectations: 'RØDE' → 'Rode', 'Beyerdynamic' stays.\n"
-                . "- Remove subsidiary/division suffixes: 'AKG Professional' → 'AKG', 'Blue Microphones' → 'Blue'.\n"
-                . "- Resolve umbrella brands: '512 Audio by Warm Audio' → 'Warm Audio'.\n"
-                . "- Always use the parent consumer brand, not the Amazon storefront name.\n"
-                . "- Capitalize correctly: 'BRANDNAME' → 'Brandname'.\n\n"
-                . "=== STAGE 2.5: NAME NORMALIZATION (derive the 'name' field) ===\n\n"
-                . "The raw Amazon title is verbose marketing copy. You MUST produce a clean, short product name:\n"
-                . "- Keep ONLY: Brand + Model name + essential differentiator (e.g. color or size variant if it's the main SKU distinction).\n"
-                . "- STRIP everything after a comma or slash in the title that lists specs or compatibility:\n"
-                . "  'Hollyland Lark M2 Wireless Microphone for iPhone/Camera/Android/PC, 48kHz/24-bit...' → 'Hollyland Lark M2'\n"
-                . "- STRIP parenthetical variant/bundle info entirely: '(Black, with Camera RX + USB-C RX)' → remove.\n"
-                . "- STRIP marketing adjectives that are not part of the official model name: 'High Fidelity', 'Premium', 'Professional'.\n"
-                . "- Maximum 60 characters. When in doubt, use only Brand + Model (e.g. 'Sony WH-1000XM5', 'Shure MV7+', 'Rode NT-USB Mini').\n\n"
-                . "=== STAGE 3: SCORING RULES ===\n\n"
-                . "1. WORLD KNOWLEDGE OVERRIDES EVERYTHING: Base scores on your internal knowledge of this specific model.\n"
-                . "2. ABSOLUTE SCORING (1-100): 50 = average/mediocre. Budget brands CANNOT score 80+ on quality features.\n"
-                . "3. STRICT TRADE-OFFS: Create contrast. If a feature is irrelevant or bad, score it 20-40.\n"
-                . "4. OBSCURE PRODUCTS: If you don't recognise the model, infer from brand tier + price. Default to 40-50.\n\n"
-                . "Return ONLY a valid JSON object in this EXACT format (no markdown, no code blocks):\n"
-                . '{"name": "Brand Model", "brand": "Normalized Brand Name", "ai_summary": "Brutal 2-sentence summary.", '
-                . '"price_tier": 2, "amazon_rating": null, "amazon_reviews_count": null, '
-                . '"features": {"Feature_Name": {"score": 75, "reason": "One sentence."}, "Other_Feature": null}}';
-
-            $gemini = app(GeminiService::class);
-            $result = $gemini->generate($prompt, ['maxOutputTokens' => 4096]);
+            $aiService = app(AiService::class);
+            $result = $aiService->evaluateProduct(
+                $product->name, $product->best_price, $priceNote, $ratingNote, $category->name, $featureMap
+            );
             $parsed = $result['parsed'];
 
             // AI identified this as an accessory — suppress it
@@ -143,6 +98,38 @@ class ProcessPendingProduct implements ShouldQueue
                 $aiName = mb_substr($originalName, 0, 255);
             }
 
+            // AI Memory Matching: check if this product already exists under a different ASIN/offer.
+            // Uses cached decisions first, then asks AI only when needed.
+            $matchedProductId = $aiService->matchProduct($originalName, $parsed['brand'], $product->tenant_id, $product->id);
+
+            if ($matchedProductId && $matchedProductId !== $product->id) {
+                // Merge: transfer this product's offers to the matched product, then delete the duplicate stub.
+                $product->offers()->update(['product_id' => $matchedProductId]);
+                $product->forceDelete();
+
+                Log::info('ProcessPendingProduct: merged duplicate into existing product', [
+                    'duplicate_id' => $product->id,
+                    'matched_id'   => $matchedProductId,
+                    'raw_title'    => $originalName,
+                ]);
+                return;
+            }
+
+            // Category rejection check: if this product was previously swept out
+            // of this category, detach it and leave category_id null for future re-assignment.
+            $rejected = AiCategoryRejection::where('product_id', $product->id)
+                ->where('category_id', $this->categoryId)
+                ->exists();
+
+            if ($rejected) {
+                $product->update(['category_id' => null, 'status' => null]);
+                Log::info('ProcessPendingProduct: skipped — product was rejected from this category', [
+                    'product_id'  => $product->id,
+                    'category_id' => $this->categoryId,
+                ]);
+                return;
+            }
+
             $brand = Brand::firstOrCreate(
                 ['name' => $parsed['brand'], 'tenant_id' => $product->tenant_id],
                 ['name' => $parsed['brand'], 'tenant_id' => $product->tenant_id]
@@ -158,6 +145,12 @@ class ProcessPendingProduct implements ShouldQueue
                 'amazon_reviews_count' => $parsed['amazon_reviews_count'] ?? $product->amazon_reviews_count,
                 'status'               => null, // fully processed
             ]);
+
+            // Invalidate stale negative matching decisions so future imports re-evaluate
+            AiMatchingDecision::withoutGlobalScopes()
+                ->where('tenant_id', $product->tenant_id)
+                ->where('is_match', false)
+                ->delete();
 
             foreach ($category->features as $feature) {
                 $value = $parsed['features'][$feature->name] ?? null;
@@ -204,18 +197,29 @@ class ProcessPendingProduct implements ShouldQueue
      */
     private function downloadAndStoreImage(Product $product, string $brandName, string $productName): void
     {
-        $imageUrl = $product->external_image_path;
+        $amazonOffer = $product->offers->first(fn ($o) => $o->store?->slug === 'amazon') ?? $product->offers->first();
+        $imageUrl = $amazonOffer?->image_url;
 
         if (empty($imageUrl)) {
             return;
         }
 
         try {
-            // SSRF protection: only allow known Amazon CDN domains
+            // SSRF protection: allow known CDN domains + any domain from active stores
             $host = parse_url($imageUrl, PHP_URL_HOST);
-            if (!in_array($host, config('services.amazon.allowed_image_hosts', []))) {
-                Log::warning('ProcessPendingProduct: image host not allowed', ['host' => $host]);
-                return;
+            $allowedHosts = config('services.allowed_image_hosts', []);
+
+            // Auto-allow: if the image host matches any store's domain (or its CDN)
+            if (!in_array($host, $allowedHosts)) {
+                $storeMatch = \App\Models\Store::withoutGlobalScopes()
+                    ->where('is_active', true)
+                    ->get(['slug'])
+                    ->contains(fn ($s) => str_contains($host, str_replace('-', '', $s->slug)));
+
+                if (!$storeMatch && !str_ends_with($host, '.shopify.com') && !str_ends_with($host, '.cloudfront.net')) {
+                    Log::warning('ProcessPendingProduct: image host not allowed', ['host' => $host]);
+                    return;
+                }
             }
 
             $response = Http::timeout(15)->get($imageUrl);
@@ -241,7 +245,7 @@ class ProcessPendingProduct implements ShouldQueue
             $allWords  = array_filter(explode(' ', "{$brandName} {$productName}"));
             $slugWords = array_slice($allWords, 0, 4);
             $stem      = Str::slug(implode(' ', $slugWords));
-            $asin      = $product->external_id ?? Str::random(10);
+            $asin      = $amazonOffer ? basename(parse_url($amazonOffer->url, PHP_URL_PATH)) : Str::random(10);
             $filename  = "{$stem}-{$asin}.{$extension}";
             $path      = "products/images/{$filename}";
 

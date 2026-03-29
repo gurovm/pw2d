@@ -453,7 +453,479 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     } else if (request.action === 'EXTRACT_SERP_PRODUCTS') {
         const products = extractSerpProducts();
         sendResponse({ success: true, products });
+
+    } else if (request.action === 'EXTRACT_STORE_PRODUCT') {
+        const data = extractStoreProduct();
+        sendResponse(data);
+
+    } else if (request.action === 'EXTRACT_STORE_LISTING') {
+        const data = extractStoreListing();
+        sendResponse(data);
     }
 
     return true; // keep message channel open for async responses
 });
+
+// ── Domain Router: Store-specific product extractors ──────────
+
+/**
+ * Detects which store we're on and extracts product data using store-specific selectors.
+ * Returns a unified payload for the ingest-offer API.
+ */
+function extractStoreProduct() {
+    const host = window.location.hostname.replace(/^www\./, '');
+    const url = window.location.href;
+
+    const extractors = {
+        'amazon.com': extractAmazonProduct,
+        'clivecoffee.com': extractCliveCoffeeProduct,
+        'seattlecoffeegear.com': extractSeattleCoffeeGearProduct,
+        'wholelattelove.com': extractWholeLatteLoveProduct,
+    };
+
+    const extractor = extractors[host];
+    if (!extractor) {
+        return { success: false, error: `Unsupported store: ${host}` };
+    }
+
+    try {
+        const product = extractor(url);
+        if (!product || !product.raw_title) {
+            return { success: false, error: 'Could not extract product data from this page.' };
+        }
+        return { success: true, product };
+    } catch (e) {
+        return { success: false, error: e.message };
+    }
+}
+
+function extractAmazonProduct(url) {
+    const data = extractProductPageData();
+    if (!data) return null;
+    if (data.unavailable) return { unavailable: true };
+
+    // Extract brand from the "Visit the X Store" link or brand table row
+    let brand = null;
+    const storeLink = document.querySelector('#bylineInfo');
+    if (storeLink) {
+        const m = storeLink.textContent.match(/(?:Visit the|Brand:)\s*(.+?)(?:\s*Store)?$/i);
+        if (m) brand = m[1].trim();
+    }
+    if (!brand) {
+        const brandRow = document.querySelector('tr.po-brand td:last-child span, [data-csa-c-brand]');
+        if (brandRow) brand = brandRow.textContent?.trim() || brandRow.getAttribute('data-csa-c-brand');
+    }
+
+    return {
+        url,
+        store_slug: 'amazon',
+        asin: data.asin,
+        raw_title: data.title,
+        brand,
+        scraped_price: data.price,
+        image_url: data.image_url,
+        rating: data.rating,
+        reviews_count: data.reviews_count,
+    };
+}
+
+function extractCliveCoffeeProduct(url) {
+    // Title: h1 with font-display class, or fallback to any h1 in product area
+    const title = document.querySelector('h1.font-display, h1.product-name, h1.page-title, .product__purchase h1')?.textContent?.trim();
+    if (!title) return null;
+
+    // Price: Clive uses .price-item--regular inside .price__regular
+    let price = null;
+    const priceEl = document.querySelector('.price__regular .price-item--regular, .price-item--sale, [data-price-amount]');
+    if (priceEl) {
+        const m = (priceEl.getAttribute('data-price-amount') || priceEl.textContent).match(/\$([\d,]+(?:\.\d{2})?)/);
+        if (m) price = parseFloat(m[1].replace(/,/g, ''));
+    }
+
+    // Brand: not explicitly shown on Clive product pages — extract from title (first word before space)
+    let brand = null;
+    const brandEl = document.querySelector('[itemprop="brand"] [itemprop="name"], .product-brand, .vendor');
+    if (brandEl) brand = brandEl.textContent?.trim();
+
+    // Image: first image in the product gallery
+    let image = null;
+    const imgEl = document.querySelector('.product-gallery__media, .product__media img, .product-image img');
+    if (imgEl) {
+        image = imgEl.getAttribute('src') || '';
+        if (image.startsWith('//')) image = 'https:' + image;
+        // Try to get highest res from srcset
+        const srcset = imgEl.getAttribute('srcset');
+        if (srcset) {
+            const parts = srcset.split(',').map(s => s.trim());
+            const last = parts[parts.length - 1];
+            const m = last.match(/^(https?:\/\/[^\s]+|\/\/[^\s]+)/);
+            if (m) {
+                image = m[1];
+                if (image.startsWith('//')) image = 'https:' + image;
+            }
+        }
+    }
+
+    // Rating from stars widget
+    let rating = null;
+    const starsEl = document.querySelector('[data-reviews-average]');
+    if (starsEl) rating = parseFloat(starsEl.getAttribute('data-reviews-average'));
+
+    // Reviews count
+    let reviews_count = null;
+    const reviewsEl = document.querySelector('.stars-scale__reviews_count, [itemprop="votes"]');
+    if (reviewsEl) {
+        const m = reviewsEl.textContent.match(/(\d+)/);
+        if (m) reviews_count = parseInt(m[1]);
+    }
+
+    return {
+        url,
+        store_slug: 'clive-coffee',
+        raw_title: title,
+        brand,
+        scraped_price: price,
+        image_url: image,
+        rating,
+        reviews_count,
+    };
+}
+
+// ── Store Listing Extractors (product grid pages) ─────────────
+
+function extractStoreListing() {
+    const host = window.location.hostname.replace(/^www\./, '');
+
+    const extractors = {
+        'clivecoffee.com': extractCliveCoffeeListing,
+        'seattlecoffeegear.com': extractShopifyListing,
+        'wholelattelove.com': extractWholeLatteLoveListing,
+    };
+
+    const extractor = extractors[host];
+    if (!extractor) {
+        return { success: false, error: `No listing extractor for: ${host}` };
+    }
+
+    try {
+        const products = extractor();
+        return { success: true, products };
+    } catch (e) {
+        return { success: false, error: e.message };
+    }
+}
+
+function extractCliveCoffeeListing() {
+    const products = [];
+    const seen = new Set();
+
+    document.querySelectorAll('.product-listing').forEach(card => {
+        try {
+            const linkEl = card.querySelector('.product-listing__link');
+            if (!linkEl) return;
+
+            const href = linkEl.getAttribute('href');
+            if (!href || seen.has(href)) return;
+            seen.add(href);
+
+            const title = linkEl.textContent.trim();
+            if (!title) return;
+
+            // Price — handle "From $X,XXX" and "$X,XXX.XX"
+            let price = null;
+            const priceDiv = card.querySelector('.text-muted div:first-child');
+            if (priceDiv) {
+                const m = priceDiv.textContent.match(/\$([\d,]+(?:\.\d{2})?)/);
+                if (m) price = parseFloat(m[1].replace(/,/g, ''));
+            }
+
+            // Image
+            let image = null;
+            const img = card.querySelector('.product-listing__media img');
+            if (img) {
+                image = img.getAttribute('src') || '';
+                if (image.startsWith('//')) image = 'https:' + image;
+                // Get highest quality from srcset
+                const srcset = img.getAttribute('srcset');
+                if (srcset) {
+                    const parts = srcset.split(',').map(s => s.trim());
+                    const last = parts[parts.length - 1];
+                    const srcMatch = last.match(/^(https?:\/\/[^\s]+|\/\/[^\s]+)/);
+                    if (srcMatch) {
+                        image = srcMatch[1];
+                        if (image.startsWith('//')) image = 'https:' + image;
+                    }
+                }
+            }
+
+            // Rating from data attribute
+            let rating = null;
+            const starsEl = card.querySelector('[data-reviews-average]');
+            if (starsEl) {
+                rating = parseFloat(starsEl.getAttribute('data-reviews-average'));
+            }
+
+            // Reviews count from title attribute
+            let reviews_count = null;
+            if (starsEl) {
+                const m = starsEl.getAttribute('title')?.match(/(\d+)\s+reviews?/i);
+                if (m) reviews_count = parseInt(m[1]);
+            }
+
+            // Build full URL
+            const fullUrl = href.startsWith('http') ? href : `https://clivecoffee.com${href}`;
+            // Strip ref param for clean canonical URL
+            const cleanUrl = fullUrl.split('?')[0];
+
+            products.push({
+                url: cleanUrl,
+                store_slug: 'clive-coffee',
+                raw_title: title,
+                brand: null, // Will be extracted by AI
+                scraped_price: price,
+                image_url: image,
+                rating,
+                reviews_count,
+            });
+        } catch (e) {
+            console.warn('PW2D: Skipped Clive Coffee product:', e);
+        }
+    });
+
+    console.log(`PW2D: Extracted ${products.length} products from Clive Coffee listing.`);
+    return products;
+}
+
+function extractShopifyListing() {
+    // Generic Shopify listing extractor — works for most Shopify themes
+    const products = [];
+    const seen = new Set();
+
+    document.querySelectorAll('.product-listing, .product-card, .grid__item .card').forEach(card => {
+        try {
+            const linkEl = card.querySelector('a[href*="/products/"]');
+            if (!linkEl) return;
+
+            const href = linkEl.getAttribute('href');
+            if (!href || seen.has(href)) return;
+            seen.add(href);
+
+            const titleEl = card.querySelector('h3, h2, .product-listing__title, .card__heading');
+            const title = titleEl?.textContent?.trim();
+            if (!title) return;
+
+            let price = null;
+            const priceEl = card.querySelector('.price .money, .price-item, [data-price]');
+            if (priceEl) {
+                const m = (priceEl.getAttribute('data-price') || priceEl.textContent).match(/\$([\d,]+(?:\.\d{2})?)/);
+                if (m) price = parseFloat(m[1].replace(/,/g, ''));
+            }
+
+            let image = null;
+            const img = card.querySelector('img');
+            if (img) image = img.getAttribute('src') || '';
+            if (image?.startsWith('//')) image = 'https:' + image;
+
+            const host = window.location.hostname.replace(/^www\./, '');
+            const fullUrl = href.startsWith('http') ? href : `https://${host}${href}`;
+
+            products.push({
+                url: fullUrl.split('?')[0],
+                store_slug: host.replace(/\.com$/, '').replace(/\./g, '-'),
+                raw_title: title,
+                brand: null,
+                scraped_price: price,
+                image_url: image,
+                rating: null,
+                reviews_count: null,
+            });
+        } catch (e) {}
+    });
+
+    return products;
+}
+
+function extractSeattleCoffeeGearProduct(url) {
+    const title = document.querySelector('h1.product-name, h1.page-title, h1[itemprop="name"]')?.textContent?.trim();
+    if (!title) return null;
+
+    let price = null;
+    const priceEl = document.querySelector('[data-price-amount], .price .money, .product-price, meta[itemprop="price"]');
+    if (priceEl) {
+        const raw = priceEl.getAttribute('data-price-amount') || priceEl.getAttribute('content') || priceEl.textContent;
+        price = parseFloat(raw.replace(/[^0-9.]/g, ''));
+        if (isNaN(price)) price = null;
+    }
+
+    let brand = null;
+    const brandEl = document.querySelector('[itemprop="brand"] [itemprop="name"], .product-brand, .vendor');
+    if (brandEl) brand = brandEl.textContent?.trim();
+
+    let image = null;
+    const imgEl = document.querySelector('.product-image img, [itemprop="image"], .gallery-image img');
+    if (imgEl) image = imgEl.getAttribute('src') || imgEl.getAttribute('data-src');
+
+    return {
+        url,
+        store_slug: 'seattle-coffee-gear',
+        raw_title: title,
+        brand,
+        scraped_price: price,
+        image_url: image,
+        rating: null,
+        reviews_count: null,
+    };
+}
+
+// ── Whole Latte Love extractors ───────────────────────────────
+
+function extractWholeLatteLoveProduct(url) {
+    // Title: from data attribute on gallery, or h1, or product__title
+    let title = document.querySelector('media-gallery[data-product-title]')?.getAttribute('data-product-title');
+    if (!title) title = document.querySelector('h1.product__title, h1.page-title, .product-single__title, .product__info-container h1')?.textContent?.trim();
+    if (!title) return null;
+
+    // Price: .price-item inside the product info section
+    let price = null;
+    const priceContainer = document.querySelector('.product__info-container .price, .product__info-wrapper .price');
+    if (priceContainer) {
+        const priceEl = priceContainer.querySelector('.price-item--regular, .price-item--sale');
+        if (priceEl) {
+            const m = priceEl.textContent.match(/\$([\d,]+(?:\.\d{2})?)/);
+            if (m) price = parseFloat(m[1].replace(/,/g, ''));
+        }
+    }
+    if (!price) {
+        const anyPrice = document.querySelector('.price-item--regular, .price-item--sale');
+        if (anyPrice) {
+            const m = anyPrice.textContent.match(/\$([\d,]+(?:\.\d{2})?)/);
+            if (m) price = parseFloat(m[1].replace(/,/g, ''));
+        }
+    }
+
+    // Brand/vendor
+    let brand = null;
+    const vendorEl = document.querySelector('.product__text a[href*="/collections/vendors"], .product__vendor a, [itemprop="brand"]');
+    if (vendorEl) brand = vendorEl.textContent?.trim();
+
+    // Image: first product gallery image (skip 3D model previews)
+    let image = null;
+    const imgEl = document.querySelector('.product__media-item--variant.is-active img, .product__media-item:first-child img, .product__media img');
+    if (imgEl) {
+        image = imgEl.getAttribute('src') || '';
+        if (image.startsWith('//')) image = 'https:' + image;
+    }
+
+    // Rating from stamped/judge.me/SPR review badges
+    let rating = null;
+    const ratingEl = document.querySelector('[data-rating], .stamped-badge [data-rating], .jdgm-prev-badge [data-average-rating]');
+    if (ratingEl) rating = parseFloat(ratingEl.getAttribute('data-rating') || ratingEl.getAttribute('data-average-rating'));
+
+    let reviews_count = null;
+    const reviewsEl = document.querySelector('[data-number-of-reviews], .stamped-badge-caption, .jdgm-prev-badge [data-number-of-reviews]');
+    if (reviewsEl) {
+        const m = (reviewsEl.getAttribute('data-number-of-reviews') || reviewsEl.textContent).match(/(\d+)/);
+        if (m) reviews_count = parseInt(m[1]);
+    }
+
+    return {
+        url,
+        store_slug: 'whole-latte-love',
+        raw_title: title,
+        brand,
+        scraped_price: price,
+        image_url: image,
+        rating,
+        reviews_count,
+    };
+}
+
+function extractWholeLatteLoveListing() {
+    const products = [];
+    const seen = new Set();
+    const host = window.location.hostname.replace(/^www\./, '');
+
+    // Find all product links, then walk up to find their parent card container
+    document.querySelectorAll('a[href*="/products/"]').forEach(linkEl => {
+        try {
+            const href = linkEl.getAttribute('href');
+            if (!href || !href.includes('/products/')) return;
+
+            // Normalize and deduplicate
+            const cleanHref = href.split('?')[0].split('#')[0];
+            if (seen.has(cleanHref)) return;
+
+            // Skip tiny links (nav, footer, breadcrumbs) — only want product cards
+            // Walk up to find the card container
+            const card = linkEl.closest('.card, .product-card, .grid__item, li, article');
+            if (!card) return;
+
+            // Skip if this card has no image (likely a nav/text link)
+            const imgEl = card.querySelector('img');
+            if (!imgEl) return;
+
+            seen.add(cleanHref);
+
+            // Title: from the link text, or card heading, or image alt
+            let title = linkEl.textContent.trim();
+            if (!title || title.length < 3) {
+                const headingEl = card.querySelector('h3, h2, .card__heading');
+                title = headingEl?.textContent?.trim();
+            }
+            if (!title || title.length < 3) {
+                title = imgEl.getAttribute('alt')?.trim();
+            }
+            if (!title || title.length < 3) return;
+
+            // Price
+            let price = null;
+            const priceEl = card.querySelector('.price-item--regular, .price-item--sale, .price .money, [data-price]');
+            if (priceEl) {
+                const m = priceEl.textContent.match(/\$([\d,]+(?:\.\d{2})?)/);
+                if (m) price = parseFloat(m[1].replace(/,/g, ''));
+            }
+
+            // Brand
+            let brand = null;
+            const brandEl = card.querySelector('.card__badge, .caption-with-letter-spacing, .product-card__vendor, .vendor');
+            if (brandEl) {
+                const text = brandEl.textContent.trim();
+                if (text && !['sale', 'sold out', 'new', '10%'].some(kw => text.toLowerCase().includes(kw))) {
+                    brand = text;
+                }
+            }
+
+            // Image — best quality from srcset
+            let image = imgEl.getAttribute('src') || '';
+            if (image.startsWith('//')) image = 'https:' + image;
+            const srcset = imgEl.getAttribute('srcset');
+            if (srcset) {
+                const parts = srcset.split(',').map(s => s.trim());
+                const last = parts[parts.length - 1];
+                const m = last.match(/^(https?:\/\/[^\s]+|\/\/[^\s]+)/);
+                if (m) {
+                    image = m[1];
+                    if (image.startsWith('//')) image = 'https:' + image;
+                }
+            }
+
+            const fullUrl = cleanHref.startsWith('http') ? cleanHref : `https://${host}${cleanHref}`;
+
+            products.push({
+                url: fullUrl,
+                store_slug: 'whole-latte-love',
+                raw_title: title,
+                brand,
+                scraped_price: price,
+                image_url: image,
+                rating: null,
+                reviews_count: null,
+            });
+        } catch (e) {
+            console.warn('PW2D: Skipped WLL product:', e);
+        }
+    });
+
+    console.log(`PW2D: Extracted ${products.length} products from Whole Latte Love listing.`);
+    return products;
+}

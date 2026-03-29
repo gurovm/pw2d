@@ -26,17 +26,14 @@ class Product extends Model
 
     protected $fillable = [
         'tenant_id',
-        'external_id',
         'category_id',
         'brand_id',
         'name',
         'slug',
         'ai_summary',
         'image_path',
-        'external_image_path',
         'affiliate_url',
         'price_tier',
-        'scraped_price',
         'amazon_rating',
         'amazon_reviews_count',
         'is_ignored',
@@ -45,7 +42,6 @@ class Product extends Model
 
     protected $casts = [
         'price_tier'    => 'integer',
-        'scraped_price' => 'decimal:2',
         'amazon_rating' => 'float',
         'amazon_reviews_count' => 'integer',
         'is_ignored'    => 'boolean',
@@ -67,6 +63,16 @@ class Product extends Model
         return $this->belongsTo(Category::class);
     }
 
+    public function offers(): HasMany
+    {
+        return $this->hasMany(ProductOffer::class);
+    }
+
+    public function categoryRejections(): HasMany
+    {
+        return $this->hasMany(AiCategoryRejection::class);
+    }
+
     /**
      * Get all feature values for this product.
      */
@@ -86,52 +92,63 @@ class Product extends Model
     }
 
     /**
-     * Get the dynamically generated Amazon Affiliate URL.
+     * Lowest scraped price across all active offers.
      */
-    protected function affiliateUrl(): Attribute
+    protected function bestPrice(): Attribute
     {
         return Attribute::make(
-            get: function (string|null $value) {
-                // Fall back to constructing the URL from the ASIN if no explicit URL is stored
-                if (!$value) {
-                    if (empty($this->external_id)) {
-                        return null;
-                    }
-                    $value = 'https://www.amazon.com/dp/' . $this->external_id;
-                }
+            get: fn () => $this->offers->min('scraped_price')
+        );
+    }
 
-                $tag = config('services.amazon.affiliate_tag');
-
-                if (empty($tag)) {
-                    return $value;
-                }
-
-                $separator = str_contains($value, '?') ? '&' : '?';
-                return $value . $separator . 'tag=' . $tag;
+    /**
+     * The best offer: lowest price, with commission_rate/priority tiebreaker.
+     * Requires offers to be eager-loaded with their store relationship.
+     */
+    protected function bestOffer(): Attribute
+    {
+        return Attribute::make(
+            get: function () {
+                return $this->offers
+                    ->sortBy([
+                        ['scraped_price', 'asc'],
+                        [fn ($a, $b) => ($b->store?->commission_rate ?? 0) <=> ($a->store?->commission_rate ?? 0)],
+                        [fn ($a, $b) => ($b->store?->priority ?? 0) <=> ($a->store?->priority ?? 0)],
+                    ])
+                    ->first();
             }
         );
     }
 
     /**
+     * Get the affiliate URL from the best offer (delegates to ProductOffer::affiliateUrl).
+     */
+    protected function affiliateUrl(): Attribute
+    {
+        return Attribute::make(
+            get: fn (string|null $value) => $value ?: $this->best_offer?->affiliate_url
+        );
+    }
+
+    /**
      * Return an obfuscated price string suitable for public display.
-     * Rounds to the nearest $5 (under $100) or $10 ($100+) to avoid
-     * showing stale exact prices, per Amazon Associates ToS.
+     * Reads from the best offer price instead of legacy scraped_price.
      */
     protected function estimatedPrice(): Attribute
     {
         return Attribute::make(
             get: function () {
-                if ($this->scraped_price === null) {
+                $price = $this->best_price;
+
+                if ($price === null) {
                     return null;
                 }
 
-                $price = (float) $this->scraped_price;
+                $price = (float) $price;
 
-                $rounded = $price < 100
+                return $price < 100
                     ? (int) round($price / 5) * 5
                     : (int) round($price / 10) * 10;
-
-                return $rounded;
             }
         );
     }
@@ -143,17 +160,23 @@ class Product extends Model
     {
         return Attribute::make(
             get: function () {
-                $source = Setting::get('image_source', 'local');
-
-                if ($source === 'external' && !empty($this->external_image_path)) {
-                    return $this->external_image_path;
-                }
-
+                // Priority 1: local stored image
                 if (!empty($this->image_path)) {
-                    return \Illuminate\Support\Facades\Storage::url($this->image_path);
+                    return Storage::url($this->image_path);
                 }
 
-                // Fallback if neither exists
+                // Priority 2: external image from best offer
+                $offer = $this->best_offer;
+                if ($offer?->image_url) {
+                    return $offer->image_url;
+                }
+
+                // Priority 3: any offer with an image
+                $offerWithImage = $this->offers->first(fn ($o) => !empty($o->image_url));
+                if ($offerWithImage) {
+                    return $offerWithImage->image_url;
+                }
+
                 return null;
             }
         );

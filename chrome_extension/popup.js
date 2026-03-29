@@ -104,9 +104,14 @@ if (scanPageBtn) {
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
             if (!tab) return;
 
-            chrome.tabs.sendMessage(tab.id, { action: 'EXTRACT_SERP_PRODUCTS' }, (res) => {
+            // Detect domain and use appropriate extraction action
+            const tabHost = new URL(tab.url).hostname.replace(/^www\./, '');
+            const isAmazon = tabHost.includes('amazon.');
+            const extractAction = isAmazon ? 'EXTRACT_SERP_PRODUCTS' : 'EXTRACT_STORE_LISTING';
+
+            chrome.tabs.sendMessage(tab.id, { action: extractAction }, (res) => {
                 if (chrome.runtime.lastError || !res || !res.success) {
-                    showError('Could not scan page. Make sure you are on an Amazon search results page.');
+                    showError('Could not scan page. Make sure you are on a supported store\'s product listing page.');
                     return;
                 }
 
@@ -148,40 +153,85 @@ if (startBatchBtn) {
                     'X-Tenant-Id': TENANT_ID,
                 },
             });
-            const asinData = await asinRes.json();
-            const existingAsins = (asinData.success && asinData.asins) ? asinData.asins : [];
-            const existingCount = extractedProducts.filter(p => existingAsins.includes(p.asin)).length;
+            // Detect if these are Amazon products (have ASIN) or store products
+            const isAmazonBatch = extractedProducts.some(p => p.asin);
 
-            statusDiv.textContent = `Sending ${extractedProducts.length} products (${existingCount} will be refreshed)...`;
+            if (isAmazonBatch) {
+                // Amazon flow: existing ASIN check + batch-import
+                const asinData = await asinRes.json();
+                const existingAsins = (asinData.success && asinData.asins) ? asinData.asins : [];
+                const existingCount = extractedProducts.filter(p => existingAsins.includes(p.asin)).length;
 
-            // Send ALL products — backend differentiates new vs existing
-            const batchRes = await fetch(`${baseUrl}/api/products/batch-import`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                    'X-Extension-Token': EXTENSION_TOKEN,
-                    'X-Tenant-Id': TENANT_ID,
-                },
-                body: JSON.stringify({
-                    category_id: selectedCategoryId,
-                    products: extractedProducts,
-                }),
-            });
+                statusDiv.textContent = `Sending ${extractedProducts.length} products (${existingCount} will be refreshed)...`;
 
-            const result = await batchRes.json();
+                const batchRes = await fetch(`${baseUrl}/api/products/batch-import`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-Extension-Token': EXTENSION_TOKEN,
+                        'X-Tenant-Id': TENANT_ID,
+                    },
+                    body: JSON.stringify({
+                        category_id: selectedCategoryId,
+                        products: extractedProducts,
+                    }),
+                });
 
-            if (batchRes.ok && result.success) {
+                const result = await batchRes.json();
+
+                if (batchRes.ok && result.success) {
+                    const parts = [];
+                    if (result.created > 0)   parts.push(`${result.created} new queued for AI`);
+                    if (result.refreshed > 0) parts.push(`${result.refreshed} refreshed`);
+                    statusDiv.textContent = parts.join(', ') + '. Done!';
+                    statusDiv.className = 'success';
+                    batchControls.style.display = 'none';
+                    extractedProducts = [];
+                } else {
+                    showError('API Error: ' + (result.message || 'Unknown error'));
+                    startBatchBtn.disabled = false;
+                }
+            } else {
+                // Non-Amazon flow: send each product to ingest-offer API
+                statusDiv.textContent = `Ingesting ${extractedProducts.length} products...`;
+                let created = 0, matched = 0, refreshed = 0, failed = 0;
+
+                for (const product of extractedProducts) {
+                    try {
+                        const res = await fetch(`${baseUrl}/api/extension/ingest-offer`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/json',
+                                'X-Extension-Token': EXTENSION_TOKEN,
+                                'X-Tenant-Id': TENANT_ID,
+                            },
+                            body: JSON.stringify({
+                                ...product,
+                                category_id: selectedCategoryId,
+                            }),
+                        });
+                        const data = await res.json();
+                        if (data.success) {
+                            if (data.action === 'created') created++;
+                            else if (data.action === 'matched') matched++;
+                            else if (data.action === 'refreshed') refreshed++;
+                        } else { failed++; }
+                    } catch { failed++; }
+
+                    statusDiv.textContent = `Ingesting... ${created + matched + refreshed + failed}/${extractedProducts.length}`;
+                }
+
                 const parts = [];
-                if (result.created > 0)   parts.push(`${result.created} new queued for AI`);
-                if (result.refreshed > 0) parts.push(`${result.refreshed} refreshed`);
+                if (created > 0)   parts.push(`${created} new queued for AI`);
+                if (matched > 0)   parts.push(`${matched} matched to existing`);
+                if (refreshed > 0) parts.push(`${refreshed} prices refreshed`);
+                if (failed > 0)    parts.push(`${failed} failed`);
                 statusDiv.textContent = parts.join(', ') + '. Done!';
                 statusDiv.className = 'success';
                 batchControls.style.display = 'none';
                 extractedProducts = [];
-            } else {
-                showError('API Error: ' + (result.message || 'Unknown error'));
-                startBatchBtn.disabled = false;
             }
 
         } catch (e) {
@@ -393,9 +443,9 @@ if (saveTenantBtn) {
     });
 }
 
-// Import Single Product — extracts lightweight data from the current product page
-// and sends it to the batch-import API (same as SERP scan, but for 1 product).
-// If the ASIN already exists, its price/rating/reviews are refreshed.
+// Import Single Product — domain-aware extraction.
+// Amazon product pages use the batch-import API (ASIN-based flow).
+// Non-Amazon stores use the universal ingest-offer API (AI matching flow).
 scrapeBtn.addEventListener('click', async () => {
     if (!selectedCategoryId) {
         showError('Please select a category first.');
@@ -409,46 +459,81 @@ scrapeBtn.addEventListener('click', async () => {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (!tab) { showError('No active tab found.'); return; }
 
-        chrome.tabs.sendMessage(tab.id, { action: 'EXTRACT_PRODUCT_PAGE' }, async (response) => {
+        // Use the domain-aware extractor
+        chrome.tabs.sendMessage(tab.id, { action: 'EXTRACT_STORE_PRODUCT' }, async (response) => {
             if (chrome.runtime.lastError) {
-                showError('Error: ' + chrome.runtime.lastError.message + '. Try refreshing the Amazon page.');
+                showError('Error: ' + chrome.runtime.lastError.message + '. Try refreshing the page.');
                 return;
             }
 
             if (!response?.success || !response.product) {
-                showError(response?.error || 'Could not extract product data. Make sure you are on an Amazon product page.');
+                showError(response?.error || 'Could not extract product data from this page.');
                 return;
             }
 
             const product = response.product;
 
             if (product.unavailable) {
-                showError('Product is currently unavailable on Amazon — skipped.');
+                showError('Product is currently unavailable — skipped.');
                 return;
             }
 
-            statusDiv.textContent = `Sending "${product.title?.substring(0, 40)}..." to PW2D...`;
+            statusDiv.textContent = `Sending "${product.raw_title?.substring(0, 40)}..." to PW2D...`;
 
             try {
-                const apiResponse = await fetch(`${baseUrl}/api/products/batch-import`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json',
-                        'X-Extension-Token': EXTENSION_TOKEN,
-                        'X-Tenant-Id': TENANT_ID,
-                    },
-                    body: JSON.stringify({
-                        category_id: selectedCategoryId,
-                        products: [product],
-                    })
-                });
+                let apiResponse;
+
+                if (product.store_slug === 'amazon' && product.asin) {
+                    // Amazon: use existing batch-import (ASIN dedup)
+                    apiResponse = await fetch(`${baseUrl}/api/products/batch-import`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                            'X-Extension-Token': EXTENSION_TOKEN,
+                            'X-Tenant-Id': TENANT_ID,
+                        },
+                        body: JSON.stringify({
+                            category_id: selectedCategoryId,
+                            products: [{
+                                asin: product.asin || getAsinFromUrl(product.url),
+                                title: product.raw_title,
+                                price: product.scraped_price,
+                                rating: product.rating,
+                                reviews_count: product.reviews_count,
+                                image_url: product.image_url,
+                            }],
+                        })
+                    });
+                } else {
+                    // Non-Amazon: use universal ingest-offer API (AI matching)
+                    apiResponse = await fetch(`${baseUrl}/api/extension/ingest-offer`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                            'X-Extension-Token': EXTENSION_TOKEN,
+                            'X-Tenant-Id': TENANT_ID,
+                        },
+                        body: JSON.stringify({
+                            ...product,
+                            category_id: selectedCategoryId,
+                        })
+                    });
+                }
 
                 const result = await apiResponse.json();
 
                 if (apiResponse.ok && result.success) {
-                    const action = result.created > 0 ? 'Queued for AI' : 'Price refreshed';
-                    statusDiv.textContent = `${action}: ${product.title?.substring(0, 50)}`;
+                    const actionLabels = {
+                        'created': 'Queued for AI',
+                        'matched': 'Matched to existing product',
+                        'refreshed': 'Price refreshed',
+                        'queued_new': 'Queued for AI',
+                        'queued_rescan': 'Price refreshed',
+                    };
+                    const action = actionLabels[result.action] || (result.created > 0 ? 'Queued for AI' : 'Price refreshed');
+                    statusDiv.textContent = `${action}: ${product.raw_title?.substring(0, 50)}`;
                     statusDiv.className = 'success';
                 } else {
                     showError('API Error: ' + (result.message || result.error || 'Unknown error'));
@@ -462,3 +547,8 @@ scrapeBtn.addEventListener('click', async () => {
         showError('Error: ' + err.message);
     }
 });
+
+function getAsinFromUrl(url) {
+    const m = url?.match(/\/dp\/([A-Z0-9]{10})/);
+    return m ? m[1] : null;
+}

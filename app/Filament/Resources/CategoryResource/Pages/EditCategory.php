@@ -42,31 +42,13 @@ class EditCategory extends EditRecord
 
     private function callGeminiText(string $prompt): string
     {
-        $apiKey = config('services.gemini.api_key');
-        if (!$apiKey) {
-            throw new \Exception('GEMINI_API_KEY is not set in your .env file.');
-        }
+        $gemini = app(\App\Services\GeminiService::class);
+        $result = $gemini->generate($prompt, [
+            'timeout'         => 120,
+            'maxOutputTokens' => 8000,
+        ], config('services.gemini.admin_model'));
 
-        $response = Http::timeout(120)->withHeaders([
-            'Content-Type' => 'application/json',
-        ])->post('https://generativelanguage.googleapis.com/v1beta/models/' . config('services.gemini.admin_model') . ':generateContent?key=' . $apiKey, [
-            'contents' => [
-                ['parts' => [['text' => $prompt]]]
-            ]
-        ]);
-
-        if ($response->failed()) {
-            throw new \Exception('API request failed: ' . $response->body());
-        }
-
-        $responseData = $response->json();
-        $text = $responseData['candidates'][0]['content']['parts'][0]['text'] ?? '';
-
-        // Clean markdown wrappers
-        $text = preg_replace('/```json\s*/', '', $text);
-        $text = preg_replace('/```\s*/', '', $text);
-
-        return trim($text);
+        return $result['content'];
     }
 
     // ─── HELPER: Call Gemini Image API and save file ─────────────
@@ -84,8 +66,8 @@ class EditCategory extends EditRecord
         }
 
         $response = Http::timeout(120)->withHeaders([
-            'Content-Type' => 'application/json',
-        ])->post('https://generativelanguage.googleapis.com/v1beta/models/' . config('services.gemini.image_model') . ':generateContent?key=' . $apiKey, [
+            'x-goog-api-key' => $apiKey,
+        ])->post('https://generativelanguage.googleapis.com/v1beta/models/' . config('services.gemini.image_model') . ':generateContent', [
             'contents' => [
                 ['parts' => [['text' => $imagePrompt]]]
             ],

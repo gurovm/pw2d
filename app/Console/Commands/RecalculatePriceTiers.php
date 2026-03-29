@@ -17,7 +17,7 @@ class RecalculatePriceTiers extends Command
     {
         $categoryId = $this->option('category');
 
-        $query = Category::with('products')
+        $query = Category::with(['products.offers'])
             ->whereNotNull('budget_max')
             ->whereNotNull('midrange_max');
 
@@ -34,10 +34,10 @@ class RecalculatePriceTiers extends Command
         }
 
         $fixed   = 0;
-        $skipped = 0; // no scraped_price
+        $skipped = 0;
 
         foreach ($categories as $category) {
-            $rows = $category->products->filter(fn (Product $p) => $p->scraped_price !== null);
+            $rows = $category->products->filter(fn (Product $p) => $p->best_price !== null);
 
             if ($rows->isEmpty()) {
                 continue;
@@ -46,7 +46,7 @@ class RecalculatePriceTiers extends Command
             $this->line("<fg=cyan>{$category->name}</> ({$rows->count()} products, budget≤\${$category->budget_max} / mid≤\${$category->midrange_max})");
 
             foreach ($rows as $product) {
-                $correct = $category->priceTierFor((float) $product->scraped_price);
+                $correct = $category->priceTierFor((float) $product->best_price);
 
                 if ($correct === null) {
                     $skipped++;
@@ -61,7 +61,7 @@ class RecalculatePriceTiers extends Command
                 $product->update(['price_tier' => $correct]);
                 $fixed++;
 
-                $this->line("  <fg=yellow>Updated</> {$product->name}  {$old}→{$correct}  (\${$product->scraped_price})");
+                $this->line("  <fg=yellow>Updated</> {$product->name}  {$old}→{$correct}  (\${$product->best_price})");
             }
         }
 
@@ -74,7 +74,7 @@ class RecalculatePriceTiers extends Command
         }
 
         $this->newLine();
-        $this->info("Done. {$fixed} product(s) updated, {$skipped} skipped (no scraped_price).");
+        $this->info("Done. {$fixed} product(s) updated, {$skipped} skipped (no price).");
 
         return self::SUCCESS;
     }

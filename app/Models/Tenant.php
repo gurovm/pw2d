@@ -63,6 +63,11 @@ class Tenant extends BaseTenant implements TenantWithDatabase
         return $this->hasMany(Setting::class);
     }
 
+    public function stores(): HasMany
+    {
+        return $this->hasMany(Store::class);
+    }
+
     /**
      * Validate and sanitize a CSS color value to prevent CSS injection.
      *

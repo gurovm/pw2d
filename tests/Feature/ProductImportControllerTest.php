@@ -8,6 +8,8 @@ use App\Jobs\ProcessPendingProduct;
 use App\Models\Category;
 use App\Models\Feature;
 use App\Models\Product;
+use App\Models\ProductOffer;
+use App\Models\Store;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
@@ -22,12 +24,9 @@ class ProductImportControllerTest extends TestCase
     {
         parent::setUp();
 
-        // Bypass extension token and tenancy middleware — tested in their own test files
         $this->withoutMiddleware([VerifyExtensionToken::class, InitializeTenancyFromPayload::class]);
 
         $this->category = Category::factory()->create();
-
-        // Add features so the category passes the "has features" check
         Feature::factory()->count(3)->create(['category_id' => $this->category->id]);
     }
 
@@ -58,10 +57,14 @@ class ProductImportControllerTest extends TestCase
             ]);
 
         $this->assertDatabaseHas('products', [
-            'external_id'  => 'B0ABC12345',
             'category_id'  => $this->category->id,
             'status'       => 'pending_ai',
             'is_ignored'   => false,
+        ]);
+
+        // Verify offer was created
+        $this->assertDatabaseHas('product_offers', [
+            'url' => 'https://www.amazon.com/dp/B0ABC12345',
         ]);
 
         Queue::assertPushed(ProcessPendingProduct::class);
@@ -72,12 +75,23 @@ class ProductImportControllerTest extends TestCase
     {
         Queue::fake();
 
-        // Create an existing product with the same ASIN + category
         $existing = Product::factory()->create([
-            'external_id' => 'B0ABC12345',
             'category_id' => $this->category->id,
-            'status'      => null, // previously processed
+            'status'      => null,
             'name'        => 'Old Name',
+        ]);
+
+        $store = Store::firstOrCreate(
+            ['slug' => 'amazon', 'tenant_id' => $existing->tenant_id],
+            ['name' => 'Amazon']
+        );
+
+        ProductOffer::create([
+            'product_id'  => $existing->id,
+            'tenant_id'   => $existing->tenant_id,
+            'store_id'    => $store->id,
+            'url'         => 'https://www.amazon.com/dp/B0ABC12345',
+            'raw_title'   => 'Old Name',
         ]);
 
         $response = $this->postJson('/api/product-import', $this->validPayload());
@@ -88,12 +102,10 @@ class ProductImportControllerTest extends TestCase
                 'action'  => 'queued_rescan',
             ]);
 
-        // Verify the existing record was updated, not duplicated
         $this->assertDatabaseCount('products', 1);
         $this->assertDatabaseHas('products', [
-            'id'          => $existing->id,
-            'external_id' => 'B0ABC12345',
-            'status'      => 'pending_ai',
+            'id'     => $existing->id,
+            'status' => 'pending_ai',
         ]);
 
         Queue::assertPushed(ProcessPendingProduct::class);
@@ -141,7 +153,6 @@ class ProductImportControllerTest extends TestCase
         Queue::fake();
 
         $emptyCategory = Category::factory()->create();
-        // No features created for this category
 
         $response = $this->postJson(
             '/api/product-import',
@@ -186,9 +197,12 @@ class ProductImportControllerTest extends TestCase
             ->assertJson(['success' => true]);
 
         $this->assertDatabaseHas('products', [
-            'external_id'          => 'B0XYZ99999',
             'status'               => 'pending_ai',
             'amazon_reviews_count' => 0,
+        ]);
+
+        $this->assertDatabaseHas('product_offers', [
+            'url' => 'https://www.amazon.com/dp/B0XYZ99999',
         ]);
 
         Queue::assertPushed(ProcessPendingProduct::class);

@@ -7,17 +7,14 @@ use App\Http\Requests\BatchImportRequest;
 use App\Jobs\ProcessPendingProduct;
 use App\Models\Category;
 use App\Models\Product;
+use App\Models\ProductOffer;
+use App\Models\Store;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class BatchImportController extends Controller
 {
-    /**
-     * Accept a bulk list of lightweight products scraped from an Amazon SERP.
-     * Saves each as a stub record with status='pending_ai' and dispatches a
-     * queue job to run AI feature scoring for each one.
-     */
     public function import(BatchImportRequest $request)
     {
         $validated = $request->validated();
@@ -32,42 +29,60 @@ class BatchImportController extends Controller
             ], 400);
         }
 
+        // Resolve the Amazon store (create if first import for this tenant)
+        $store = Store::firstOrCreate(
+            ['slug' => 'amazon', 'tenant_id' => $category->tenant_id],
+            ['name' => 'Amazon']
+        );
+
         $incomingAsins = collect($validated['products'])->pluck('asin');
 
-        // One query to find all already-imported ASINs — avoids 1 SELECT per product.
-        $existingMap = Product::where('category_id', $category->id)
-            ->whereIn('external_id', $incomingAsins)
-            ->get(['id', 'external_id'])
-            ->keyBy('external_id');
+        // Find existing products by matching Amazon offers
+        $existingProducts = Product::where('category_id', $category->id)
+            ->whereHas('offers', fn ($q) => $q->where('store_id', $store->id)
+                ->whereIn(DB::raw("SUBSTRING_INDEX(SUBSTRING_INDEX(url, '/dp/', -1), '?', 1)"), $incomingAsins))
+            ->with(['offers' => fn ($q) => $q->where('store_id', $store->id)])
+            ->get();
 
-        $created     = 0;
-        $refreshed   = 0;
-        $refreshRows = [];
-        $now         = now();
+        $existingMap = collect();
+        foreach ($existingProducts as $product) {
+            foreach ($product->offers as $offer) {
+                $asin = basename(parse_url($offer->url, PHP_URL_PATH));
+                $existingMap[$asin] = $product;
+            }
+        }
+
+        $created   = 0;
+        $refreshed = 0;
+        $now       = now();
 
         foreach ($validated['products'] as $p) {
             try {
                 $existing = $existingMap->get($p['asin']);
 
                 if ($existing) {
-                    // Scenario B: Existing product — refresh or ignore if no price.
                     if (empty($p['price'])) {
-                        // No price = unavailable — mark as ignored
-                        DB::table('products')->where('id', $existing->id)
-                            ->update(['is_ignored' => true, 'updated_at' => $now]);
+                        $existing->update(['is_ignored' => true]);
                         $refreshed++;
                         continue;
                     }
-                    $refreshRows[] = [
-                        'id'                   => $existing->id,
-                        'scraped_price'        => $p['price'],
+
+                    ProductOffer::where('product_id', $existing->id)
+                        ->where('store_id', $store->id)
+                        ->update([
+                            'scraped_price' => $p['price'],
+                            'raw_title'     => mb_substr($p['title'], 0, 500),
+                            'updated_at'    => $now,
+                        ]);
+
+                    $existing->update([
                         'amazon_rating'        => $p['rating'] ?? null,
                         'amazon_reviews_count' => $p['reviews_count'] ?? 0,
-                        'updated_at'           => $now,
-                    ];
+                        'price_tier'           => $category->priceTierFor($p['price']),
+                    ]);
+
                     $refreshed++;
                 } else {
-                    // Skip suspiciously cheap products (price > 0 but less than half of tier 1)
                     $price = $p['price'] ?? null;
                     if ($price !== null && $price > 0) {
                         $budgetMax = $category->budget_max ?? 50;
@@ -78,17 +93,24 @@ class BatchImportController extends Controller
 
                     $product = Product::create([
                         'tenant_id'            => $category->tenant_id,
-                        'external_id'          => $p['asin'],
                         'category_id'          => $category->id,
                         'name'                 => mb_substr($p['title'], 0, 255),
                         'slug'                 => Str::slug(Str::limit($p['title'], 80)) . '-' . strtolower($p['asin']),
-                        'external_image_path'  => $p['image_url'] ?? null,
                         'amazon_rating'        => $p['rating'] ?? null,
                         'amazon_reviews_count' => $p['reviews_count'] ?? 0,
-                        'scraped_price'        => $p['price'] ?? null,
                         'price_tier'           => $category->priceTierFor($p['price'] ?? null),
                         'status'               => 'pending_ai',
                         'is_ignored'           => false,
+                    ]);
+
+                    ProductOffer::create([
+                        'tenant_id'     => $category->tenant_id,
+                        'product_id'    => $product->id,
+                        'store_id'      => $store->id,
+                        'url'           => "https://www.amazon.com/dp/{$p['asin']}",
+                        'scraped_price' => $p['price'] ?? null,
+                        'raw_title'     => mb_substr($p['title'], 0, 500),
+                        'image_url'     => $p['image_url'] ?? null,
                     ]);
 
                     ProcessPendingProduct::dispatch($product->id, $category->id);
@@ -102,19 +124,6 @@ class BatchImportController extends Controller
             }
         }
 
-        // Update refreshed products. We use individual UPDATE statements because we already
-        // confirmed these IDs exist (from $existingMap), so upsert's INSERT fallback is wrong.
-        foreach ($refreshRows as $row) {
-            DB::table('products')
-                ->where('id', $row['id'])
-                ->update([
-                    'scraped_price'        => $row['scraped_price'],
-                    'amazon_rating'        => $row['amazon_rating'],
-                    'amazon_reviews_count' => $row['amazon_reviews_count'],
-                    'updated_at'           => $row['updated_at'],
-                ]);
-        }
-
         Log::info("BatchImport: {$created} created, {$refreshed} refreshed for category {$category->id}");
 
         return response()->json([
@@ -124,5 +133,4 @@ class BatchImportController extends Controller
             'message'   => "Queued {$created} new product(s) for AI processing. Refreshed data for {$refreshed} existing product(s).",
         ]);
     }
-
 }

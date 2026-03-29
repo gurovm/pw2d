@@ -9,7 +9,7 @@ use App\Models\Preset;
 use App\Models\Product;
 use App\Models\SearchLog;
 use Illuminate\Support\Facades\Cache;
-use App\Services\GeminiService;
+use App\Services\AiService;
 use Illuminate\Support\Str;
 use Livewire\Attributes\On;
 use Livewire\Component;
@@ -141,15 +141,8 @@ class GlobalSearch extends Component
                 ])->values()->toArray(),
             ])->values()->toArray();
 
-            $gemini = app(GeminiService::class);
-            $result = $gemini->generate(
-                $this->buildPrompt($categoryContext),
-                [
-                    'maxOutputTokens' => 1024,
-                    'thinkingConfig'  => ['thinkingBudget' => 0],
-                    'timeout'         => 15,
-                ]
-            );
+            $aiService = app(AiService::class);
+            $result = $aiService->parseSearchQuery($this->query, $categoryContext, $this->parentName ?: null);
             $parsed = $result['parsed'];
 
             // Fallback: if simple fence stripping failed, try robust JSON extraction
@@ -275,47 +268,17 @@ class GlobalSearch extends Component
             $productQ->orderByRaw('category_id = ? DESC', [$this->browsingCategoryId]);
         }
 
-        foreach ($productQ->limit(4)->get(['id', 'name', 'slug', 'category_id', 'external_image_path']) as $product) {
+        foreach ($productQ->with('offers:id,product_id,image_url')->limit(4)->get(['id', 'name', 'slug', 'category_id']) as $product) {
             $results[] = [
                 'type'          => 'product',
                 'name'          => $product->name,
                 'category_name' => $product->category?->name,
-                'image'         => $product->external_image_path,
+                'image'         => $product->offers->first()?->image_url,
                 'url'           => route('category.show', $product->category?->slug ?? '#') . '?focus=' . $product->slug,
             ];
         }
 
         $this->dbResults = $results;
-    }
-
-    private function buildPrompt(array $categoryContext): string
-    {
-        $contextBlock = $this->parentName
-            ? "CONTEXT: The user is currently browsing the \"{$this->parentName}\" section. " .
-              "Strongly prioritize categories and presets within this section. " .
-              "However, if the query clearly describes a different product type, route globally.\n\n"
-            : '';
-
-        $json = json_encode($categoryContext, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-
-        return <<<PROMPT
-You are a smart search router for pw2d, a product comparison website.
-
-{$contextBlock}Available categories and their presets:
-{$json}
-
-User query: "{$this->query}"
-
-Identify the single best matching category. If a specific preset is a strong fit, include it.
-
-You MUST respond with ONLY a raw JSON object — no markdown, no backticks, no explanation text before or after.
-Use EXACTLY these key names (no variations):
-{
-  "suggested_category_slug": "the-exact-slug-from-the-list-above",
-  "suggested_preset_slug": "preset-slug-or-omit-this-key",
-  "reasoning": "one short sentence"
-}
-PROMPT;
     }
 
     public function render(): \Illuminate\View\View

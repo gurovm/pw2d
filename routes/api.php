@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\BatchImportController;
+use App\Http\Controllers\Api\OfferIngestionController;
 use App\Http\Controllers\Api\ProductImportController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -27,6 +28,15 @@ Route::middleware([
 ])->group(function () {
     Route::post('/product-import', [ProductImportController::class, 'import']);
     Route::post('/import-product', [ProductImportController::class, 'import']);
-    // Bulk SERP import — saves stubs immediately, AI scoring runs via queue
+    // Bulk SERP import — single request with array payload, no per-product throttle needed
     Route::post('/products/batch-import', [BatchImportController::class, 'import']);
+});
+
+// Offer ingestion — higher limit since batch scans send one request per product
+Route::middleware([
+    'App\Http\Middleware\VerifyExtensionToken',
+    'App\Http\Middleware\InitializeTenancyFromPayload',
+    'throttle:120,1',
+])->group(function () {
+    Route::post('/extension/ingest-offer', [OfferIngestionController::class, 'ingest']);
 });

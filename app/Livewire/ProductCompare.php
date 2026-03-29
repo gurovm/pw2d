@@ -6,11 +6,12 @@ use App\Models\Category;
 use App\Models\Feature;
 use App\Models\Preset;
 use App\Models\Product;
+use App\Models\ProductOffer;
 use App\Models\SearchLog;
 use App\Services\ProductScoringService;
 use App\Traits\NormalizesPrompts;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Http;
+use App\Services\AiService;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\On;
 use Livewire\Attributes\Computed;
@@ -114,17 +115,20 @@ class ProductCompare extends Component
             return Product::where('category_id', $this->category->id)
                 ->where('is_ignored', false)
                 ->whereNull('status') // exclude pending_ai / failed (not yet fully scored)
-                ->select(['id', 'brand_id', 'amazon_rating', 'price_tier', 'scraped_price'])
-                ->with(['featureValues:id,product_id,feature_id,raw_value'])
+                ->select(['id', 'brand_id', 'amazon_rating', 'price_tier'])
+                ->with([
+                    'featureValues:id,product_id,feature_id,raw_value',
+                    'offers:id,product_id,scraped_price',
+                ])
                 ->when($this->filterBrand, fn($q) => $q->where('brand_id', $this->filterBrand))
-                ->when($this->selectedPrice < $this->maxPrice, fn($q) => $q->where('scraped_price', '<=', $this->selectedPrice))
+                ->when($this->selectedPrice < $this->maxPrice, fn($q) => $q->whereHas('offers', fn($oq) => $oq->where('scraped_price', '<=', $this->selectedPrice)))
                 ->get()
                 ->map(fn($p) => [
                     'id'             => $p->id,
                     'brand_id'       => $p->brand_id,
                     'amazon_rating'  => $p->amazon_rating,
                     'price_tier'     => $p->price_tier,
-                    'scraped_price'  => $p->scraped_price,
+                    'best_price'     => $p->offers->min('scraped_price'),
                     'fvs'            => $p->featureValues
                         ->map(fn($fv) => ['feature_id' => (int)$fv->feature_id, 'raw_value' => (float)$fv->raw_value])
                         ->toArray(),
@@ -139,8 +143,7 @@ class ProductCompare extends Component
             $p->brand_id = $arr['brand_id'];
             $p->amazon_rating = $arr['amazon_rating'];
             $p->price_tier = $arr['price_tier'];
-            $p->scraped_price = $arr['scraped_price'];
-            $price = $arr['scraped_price'];
+            $price = $arr['best_price'];
             $p->estimated_price = $price !== null
                 ? ($price < 100 ? round($price / 5) * 5 : round($price / 10) * 10)
                 : null;
@@ -278,9 +281,10 @@ class ProductCompare extends Component
             $this->weights[$feature->id] = 50;
         }
 
-        $this->maxPrice = (int) (Product::where('category_id', $this->category->id)
-            ->where('is_ignored', false)
-            ->whereNull('status')
+        $this->maxPrice = (int) (ProductOffer::whereHas('product', fn ($q) => $q
+                ->where('category_id', $this->category->id)
+                ->where('is_ignored', false)
+                ->whereNull('status'))
             ->max('scraped_price') ?? 500);
         $this->selectedPrice = $this->maxPrice;
 
@@ -371,36 +375,11 @@ class ProductCompare extends Component
                 ]];
             })->toArray();
 
-            $historyText = '';
-            if (!empty($this->chatHistory)) {
-                $historyText = "\n\n--- PREVIOUS CONVERSATION HISTORY ---\n";
-                foreach ($this->chatHistory as $msg) {
-                    $role = $msg['role'] === 'user' ? 'User' : 'You (AI)';
-                    $historyText .= "{$role}: {$msg['content']}\n";
-                }
-                $historyText .= "--------------------------------------\n";
-            }
-
-            $promptText = "You are an expert shopping assistant. The user wants to buy a product in the \"{$this->category->name}\" category. Here are the available feature sliders and their details:\n\n" . json_encode($featureKeys, JSON_PRETTY_PRINT) . "\n\nAdditionally, there are two universal sliders:\n- price_weight: Importance of budget (100 = very strict budget/cheap, 50 = neutral/balanced, 0 = budget irrelevant/premium)\n- amazon_rating_weight: Importance of customer reviews (100 = very important, 50 = neutral, 0 = irrelevant)\n{$historyText}\nThe user's NEW request is: \"{$this->userInput}\"\n\nDecide if you have enough information to set the slider weights. You MUST return ONLY a JSON object with this exact structure:\n{\n  \"status\": \"complete\" OR \"needs_clarification\",\n  \"message\": \"A short, friendly message explaining what you did, OR a short clarifying question asking about a specific missing feature. You MUST briefly mention how you handled price and rating based on the implicit context.\",\n  \"weights\": {\n    \"feature_id\": 0-100\n  },\n  \"price_weight\": 0-100,\n  \"amazon_rating_weight\": 0-100\n}\n\nIMPORTANT RULES:\n1. Use feature IDs as keys in the weights object.\n2. In our system, 50 is the NEUTRAL baseline.\n3. DO NOT just ignore price_weight and amazon_rating_weight if the user didn't explicitly say the words 'price' or 'rating'. You are an intelligence system: you MUST infer implicit preferences. For example, if someone says 'for a call center', durability (build quality) and price might be more important than premium features, or rating might be very important for reliability. Adjust price_weight and amazon_rating_weight away from 50 if the context strongly implies a preference, otherwise keep them at 50.\n4. RELATIVE WEIGHTING: setting all features to 90 is mathematically identical to setting them all to 50. You MUST create contrast! If you assign a high priority (>50) to certain features, you MUST forcefully DE-PRIORITIZE (<50) features that are less relevant to the user's specific context. If they are buying for a call center, lower the priority of audiophile features like Sound Quality to below 50 to emphasize the other features.\n5. If this is a follow-up request (based on history), ONLY adjust the weights that the user is talking about, leaving the others as they were implicitly negotiated before. But you still MUST output the complete object with all weights.\n6. Do not use markdown, just raw JSON.";
-
-            $apiKey = config('services.gemini.api_key');
-            $response = Http::timeout(15)->post(
-                "https://generativelanguage.googleapis.com/v1beta/models/" . config('services.gemini.site_model') . ":generateContent?key={$apiKey}",
-                [
-                    'contents' => [['parts' => [['text' => $promptText]]]],
-                    'generationConfig' => ['temperature' => 0.4, 'maxOutputTokens' => 1200],
-                ]
+            $aiService = app(AiService::class);
+            $result = $aiService->chatResponse(
+                $this->category->name, $featureKeys, $this->userInput, $this->chatHistory
             );
-
-            if (!$response->successful()) {
-                throw new \Exception('AI service unavailable. Please try manually adjusting the sliders.');
-            }
-
-            $result = $response->json();
-            $content = $result['candidates'][0]['content']['parts'][0]['text'] ?? '';
-            $content = preg_replace('/^```json\s*|\s*```$/m', '', trim($content));
-            $content = trim($content);
-            $parsed = json_decode($content, true);
+            $parsed = $result['parsed'];
 
             if (!isset($parsed['status']) || !isset($parsed['message'])) {
                 throw new \Exception('Could not understand the AI response. Please try adjusting sliders manually.');
@@ -586,8 +565,9 @@ class ProductCompare extends Component
                 ];
 
                 // image — use Amazon CDN URL (complies with Associates TOS; no local paths)
-                if (!empty($product->external_image_path)) {
-                    $item['image'] = $product->external_image_path;
+                $offerImage = $product->offers?->first()?->image_url;
+                if (!empty($offerImage)) {
+                    $item['image'] = $offerImage;
                 }
 
                 // description — strip any HTML tags from the AI-generated verdict

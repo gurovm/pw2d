@@ -56,7 +56,7 @@
         x-show="showPreferences"
         x-transition.opacity.duration.300ms
         @click="showPreferences = false"
-        class="fixed inset-0 z-50 bg-gray-900/40 backdrop-blur-[2px]"
+        class="fixed inset-0 z-70 bg-gray-900/40 backdrop-blur-[2px]"
         style="display: none;"
     ></div>
 
@@ -69,7 +69,7 @@
         x-transition:leave="transition ease-in duration-300"
         x-transition:leave-start="translate-x-0"
         x-transition:leave-end="translate-x-full"
-        class="fixed inset-y-0 right-0 z-[70] w-100 max-w-[82vw] bg-white border-l border-gray-200 shadow-[-10px_0_30px_rgba(0,0,0,0.05)] flex flex-col"
+        class="fixed inset-y-0 right-0 z-80 w-100 max-w-[82vw] bg-white border-l border-gray-200 shadow-[-10px_0_30px_rgba(0,0,0,0.05)] flex flex-col"
         style="display: none;"
     >
         <!-- Panel Header -->
@@ -248,17 +248,17 @@
                                :style="`accent-color: hsl(${price * 1.2}, 85%, 45%)`">
                     </div>
 
-                    <!-- Amazon Rating Slider -->
+                    <!-- Customer Rating Slider -->
                     <div>
                         <div class="flex justify-between items-center mb-1 sm:mb-2">
-                            <span class="text-sm font-semibold text-gray-700">Amazon Rating</span>
+                            <span class="text-sm font-semibold text-gray-700">Customer Rating</span>
                             <span class="text-xs font-bold px-2 py-0.5 rounded-full transition-all duration-300"
                                   :style="`background-color: hsl(${rating * 1.2}, 85%, 93%); color: hsl(${rating * 1.2}, 85%, 30%)`"
                                   x-text="rating + '%'"></span>
                         </div>
                         <input type="range" min="0" max="100"
                                x-model.number="rating"
-                               @change="fire(); if(typeof posthog !== 'undefined') posthog.capture('sliders_manually_adjusted', { category: '{{ addslashes($categoryName) }}', feature: 'Amazon Rating' })"
+                               @change="fire(); if(typeof posthog !== 'undefined') posthog.capture('sliders_manually_adjusted', { category: '{{ addslashes($categoryName) }}', feature: 'Customer Rating' })"
                                class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer focus:outline-none"
                                :style="`accent-color: hsl(${rating * 1.2}, 85%, 45%)`">
                     </div>

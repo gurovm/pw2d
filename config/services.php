@@ -44,12 +44,15 @@ return [
 
     'amazon' => [
         'affiliate_tag' => env('AMAZON_AFFILIATE_TAG'),
-        'allowed_image_hosts' => [
-            'm.media-amazon.com',
-            'images-na.ssl-images-amazon.com',
-            'images-eu.ssl-images-amazon.com',
-            'images-fe.ssl-images-amazon.com',
-        ],
+    ],
+
+    // SSRF allowlist for product image downloads (all vendor CDNs)
+    'allowed_image_hosts' => [
+        'm.media-amazon.com',
+        'images-na.ssl-images-amazon.com',
+        'images-eu.ssl-images-amazon.com',
+        'images-fe.ssl-images-amazon.com',
+        'cdn.shopify.com',
     ],
 
     'extension' => [

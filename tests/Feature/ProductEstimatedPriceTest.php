@@ -4,6 +4,8 @@ namespace Tests\Feature;
 
 use App\Models\Category;
 use App\Models\Product;
+use App\Models\ProductOffer;
+use App\Models\Store;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -16,14 +18,34 @@ class ProductEstimatedPriceTest extends TestCase
     {
         $category = Category::factory()->create();
 
-        return Product::factory()->create([
-            'category_id'   => $category->id,
-            'scraped_price' => $price,
+        $product = Product::factory()->create([
+            'category_id' => $category->id,
         ]);
+
+        if ($price !== null) {
+            $store = Store::firstOrCreate(
+                ['slug' => 'amazon', 'tenant_id' => $product->tenant_id],
+                ['name' => 'Amazon']
+            );
+
+            ProductOffer::create([
+                'product_id'    => $product->id,
+                'tenant_id'     => $product->tenant_id,
+                'store_id'      => $store->id,
+                'url'           => 'https://www.amazon.com/dp/TEST',
+                'scraped_price' => $price,
+                'raw_title'     => $product->name,
+            ]);
+        }
+
+        // Reload offers relationship
+        $product->load('offers');
+
+        return $product;
     }
 
     #[Test]
-    public function it_returns_null_when_scraped_price_is_null(): void
+    public function it_returns_null_when_no_offers_have_price(): void
     {
         $product = $this->makeProduct(null);
 
@@ -33,28 +55,19 @@ class ProductEstimatedPriceTest extends TestCase
     #[Test]
     public function it_rounds_prices_under_100_to_nearest_5(): void
     {
-        // Rounds down
         $this->assertEquals(50, $this->makeProduct(52.10)->estimated_price);
-        // Rounds up
         $this->assertEquals(55, $this->makeProduct(54.99)->estimated_price);
-        // Exact multiple — stays
         $this->assertEquals(30, $this->makeProduct(30.00)->estimated_price);
-        // Low price
         $this->assertEquals(10, $this->makeProduct(9.99)->estimated_price);
-        // Boundary: exactly 99.99 rounds to nearest 5
         $this->assertEquals(100, $this->makeProduct(99.99)->estimated_price);
     }
 
     #[Test]
     public function it_rounds_prices_at_or_above_100_to_nearest_10(): void
     {
-        // Rounds down
         $this->assertEquals(140, $this->makeProduct(144.99)->estimated_price);
-        // Rounds up
         $this->assertEquals(150, $this->makeProduct(146.00)->estimated_price);
-        // Exact multiple — stays
         $this->assertEquals(200, $this->makeProduct(200.00)->estimated_price);
-        // High price
         $this->assertEquals(500, $this->makeProduct(499.95)->estimated_price);
     }
 
@@ -63,7 +76,6 @@ class ProductEstimatedPriceTest extends TestCase
     {
         $product = $this->makeProduct(54.99);
 
-        // Returns integer 55, not formatted string '~$55'
         $this->assertIsInt($product->estimated_price);
         $this->assertEquals(55, $product->estimated_price);
     }

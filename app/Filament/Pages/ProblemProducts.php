@@ -3,8 +3,7 @@
 namespace App\Filament\Pages;
 
 use App\Models\Product;
-use Filament\Forms\Components\Select;
-use Filament\Forms\Components\TextInput;
+use App\Models\ProductOffer;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Tables\Actions\Action;
@@ -18,7 +17,6 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
-use Illuminate\Support\Facades\DB;
 
 class ProblemProducts extends Page implements HasTable
 {
@@ -30,7 +28,6 @@ class ProblemProducts extends Page implements HasTable
     protected static ?int $navigationSort = 4;
     protected static string $view = 'filament.pages.problem-products';
 
-    /** Suspect keywords that indicate accessories/bundles/parts */
     private const SUSPECT_KEYWORDS = [
         'bundle', 'kit', 'set of', 'pack of', 'replacement',
         'filter', 'stand', 'mount', 'cable', 'adapter',
@@ -38,10 +35,6 @@ class ProblemProducts extends Page implements HasTable
         'knock box', 'tamper', 'portafilter basket',
     ];
 
-    /**
-     * Build a MySQL 8 REGEXP pattern with word boundary simulation.
-     * Uses (^|[^a-z]) and ([^a-z]|$) since MySQL 8 ICU regex doesn't support \b or [[:<:]]
-     */
     private static function keywordRegex(): string
     {
         return implode('|', array_map(
@@ -61,9 +54,6 @@ class ProblemProducts extends Page implements HasTable
         return 'danger';
     }
 
-    /**
-     * Base query: non-ignored, fully processed products that have at least one problem.
-     */
     private static function problemQuery(): Builder
     {
         $regex = static::keywordRegex();
@@ -72,31 +62,36 @@ class ProblemProducts extends Page implements HasTable
             ->where('is_ignored', false)
             ->whereNull('status')
             ->where(function (Builder $q) use ($regex) {
-                $q->whereNull('scraped_price')
-                  ->orWhereRaw('scraped_price < (SELECT COALESCE(budget_max, 50) * 0.5 FROM categories WHERE categories.id = products.category_id)')
-                  ->orWhereNull('image_path')
+                // No price: product has no offers with a price
+                $q->whereDoesntHave('offers', fn ($oq) => $oq->whereNotNull('scraped_price'))
+                  // Low price: best offer price < 50% of category budget_max
+                  ->orWhereHas('offers', fn ($oq) => $oq
+                      ->whereNotNull('scraped_price')
+                      ->whereRaw('scraped_price < (SELECT COALESCE(budget_max, 50) * 0.5 FROM categories WHERE categories.id = products.category_id)'))
+                  ->orWhere(fn (Builder $imgQ) => $imgQ
+                      ->whereNull('image_path')
+                      ->whereDoesntHave('offers', fn ($oq) => $oq->whereNotNull('image_url')))
                   ->orWhereNull('ai_summary')
                   ->orWhereRaw('LOWER(name) REGEXP ?', [$regex]);
             });
     }
 
-    /**
-     * Determine the problem label(s) for a given product row.
-     */
     private static function detectProblems(Product $record): string
     {
         $problems = [];
 
-        if ($record->scraped_price === null) {
+        $bestPrice = $record->offers->min('scraped_price');
+
+        if ($bestPrice === null) {
             $problems[] = 'No price';
         } elseif ($record->category) {
             $threshold = ($record->category->budget_max ?? 50) * 0.5;
-            if ($record->scraped_price < $threshold) {
-                $problems[] = 'Low price ($' . number_format($record->scraped_price, 2) . ')';
+            if ($bestPrice < $threshold) {
+                $problems[] = 'Low price ($' . number_format($bestPrice, 2) . ')';
             }
         }
 
-        if (empty($record->image_path)) {
+        if (empty($record->image_path) && !$record->offers->contains(fn ($o) => !empty($o->image_url))) {
             $problems[] = 'No image';
         }
 
@@ -108,7 +103,7 @@ class ProblemProducts extends Page implements HasTable
         foreach (self::SUSPECT_KEYWORDS as $kw) {
             if (preg_match('/\b' . preg_quote($kw, '/') . '\b/', $nameLower)) {
                 $problems[] = 'Suspect: "' . $kw . '"';
-                break; // one keyword is enough
+                break;
             }
         }
 
@@ -123,8 +118,8 @@ class ProblemProducts extends Page implements HasTable
             ->paginationPageOptions([10, 25, 50, 100])
             ->defaultSort('created_at', 'desc')
             ->modifyQueryUsing(fn (Builder $query) => $query
-                ->select(['id', 'tenant_id', 'name', 'external_id', 'brand_id', 'category_id', 'image_path', 'scraped_price', 'ai_summary', 'amazon_rating', 'amazon_reviews_count', 'is_ignored', 'created_at'])
-                ->with(['category:id,name,tenant_id,budget_max', 'brand:id,name,tenant_id'])
+                ->select(['id', 'tenant_id', 'name', 'brand_id', 'category_id', 'image_path', 'ai_summary', 'amazon_rating', 'amazon_reviews_count', 'is_ignored', 'created_at'])
+                ->with(['category:id,name,tenant_id,budget_max', 'brand:id,name,tenant_id', 'offers:id,product_id,store_id,url,scraped_price', 'offers.store:id,name'])
             )
             ->columns([
                 ImageColumn::make('image_path')
@@ -138,9 +133,7 @@ class ProblemProducts extends Page implements HasTable
                     ->searchable()
                     ->sortable()
                     ->limit(55)
-                    ->url(fn (Product $record) => $record->external_id
-                        ? "https://www.amazon.com/dp/{$record->external_id}"
-                        : null)
+                    ->url(fn (Product $record) => $record->offers->first()?->url)
                     ->openUrlInNewTab()
                     ->color('primary')
                     ->weight('bold'),
@@ -150,11 +143,12 @@ class ProblemProducts extends Page implements HasTable
                     ->badge()
                     ->sortable(),
 
-                TextColumn::make('scraped_price')
+                TextColumn::make('best_offer_price')
                     ->label('Price')
                     ->money('USD')
                     ->sortable()
-                    ->placeholder('—'),
+                    ->placeholder('—')
+                    ->getStateUsing(fn (Product $record) => $record->offers->min('scraped_price')),
 
                 TextColumn::make('amazon_rating')
                     ->label('Rating')
@@ -198,9 +192,10 @@ class ProblemProducts extends Page implements HasTable
                         if (empty($data['value'])) return;
                         $regex = static::keywordRegex();
                         match ($data['value']) {
-                            'no_price'   => $query->whereNull('scraped_price'),
-                            'low_price'  => $query->whereNotNull('scraped_price')
-                                ->whereRaw('scraped_price < (SELECT COALESCE(budget_max, 50) * 0.5 FROM categories WHERE categories.id = products.category_id)'),
+                            'no_price'   => $query->whereDoesntHave('offers', fn ($oq) => $oq->whereNotNull('scraped_price')),
+                            'low_price'  => $query->whereHas('offers', fn ($oq) => $oq
+                                ->whereNotNull('scraped_price')
+                                ->whereRaw('scraped_price < (SELECT COALESCE(budget_max, 50) * 0.5 FROM categories WHERE categories.id = products.category_id)')),
                             'no_image'   => $query->whereNull('image_path'),
                             'no_summary' => $query->whereNull('ai_summary'),
                             'suspect'    => $query->whereRaw('LOWER(name) REGEXP ?', [$regex]),
@@ -222,10 +217,7 @@ class ProblemProducts extends Page implements HasTable
                     ->modalHeading('Mark as ignored?')
                     ->action(function (Product $record) {
                         $record->update(['is_ignored' => true]);
-                        Notification::make()
-                            ->title('Product ignored: ' . $record->name)
-                            ->success()
-                            ->send();
+                        Notification::make()->title('Product ignored: ' . $record->name)->success()->send();
                     }),
 
                 Action::make('edit')
@@ -247,10 +239,7 @@ class ProblemProducts extends Page implements HasTable
                         ->action(function (Collection $records) {
                             $count = $records->count();
                             Product::whereIn('id', $records->pluck('id'))->update(['is_ignored' => true]);
-                            Notification::make()
-                                ->title("{$count} products marked as ignored")
-                                ->success()
-                                ->send();
+                            Notification::make()->title("{$count} products marked as ignored")->success()->send();
                         })
                         ->deselectRecordsAfterCompletion(),
                 ]),

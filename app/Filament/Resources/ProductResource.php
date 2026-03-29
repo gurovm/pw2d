@@ -124,7 +124,7 @@ class ProductResource extends Resource
             ->paginationPageOptions([10, 25, 50, 100])
             ->modifyQueryUsing(fn (Builder $query) => $query
                 ->select(['id', 'tenant_id', 'name', 'brand_id', 'category_id', 'image_path', 'is_ignored', 'amazon_rating', 'amazon_reviews_count', 'created_at'])
-                ->with(['brand:id,name,tenant_id', 'category:id,name,tenant_id'])
+                ->with(['brand:id,name,tenant_id', 'category:id,name,tenant_id', 'offers:id,product_id,scraped_price'])
             )
             ->columns([
                 Tables\Columns\ImageColumn::make('image_path')
@@ -148,6 +148,15 @@ class ProductResource extends Resource
                     ->badge()
                     ->sortable(),
                 
+                Tables\Columns\TextColumn::make('best_price')
+                    ->label('Price')
+                    ->money('USD')
+                    ->sortable(query: fn (Builder $query, string $direction) => $query
+                        ->withMin('offers', 'scraped_price')
+                        ->orderBy('offers_min_scraped_price', $direction))
+                    ->getStateUsing(fn (Product $record) => $record->offers->min('scraped_price'))
+                    ->placeholder('—'),
+
                 Tables\Columns\IconColumn::make('is_ignored')
                     ->label('Ignored')
                     ->boolean()
@@ -255,6 +264,7 @@ class ProductResource extends Resource
     public static function getRelations(): array
     {
         return [
+            RelationManagers\OffersRelationManager::class,
             RelationManagers\FeatureValuesRelationManager::class,
         ];
     }
