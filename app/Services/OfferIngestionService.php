@@ -103,6 +103,11 @@ class OfferIngestionService
             }
         }
 
+        // Verify matched product still exists (cache may reference a deleted product)
+        if ($matchedProductId && !Product::withoutGlobalScopes()->where('id', $matchedProductId)->exists()) {
+            $matchedProductId = null;
+        }
+
         if ($matchedProductId) {
             // 4. Match found → attach offer to existing product
             ProductOffer::create([
