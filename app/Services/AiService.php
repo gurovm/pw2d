@@ -83,7 +83,7 @@ class AiService
             . '"features": {"Feature_Name": {"score": 75, "reason": "One sentence."}, "Other_Feature": null}}';
 
         return $this->gemini->generate($prompt, [
-            'maxOutputTokens' => 4096,
+            'maxOutputTokens' => 8192,
         ], config('services.gemini.admin_model'));
     }
 
