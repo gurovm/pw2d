@@ -10,16 +10,32 @@ return new class extends Migration
 {
     public function up(): void
     {
-        // Step 1: Drop old unique constraint that references store_name
-        // (must happen before store_name can be dropped in a later migration)
-        Schema::table('product_offers', function (Blueprint $table) {
+        // Step 1: Drop old unique/index constraints that reference store_name.
+        // On MySQL, the FK on product_id may use the unique index as backing —
+        // must drop FK first, then the unique, then re-add FK with a plain index.
+        if (DB::getDriverName() === 'mysql') {
+            // Drop FK so unique index can be released
             try {
-                $table->dropUnique(['product_id', 'store_name']);
+                Schema::table('product_offers', fn (Blueprint $t) => $t->dropForeign(['product_id']));
+            } catch (\Exception) {}
+
+            // Drop the stale unique and composite indexes
+            try {
+                Schema::table('product_offers', fn (Blueprint $t) => $t->dropUnique(['product_id', 'store_name']));
             } catch (\Exception) {}
             try {
-                $table->dropIndex(['tenant_id', 'store_name']);
+                Schema::table('product_offers', fn (Blueprint $t) => $t->dropIndex(['tenant_id', 'store_name']));
             } catch (\Exception) {}
-        });
+
+            // Re-add FK with its own index
+            Schema::table('product_offers', fn (Blueprint $t) => $t->foreign('product_id')->references('id')->on('products')->cascadeOnDelete());
+        } else {
+            // SQLite: indexes are auto-dropped with columns, just attempt cleanup
+            Schema::table('product_offers', function (Blueprint $table) {
+                try { $table->dropUnique(['product_id', 'store_name']); } catch (\Exception) {}
+                try { $table->dropIndex(['tenant_id', 'store_name']); } catch (\Exception) {}
+            });
+        }
 
         // Step 2: Add store_id column (nullable temporarily)
         Schema::table('product_offers', function (Blueprint $table) {
