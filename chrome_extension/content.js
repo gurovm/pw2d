@@ -866,16 +866,21 @@ function extractWholeLatteLoveListing() {
 
             seen.add(cleanHref);
 
-            // Title: from the link text, or card heading, or image alt
-            let title = linkEl.textContent.trim();
-            if (!title || title.length < 3) {
-                const headingEl = card.querySelector('h3, h2, .card__heading');
-                title = headingEl?.textContent?.trim();
-            }
+            // Title: prefer heading or image alt over raw link text
+            // (raw link text can be UI chrome like "View 1 more material option")
+            let title = null;
+            const headingEl = card.querySelector('h2 a, h3 a, h2.card__heading, h3.card__heading, .card__heading, .product-listing__title');
+            if (headingEl) title = headingEl.textContent.trim();
             if (!title || title.length < 3) {
                 title = imgEl.getAttribute('alt')?.trim();
             }
+            if (!title || title.length < 3) {
+                title = linkEl.textContent.trim();
+            }
             if (!title || title.length < 3) return;
+
+            // Skip UI chrome that matched as a product link (swatch labels, "View more" links)
+            if (/^view\s+\d+\s+more|^see\s+all|^show\s+more|^\+$/i.test(title)) return;
 
             // Price
             let price = null;
