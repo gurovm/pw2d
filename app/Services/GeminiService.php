@@ -31,20 +31,28 @@ class GeminiService
         $model   = $model ?? config('services.gemini.site_model');
         $timeout = (int) ($config['timeout'] ?? 30);
 
-        // Separate non-generationConfig keys before merging
+        // Separate top-level keys from generationConfig
+        $topLevelKeys = ['timeout', 'thinkingConfig'];
         $generationConfig = array_merge(
             ['temperature' => 0.3, 'maxOutputTokens' => 3000],
-            collect($config)->except('timeout')->toArray()
+            collect($config)->except($topLevelKeys)->toArray()
         );
+
+        $payload = [
+            'contents'         => [['parts' => [['text' => $prompt]]]],
+            'generationConfig' => $generationConfig,
+        ];
+
+        // thinkingConfig is a top-level API param, not inside generationConfig
+        if (!empty($config['thinkingConfig'])) {
+            $payload['generationConfig']['thinkingConfig'] = $config['thinkingConfig'];
+        }
 
         $response = Http::timeout($timeout)
             ->withHeaders(['x-goog-api-key' => $apiKey])
             ->post(
                 "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent",
-                [
-                    'contents'         => [['parts' => [['text' => $prompt]]]],
-                    'generationConfig' => $generationConfig,
-                ]
+                $payload
             );
 
         if (! $response->successful()) {

@@ -84,6 +84,7 @@ class AiService
 
         return $this->gemini->generate($prompt, [
             'maxOutputTokens' => 8192,
+            'thinkingConfig'  => ['thinkingBudget' => 2048],
         ], config('services.gemini.admin_model'));
     }
 
