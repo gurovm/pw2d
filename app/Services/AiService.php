@@ -380,6 +380,70 @@ PROMPT;
     }
 
     /**
+     * Assign categories to uncategorized products in batch.
+     *
+     * Sends product names + available leaf categories to AI, returns assignments.
+     *
+     * @return array<array{id: int, category_id: int|null, reason: string}>
+     */
+    public function assignCategories(Collection $products, array $categoryOptions): array
+    {
+        if ($products->isEmpty()) {
+            return [];
+        }
+
+        $productList = $products->map(fn($p) => ['id' => $p->id, 'name' => $p->name])->values()->toArray();
+        $productJson = json_encode($productList, JSON_PRETTY_PRINT);
+        $categoryJson = json_encode($categoryOptions, JSON_PRETTY_PRINT);
+
+        $prompt = "You are a product categorization expert for a consumer comparison website.\n\n"
+            . "Here are the available LEAF categories (products can only be assigned to these):\n{$categoryJson}\n\n"
+            . "Here are uncategorized products:\n{$productJson}\n\n"
+            . "For each product, assign the BEST matching category based on what the product actually is.\n"
+            . "Use your WORLD KNOWLEDGE of these brands and models to determine the correct category.\n\n"
+            . "=== RULES ===\n"
+            . "1. Only assign a category if you are confident the product belongs there.\n"
+            . "2. If a product is an accessory, bundle of unrelated items, consumable, or doesn't fit ANY category, set category_id to null.\n"
+            . "3. Judge the SPECIFIC PRODUCT, not just the brand.\n"
+            . "4. A keyboard+mouse bundle should go in the keyboard category if the keyboard is the primary item.\n"
+            . "5. Espresso machines that use capsules/pods (Nespresso, Vertuo, Dolce Gusto) are NOT semi-automatic.\n\n"
+            . "Return ONLY a JSON array with one entry per product:\n"
+            . '[{"id": 123, "category_id": 5, "reason": "One sentence."}, {"id": 456, "category_id": null, "reason": "Accessory, not a main device."}]';
+
+        $result = $this->gemini->generate($prompt, [
+            'maxOutputTokens' => 4096,
+            'temperature'     => 0.1,
+            'timeout'         => 90,
+            'thinkingConfig'  => ['thinkingBudget' => 0],
+        ], config('services.gemini.site_model'));
+
+        $parsed = $result['parsed'];
+
+        if (!is_array($parsed)) {
+            return [];
+        }
+
+        $validProductIds = $products->pluck('id')->toArray();
+        $validCategoryIds = array_column($categoryOptions, 'id');
+
+        return collect($parsed)
+            ->filter(fn($item) => isset($item['id'], $item['reason']) && in_array($item['id'], $validProductIds))
+            ->map(function ($item) use ($validCategoryIds) {
+                $categoryId = $item['category_id'] ?? null;
+                if ($categoryId !== null && !in_array($categoryId, $validCategoryIds)) {
+                    $categoryId = null;
+                }
+                return [
+                    'id'          => $item['id'],
+                    'category_id' => $categoryId,
+                    'reason'      => $item['reason'],
+                ];
+            })
+            ->values()
+            ->toArray();
+    }
+
+    /**
      * Extract product data from raw pasted text (admin Filament import).
      * Used by ListProducts "Import via AI" action.
      */

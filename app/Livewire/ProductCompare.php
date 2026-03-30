@@ -256,6 +256,9 @@ class ProductCompare extends Component
             if ($product->is_ignored) {
                 abort(410, 'This product is no longer available in our catalog.');
             }
+            if (!$product->category) {
+                abort(404, 'This product has not been categorized yet.');
+            }
             $this->selectedProductSlug = $product->slug;
             $this->category = $product->category;
         } elseif ($slug) {
