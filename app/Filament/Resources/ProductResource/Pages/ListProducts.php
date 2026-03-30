@@ -4,8 +4,11 @@ namespace App\Filament\Resources\ProductResource\Pages;
 
 use App\Filament\Resources\ProductResource;
 use App\Filament\Widgets\ProductStatsWidget;
+use App\Jobs\ProcessPendingProduct;
+use App\Models\Product;
 use Filament\Actions;
 use Filament\Forms;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
 use Illuminate\Support\Str;
 
@@ -22,9 +25,37 @@ class ListProducts extends ListRecords
 
     protected function getHeaderActions(): array
     {
+        $failedCount = Product::withoutGlobalScopes()->where('status', 'failed')->count();
+
         return [
             Actions\CreateAction::make(),
-            
+
+            Actions\Action::make('retryFailed')
+                ->label("Retry Failed ({$failedCount})")
+                ->icon('heroicon-o-arrow-path')
+                ->color('warning')
+                ->visible($failedCount > 0)
+                ->requiresConfirmation()
+                ->modalHeading('Retry Failed Products')
+                ->modalDescription("This will requeue {$failedCount} failed product(s) for AI processing. Each product costs ~\$0.03 in Gemini API usage.")
+                ->action(function () {
+                    $count = 0;
+                    Product::withoutGlobalScopes()
+                        ->where('status', 'failed')
+                        ->whereNotNull('category_id')
+                        ->each(function (Product $product) use (&$count) {
+                            $product->update(['status' => 'pending_ai']);
+                            ProcessPendingProduct::dispatch($product->id, $product->category_id);
+                            $count++;
+                        });
+
+                    Notification::make()
+                        ->title("Requeued {$count} products")
+                        ->body('Failed products have been sent back to the AI processing queue.')
+                        ->success()
+                        ->send();
+                }),
+
             Actions\Action::make('importViaAI')
                 ->label('Import via AI')
                 ->icon('heroicon-o-sparkles')
