@@ -43,7 +43,7 @@ class GeminiService
             'generationConfig' => $generationConfig,
         ];
 
-        // thinkingConfig is a top-level API param, not inside generationConfig
+        // thinkingConfig lives inside generationConfig for Gemini v1beta
         if (!empty($config['thinkingConfig'])) {
             $payload['generationConfig']['thinkingConfig'] = $config['thinkingConfig'];
         }
