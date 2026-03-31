@@ -1,5 +1,6 @@
 ---
 name: tester
+model: sonnet
 description: Invoked when the user wants tests written for a feature, class, or endpoint. Writes tests for the Laravel application. Use when the user says "write tests", "add tests for", "test coverage", "unit test", or "feature test".
 tools: Read, Write, Edit, Bash, Glob, Grep
 ---

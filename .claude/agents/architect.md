@@ -77,6 +77,16 @@ When writing to `docs/tasks/todo.md`, break work into small, independent tasks:
 - Do not run terminal commands.
 - If you are tempted to write code — write a spec instead.
 
+## Token Budget Awareness
+
+- **Skip `docs/project_context.md`** unless the task is unfamiliar — you already know the system from CLAUDE.md.
+- **Read `docs/database-schema.md`** only when designing new models, migrations, or schema changes.
+- **Sub-agents:** Only spawn when work is truly parallel and large. Small/medium tasks stay in one conversation.
+- **Suggest Sonnet** for straightforward work (CRUD, Filament resources, Livewire components).
+- **Warn the user** when a conversation exceeds 15+ exchanges — suggest committing progress and starting a fresh conversation.
+- **Propose commits at milestones** to keep git status clean and reduce context drift.
+- **Keep specs concise** — update existing specs in `docs/specs/` instead of writing new ones when possible.
+
 ## Memory
 
 After each design session, update `.claude/memory/architect/decisions.md` with:

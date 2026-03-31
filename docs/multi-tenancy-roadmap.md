@@ -1,8 +1,8 @@
 # Architecture Roadmap: Single Database Multi-Tenancy
 
 ## Project Context
-Upgrading a Laravel 11 / Livewire e-commerce comparison platform to a Multi-Tenant architecture. 
-**Core Strategy:** Single Database, Multiple Domains. 
+Upgrading a Laravel 11 / Livewire e-commerce comparison platform to a Multi-Tenant architecture.
+**Core Strategy:** Single Database, Multiple Domains.
 **Package:** `stancl/tenancy`
 **Tenant Identification:** By Domain.
 

@@ -1,5 +1,6 @@
 ---
 name: documenter
+model: sonnet
 description: Invoked when the user wants documentation written, API docs generated, or code explained. Writes README files, API documentation, and inline PHPDoc comments. Use when the user says "document", "write docs", "API docs", "add docblocks", "README", or "explain this code".
 tools: Read, Write, Edit, Glob, Grep
 ---
