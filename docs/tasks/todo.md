@@ -1,41 +1,98 @@
-# Tasks: Code Quality Fixes from Full Codebase Review (2026-03-22)
+# Tasks: Full System Audit (2026-04-04)
 
-## Critical Priority
+Consolidated from 15 parallel agent audits (5 chunks x 3 agents). Deduplicated across reports.
 
-- [x] **C1: Extract GeminiService** -- Create `app/Services/GeminiService.php` to encapsulate API URL construction, generation config, response parsing (fence stripping + JSON decode), and error handling. Replace direct HTTP calls in `ProcessPendingProduct`, `RescanProductFeatures`, `ProductImportController`, `ProductCompare`, and `GlobalSearch`.
+## P0 -- Fix Immediately (Security + Data Integrity)
 
-- [x] **C2: Fix Setting cache to be tenant-aware** -- Include tenant ID in cache keys in `Setting::get()` and `Setting::set()`. Current cache key `setting:{key}` causes cross-tenant cache pollution.
+- [x] **S1: Remove Gemini API key from client-side JS** -- Moved to `AiService::analyzeSearchTrends()`. Deleted `ai-report-modal.blade.php`. Added 3 tests.
 
-- [x] **C3: Refactor ProductImportController::import()** -- Either deprecate this endpoint (BatchImportController + ProcessPendingProduct already handle the modern flow) or extract shared logic into a service. Current method is 310 lines of business logic in a controller.
+- [x] **S2: Fix cross-tenant MergeDuplicateProducts** -- Added `{tenant}` argument + `tenancy()->initialize()` + `tenant_id` in GROUP BY. Updated tests.
 
-- [x] **C4: Fix LIKE wildcard injection in GlobalSearch** -- Escape `%` and `_` characters in user search input before using in LIKE queries (lines 252, 260, 277 of GlobalSearch.php).
+- [x] **S3: Scope "Retry Failed" to current tenant** -- Removed `withoutGlobalScopes()` from ListProducts.php lines 28/43.
 
-- [x] **C5: Create Form Request classes** -- Create `BatchImportRequest` and `ProductImportRequest` to extract validation from API controllers.
+- [x] **S4: Fix XSS via `->toJson()` in Alpine.js** -- Replaced with `@js()` in product-compare.blade.php.
 
-- [x] **C6: Extract SSRF allowed-hosts to config** -- Move duplicated Amazon CDN domain allowlists from `ProductImportController` and `ProcessPendingProduct` to `config/services.php` under `amazon.allowed_image_hosts`.
+- [x] **S5: Fix GeminiService `parts[0]` thinking bug** -- Now iterates parts, takes last non-`thought` part.
 
-- [ ] **C7: Restrict or remove public registration** -- The `Register` Livewire component allows unrestricted account creation. Either add `@pw2d.com` email validation, disable registration, or verify these auth routes are not actually routed.
+- [x] **S6: Fix broken observers** -- Updated to use actual columns + explicit `tenant_id` + idempotency guard.
 
-## Medium Priority
+- [x] **S7: Persist `is_higher_better` in AI feature generation** -- Added to both `Feature::firstOrCreate()` calls in EditCategory.php.
 
-- [ ] **W2: Extract sample prompts fallback chain** -- The 3-priority sample prompts resolution is duplicated in `ProductCompare`, `ComparisonHeader`, and `Home`. Extract to a helper.
+## P1 -- Fix Before Next Deploy (Security + Performance)
 
-- [ ] **W7: Remove duplicate API route** -- `/import-product` and `/product-import` both route to `ProductImportController::import()`. Deprecate one after verifying Chrome Extension usage.
+- [ ] **S8: Tenant-scope `exists:categories,id` validation** -- Bypasses Eloquent scope (3 locations). Add `->where('tenant_id', tenant('id'))` to `Rule::exists()`. *[Security-API, Security-Models]*
 
-- [ ] **W8: Remove dead code in ProductScoringService** -- Verify `calculateMatchScore()`, `normalizeFeatureValue()`, `calculateFeatureRange()`, and `updateFeatureRange()` have no callers, then remove.
+- [ ] **S9: Guard SitemapController on central domain** -- Leaks all tenants' data when tenancy not initialized. Add `if (!tenancy()->initialized) abort(404)`. *[Security-API]*
 
-- [ ] **W10: Audit Tenant model interfaces** -- Verify whether `TenantWithDatabase` and `HasDatabase` are required for single-DB mode. Remove if not needed.
+- [ ] **S10: Route EditCategory AI calls through AiService** -- Calls `GeminiService` directly + raw HTTP. Bypasses mandatory AiService layer. *[Review-Filament, Security-Filament]*
 
-## Low Priority
+- [ ] **S11: Add rate limit on AI search** -- `analyzeUserNeeds()` and `triggerAiSearch()` have no rate limiting. Anonymous users can exhaust Gemini quota. *[Security-Frontend]*
 
-- [ ] **W5: Add return types to Livewire methods** -- Add PHP 8.3 return type declarations to all public methods in Livewire components.
+- [ ] **S12: Fix `strip_tags` allowing `javascript:` URIs** -- Buying guide `strip_tags($html, '<a>')` permits `<a href="javascript:...">`. Sanitize href attribute. *[Security-Frontend, Review-Filament]*
 
-- [ ] **W6: Add missing factories** -- Create factories for `Preset`, `SearchLog`, `ProductFeatureValue`, and `FeaturePreset`.
+- [ ] **P1: Add `offers.store` eager loading everywhere** -- Missing in `visibleProducts`, `selectedProduct`, `SimilarProducts`. ~36-48 extra queries per page render. *[Perf-Models, Perf-Frontend, Review-Models, Review-Frontend]*
 
-- [ ] **W9: Add return types to Preset model relationships** -- Add `: BelongsTo`, `: BelongsToMany`, `: HasMany` return types.
+- [ ] **P2: Debounce price slider** -- `wire:model.live` fires 20-50 requests per drag. Use `wire:model.live.debounce.300ms`. *[Perf-Frontend]*
 
-- [ ] **W12: Write tests for uncovered critical paths** -- `BatchImportController`, `ProcessPendingProduct`, `RescanProductFeatures`, `GlobalSearch`, `SitemapController`, `Setting` caching, and tenant isolation.
+- [ ] **P3: Wrap batch import in transaction + bulk insert** -- 200+ individual INSERTs per batch. Use `insert()` inside `DB::transaction()`. *[Perf-API]*
 
-- [ ] **W4: Reduce ProductCompare complexity** -- Extract SEO schema generation from `render()` into a helper class. Consider extracting AI concierge into a separate Livewire component.
+- [ ] **P4: Add HTTP retry for Gemini 429** -- Currently throws immediately, wasting job retries. Add `Http::retry(3, ...)` with 429-only when clause. *[Perf-AI]*
 
-- [ ] **W11: Audit orphaned auth components** -- Verify whether `Login`, `Register`, `Profile` Livewire components are routed. Remove if unused.
+- [ ] **P5: Narrow negative matching decision purge** -- Deletes ALL negative decisions per tenant on every product. Scope to same-brand only. *[Perf-AI, Review-AI]*
+
+- [ ] **P6: Cache ProblemProducts badge query** -- Heavy REGEXP query fires on every admin page render. Add `Cache::remember()` 120s. *[Perf-Filament]*
+
+- [ ] **P7: Cache ProductStatsWidget queries** -- 6 uncached COUNT queries on every dashboard render. Consolidate + cache 60s. *[Perf-Filament]*
+
+- [ ] **P8: Fix null-price offers surfacing as "best"** -- `bestOffer` accessor doesn't filter `scraped_price = null`. *[Review-Models]*
+
+## P2 -- Fix Soon (Code Quality + Medium Security)
+
+- [ ] **Q1: Fix OfferIngestionService unique constraint** -- `ProductOffer::create()` without checking `(product_id, store_id)` uniqueness. Use `updateOrCreate`. *[Review-API]*
+
+- [ ] **Q2: Create OfferIngestionRequest Form Request** -- Inline `$request->validate()` in controller. Extract to Form Request. *[Review-API]*
+
+- [ ] **Q3: Extract BatchImportService** -- 115 lines of business logic in controller. *[Review-API]*
+
+- [ ] **Q4: Add `BelongsToTenant` to AiCategoryRejection + ProductFeatureValue** -- Missing tenant trait. *[Security-Models]*
+
+- [ ] **Q5: Fix ASIN validation** -- Accepts arbitrary strings (`string|max:20`). Add `regex:/^[A-Z0-9]{10}$/i`. *[Security-API]*
+
+- [ ] **Q6: Validate URL schemes as HTTPS** -- `url` and `image_url` accept `data:`, `file:`. Use `url:https`. *[Security-API]*
+
+- [ ] **Q7: Add `tenant_id` to observer Feature creation** -- Features created without explicit `tenant_id`. *[Review-Models, Security-Models]*
+
+- [ ] **Q8: Fix `addslashes()` JS escaping** -- Multiple templates use `addslashes()` instead of `@js()`. *[Security-Frontend]*
+
+- [ ] **Q9: Remove fabricated reviewCount in SeoSchema** -- Falls back to `reviewCount: 50`. Violates Google guidelines. *[Review-Frontend]*
+
+- [ ] **Q10: Replace hardcoded Amazon orange** -- `bg-[#FF9900]` on CTA buttons. Use `var(--color-primary)`. *[Review-Frontend]*
+
+- [ ] **Q11: Use bulk update for Mark as Ignored** -- Loops individual `$record->update()`. Use `whereIn()->update()`. *[Review-Filament]*
+
+- [ ] **Q12: Add `url_hash` column to product_offers** -- TEXT column can't be indexed for equality. Add CHAR(64) hash. *[Perf-API]*
+
+- [ ] **Q13: Fix RecalculatePriceTiers memory** -- Loads all products+offers into memory. Use `chunkById()`. *[Perf-AI]*
+
+- [ ] **Q14: Add CDN Subresource Integrity** -- `@formkit/auto-animate` loaded without SRI. *[Security-Frontend]*
+
+## P3 -- Low Priority (Polish)
+
+- [ ] **L1: Add N+1 eager loading in Filament resources** -- AiMatchingDecisionResource, CategoryResource, FeatureValuesRelationManager. *[Perf-Filament]*
+- [ ] **L2: Extract duplicated feature-score parsing** -- Identical in ProcessPendingProduct and RescanProductFeatures. *[Review-AI]*
+- [ ] **L3: Extract duplicated price-note builder** -- Same block in both jobs. *[Review-AI]*
+- [ ] **L4: Extract typewriter animation** -- Copy-pasted Alpine.js in 2 templates. *[Review-Frontend]*
+- [ ] **L5: Remove DB query from ComparisonHeader Blade** -- `Category::find()` in template. *[Review-Frontend]*
+- [ ] **L6: Make static pages tenant-aware** -- Hardcoded "Pw2D" in about/privacy/terms. *[Review-Frontend]*
+- [ ] **L7: Add missing `declare(strict_types=1)`** -- ~15 files. *[Multiple]*
+- [ ] **L8: Add 6 missing database indexes** -- SQL in performance reports. *[Perf-Models, Perf-API]*
+- [ ] **L9: Delete dead SearchLog page classes** -- CreateSearchLog.php, EditSearchLog.php. *[Review-Filament]*
+- [ ] **L10: Delete `welcome.blade.php`** -- Dead Laravel scaffold. *[Review-Frontend]*
+- [ ] **L11: Tenant-scope slug uniqueness in Filament** -- CategoryResource, StoreResource. *[Review-Filament]*
+- [ ] **L12: Setting::get() default value caching bug** -- First caller's default cached forever. *[Perf-Models]*
+
+---
+
+## Completed (2026-03-22 audit)
+
+All 17 tasks from the March 22 code quality review are complete. See git history.
