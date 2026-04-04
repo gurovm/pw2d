@@ -76,6 +76,10 @@ class ProblemProducts extends Page implements HasTable
                       ->whereNull('image_path')
                       ->whereDoesntHave('offers', fn ($oq) => $oq->whereNotNull('image_url')))
                   ->orWhereNull('ai_summary')
+                  // No reviews: product has an Amazon offer but zero/null review count
+                  ->orWhere(fn (Builder $rQ) => $rQ
+                      ->where(fn ($q2) => $q2->whereNull('amazon_reviews_count')->orWhere('amazon_reviews_count', 0))
+                      ->whereHas('offers.store', fn ($sq) => $sq->where('slug', 'amazon')))
                   ->orWhereRaw('LOWER(name) REGEXP ?', [$regex]);
             });
     }
@@ -101,6 +105,13 @@ class ProblemProducts extends Page implements HasTable
 
         if (empty($record->ai_summary)) {
             $problems[] = 'No AI summary';
+        }
+
+        // Amazon product without review count — likely scrape failed
+        if (empty($record->amazon_reviews_count)
+            && $record->offers->contains(fn ($o) => $o->store?->slug === 'amazon')
+        ) {
+            $problems[] = 'No reviews';
         }
 
         $nameLower = strtolower($record->name ?? '');
@@ -176,6 +187,7 @@ class ProblemProducts extends Page implements HasTable
                         str_contains($state, 'No price') => 'danger',
                         str_contains($state, 'Low price') => 'warning',
                         str_contains($state, 'Suspect') => 'warning',
+                        str_contains($state, 'No reviews') => 'warning',
                         default => 'gray',
                     })
                     ->getStateUsing(fn (Product $record) => static::detectProblems($record)),
@@ -193,6 +205,7 @@ class ProblemProducts extends Page implements HasTable
                         'low_price'   => 'Low price',
                         'no_image'    => 'No image',
                         'no_summary'  => 'No AI summary',
+                        'no_reviews'  => 'No reviews (Amazon)',
                         'suspect'     => 'Suspect title',
                     ])
                     ->query(function (Builder $query, array $data) {
@@ -205,6 +218,9 @@ class ProblemProducts extends Page implements HasTable
                                 ->whereRaw('scraped_price < (SELECT COALESCE(budget_max, 50) * 0.5 FROM categories WHERE categories.id = products.category_id)')),
                             'no_image'   => $query->whereNull('image_path'),
                             'no_summary' => $query->whereNull('ai_summary'),
+                            'no_reviews' => $query
+                                ->where(fn ($q) => $q->whereNull('amazon_reviews_count')->orWhere('amazon_reviews_count', 0))
+                                ->whereHas('offers.store', fn ($sq) => $sq->where('slug', 'amazon')),
                             'suspect'    => $query->whereRaw('LOWER(name) REGEXP ?', [$regex]),
                             default      => null,
                         };
