@@ -273,18 +273,28 @@ PROMPT;
             . "I just scraped a product titled: \"{$scrapedRawTitle}\"\n"
             . "Brand: \"{$brand}\"\n\n"
             . "Here are ALL existing products we have for this brand:\n{$listJson}\n\n"
-            . "Does the scraped title refer to the EXACT SAME core product model as any item in the list?\n"
-            . "Color variants (e.g., 'Black' vs 'Silver') of the same model ARE matches.\n"
-            . "Different models, bundles, or accessories are NOT matches.\n\n"
+            . "Does the scraped title refer to the EXACT SAME core product model as any item in the list?\n\n"
+            . "MATCH RULES:\n"
+            . "- Color/finish variants of the SAME model ARE matches (e.g., 'Black' vs 'Silver').\n"
+            . "- Flow control / plumb variants of the same model ARE matches.\n"
+            . "NOT MATCHES (return false):\n"
+            . "- Different model numbers (e.g., BES880 vs BES881, FAST V vs FAST R).\n"
+            . "- Different product lines even if names sound similar (e.g., 'Dedica' vs 'La Specialista').\n"
+            . "- Different generations or successors (e.g., 'Synchronika' vs 'Synchronika II').\n"
+            . "- Functionally different variants (e.g., 'Auto' vs 'Manual Paddle').\n"
+            . "- Different sub-model names (e.g., 'Appartamento TCA' vs 'Appartamento Serie Nera').\n"
+            . "- Limited/anniversary editions vs standard models.\n\n"
+            . "When in doubt, return false. False negatives (missing a match) are far less harmful than false positives (merging different products).\n\n"
             . "Return ONLY a JSON object:\n"
             . '{"is_match": true, "matched_product_name": "Exact Name From List"}' . "\n"
             . "or\n"
             . '{"is_match": false}';
 
         $result = $this->gemini->generate($prompt, [
-            'maxOutputTokens' => 256,
+            'maxOutputTokens' => 1024,
+            'thinkingConfig'  => ['thinkingBudget' => 128],
             'temperature'     => 0.1,
-            'timeout'         => 10,
+            'timeout'         => 15,
         ], config('services.gemini.site_model'));
 
         $parsed = $result['parsed'];

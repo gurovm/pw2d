@@ -104,7 +104,30 @@ class ProcessPendingProduct implements ShouldQueue
 
             if ($matchedProductId && $matchedProductId !== $product->id) {
                 // Merge: transfer this product's offers to the matched product, then delete the duplicate stub.
-                $product->offers()->update(['product_id' => $matchedProductId]);
+                // Handle unique constraint (product_id, store_id) — if matched product already has
+                // an offer from the same store, keep the cheaper one.
+                $existingOfferStores = \App\Models\ProductOffer::where('product_id', $matchedProductId)
+                    ->pluck('scraped_price', 'store_id');
+
+                foreach ($product->offers as $offer) {
+                    if ($existingOfferStores->has($offer->store_id)) {
+                        // Same store already exists on matched product — keep cheaper, delete other
+                        if ($offer->scraped_price < $existingOfferStores[$offer->store_id]) {
+                            \App\Models\ProductOffer::where('product_id', $matchedProductId)
+                                ->where('store_id', $offer->store_id)
+                                ->update([
+                                    'scraped_price' => $offer->scraped_price,
+                                    'url'           => $offer->url,
+                                    'raw_title'     => $offer->raw_title,
+                                    'image_url'     => $offer->image_url,
+                                ]);
+                        }
+                        $offer->delete();
+                    } else {
+                        $offer->update(['product_id' => $matchedProductId]);
+                    }
+                }
+
                 $product->forceDelete();
 
                 Log::info('ProcessPendingProduct: merged duplicate into existing product', [
