@@ -109,8 +109,11 @@ class SyncOfferPrices extends Command
     /**
      * Scrape price and stock status from a product offer URL.
      * Returns null on failure, or ['price' => float|null, 'stock' => string|null].
+     *
+     * Public and static so it can be reused from admin pages (e.g. ProblemProducts rescan action).
+     * The $offer must have its `store` relation loaded before calling.
      */
-    private function scrapePrice(ProductOffer $offer): ?array
+    public static function scrapeOfferPrice(ProductOffer $offer): ?array
     {
         $response = Http::timeout(10)
             ->withHeaders([
@@ -126,12 +129,18 @@ class SyncOfferPrices extends Command
         $html = $response->body();
 
         return match ($offer->store?->slug) {
-            'Amazon' => $this->parseAmazonPage($html),
-            default  => $this->parseGenericPage($html),
+            'amazon' => static::parseAmazonPage($html),
+            default  => static::parseGenericPage($html),
         };
     }
 
-    private function parseAmazonPage(string $html): array
+    /** @deprecated Use scrapeOfferPrice() instead. Kept for internal handle() call. */
+    private function scrapePrice(ProductOffer $offer): ?array
+    {
+        return static::scrapeOfferPrice($offer);
+    }
+
+    private static function parseAmazonPage(string $html): array
     {
         $price = null;
         $stock = null;
@@ -156,7 +165,7 @@ class SyncOfferPrices extends Command
         return ['price' => $price, 'stock' => $stock];
     }
 
-    private function parseGenericPage(string $html): array
+    private static function parseGenericPage(string $html): array
     {
         $price = null;
 

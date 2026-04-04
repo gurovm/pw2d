@@ -2,9 +2,10 @@
 
 namespace App\Filament\Pages;
 
+use App\Console\Commands\SyncOfferPrices;
 use App\Models\Product;
-use App\Models\ProductOffer;
 use Filament\Notifications\Notification;
+use Illuminate\Support\Facades\Log;
 use Filament\Pages\Page;
 use Filament\Tables\Actions\Action;
 use Filament\Tables\Actions\BulkAction;
@@ -121,8 +122,8 @@ class ProblemProducts extends Page implements HasTable
             ->paginationPageOptions([10, 25, 50, 100])
             ->defaultSort('created_at', 'desc')
             ->modifyQueryUsing(fn (Builder $query) => $query
-                ->select(['id', 'tenant_id', 'name', 'brand_id', 'category_id', 'image_path', 'ai_summary', 'amazon_rating', 'amazon_reviews_count', 'is_ignored', 'created_at'])
-                ->with(['category:id,name,tenant_id,budget_max', 'brand:id,name,tenant_id', 'offers:id,product_id,store_id,url,scraped_price', 'offers.store:id,name'])
+                ->select(['id', 'tenant_id', 'name', 'brand_id', 'category_id', 'image_path', 'ai_summary', 'amazon_reviews_count', 'is_ignored', 'created_at'])
+                ->with(['category:id,name,tenant_id,budget_max', 'brand:id,name,tenant_id', 'offers:id,product_id,store_id,url,scraped_price', 'offers.store:id,name,slug'])
             )
             ->columns([
                 ImageColumn::make('image_path')
@@ -136,8 +137,10 @@ class ProblemProducts extends Page implements HasTable
                     ->searchable()
                     ->sortable()
                     ->limit(55)
-                    ->url(fn (Product $record) => $record->offers->first()?->url)
-                    ->openUrlInNewTab()
+                    ->url(fn (Product $record) => route('filament.admin.resources.products.edit', [
+                        'tenant' => tenant('id'),
+                        'record' => $record,
+                    ]))
                     ->color('primary')
                     ->weight('bold'),
 
@@ -146,19 +149,20 @@ class ProblemProducts extends Page implements HasTable
                     ->badge()
                     ->sortable(),
 
+                TextColumn::make('store')
+                    ->label('Store')
+                    ->badge()
+                    ->color('info')
+                    ->url(fn (Product $record) => $record->offers->first()?->url)
+                    ->openUrlInNewTab()
+                    ->getStateUsing(fn (Product $record) => $record->offers->first()?->store?->name ?? '—'),
+
                 TextColumn::make('best_offer_price')
                     ->label('Price')
                     ->money('USD')
                     ->sortable()
                     ->placeholder('—')
                     ->getStateUsing(fn (Product $record) => $record->offers->min('scraped_price')),
-
-                TextColumn::make('amazon_rating')
-                    ->label('Rating')
-                    ->numeric(decimalPlaces: 1)
-                    ->sortable()
-                    ->icon('heroicon-m-star')
-                    ->iconColor('warning'),
 
                 TextColumn::make('amazon_reviews_count')
                     ->label('Reviews')
@@ -212,6 +216,86 @@ class ProblemProducts extends Page implements HasTable
                     ->preload(),
             ])
             ->actions([
+                Action::make('rescanPrice')
+                    ->label('Rescan Price')
+                    ->icon('heroicon-o-arrow-path')
+                    ->color('warning')
+                    ->visible(fn (Product $record) => $record->offers->isNotEmpty())
+                    ->action(function (Product $record) {
+                        // Reload offers with store slug so scrapeOfferPrice can match store-specific parsers.
+                        $offers = $record->offers->load('store');
+
+                        $updated = 0;
+                        $failed  = 0;
+                        $lastPrice = null;
+
+                        foreach ($offers as $offer) {
+                            try {
+                                $result = SyncOfferPrices::scrapeOfferPrice($offer);
+
+                                if ($result === null) {
+                                    $failed++;
+                                    continue;
+                                }
+
+                                $offer->update([
+                                    'scraped_price' => $result['price'],
+                                    'stock_status'  => $result['stock'],
+                                ]);
+
+                                if ($result['price'] !== null) {
+                                    $lastPrice = $result['price'];
+                                }
+
+                                $updated++;
+                            } catch (\Throwable $e) {
+                                Log::warning('ProblemProducts rescanPrice: failed', [
+                                    'offer_id' => $offer->id,
+                                    'url'      => $offer->url,
+                                    'error'    => $e->getMessage(),
+                                ]);
+                                $failed++;
+                            }
+                        }
+
+                        // Recalculate price_tier on the product using the best available price.
+                        $record->refresh()->load('category');
+                        $bestPrice = $record->offers()->whereNotNull('scraped_price')->min('scraped_price');
+
+                        if ($bestPrice !== null && $record->category) {
+                            $newTier = $record->category->priceTierFor((float) $bestPrice);
+                            if ($newTier !== null) {
+                                $record->update(['price_tier' => $newTier]);
+                            }
+                        }
+
+                        $n = $updated + $failed;
+
+                        if ($updated === 0 && $failed > 0) {
+                            Notification::make()
+                                ->title('Rescan failed')
+                                ->body("Could not fetch price for any of the {$n} offer(s).")
+                                ->danger()
+                                ->send();
+                            return;
+                        }
+
+                        $priceLabel = $bestPrice !== null
+                            ? '$' . number_format((float) $bestPrice, 2)
+                            : 'No price found';
+
+                        $body = "Rescanned {$updated} offer(s). Best price: {$priceLabel}";
+                        if ($failed > 0) {
+                            $body .= " ({$failed} failed)";
+                        }
+
+                        Notification::make()
+                            ->title('Price rescanned')
+                            ->body($body)
+                            ->success()
+                            ->send();
+                    }),
+
                 Action::make('ignore')
                     ->label('Ignore')
                     ->icon('heroicon-o-eye-slash')

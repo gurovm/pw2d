@@ -76,6 +76,14 @@ Consolidated from 15 parallel agent audits (5 chunks x 3 agents). Deduplicated a
 
 - [ ] **Q14: Add CDN Subresource Integrity** -- `@formkit/auto-animate` loaded without SRI. *[Security-Frontend]*
 
+## Spec Tasks
+
+- [x] **Spec 011: Problem Products store link & rescan action** -- Added Store badge column, changed product name to edit-page link, added Rescan Price row action. Extracted `scrapeOfferPrice()` as public static on SyncOfferPrices. Removed amazon_rating column.
+
+- [x] **Spec 012: Fix AI matching brand dedup** -- Added `AiService::normalizeBrandForComparison()` (public static). Fixed heuristic query in `matchProduct()` to fuzzy-match brands via SQL REPLACE chain. Fixed `ProcessPendingProduct` to reuse existing brand by fuzzy match instead of `firstOrCreate`. Fixed negative cache invalidation to cover all brand spelling variants. Tightened brand normalization prompt. 14 new tests in `BrandNormalizationTest`.
+
+- [x] **Spec 013: Enhance MergeDuplicateProducts command** -- Added `--category` option, Phase 2 brand-spelling dedup via `normalizeBrandForComparison()`, feature value transfer in `mergeDuplicate()`, `price_tier` recalculation after merges, and improved two-phase console output.
+
 ## P3 -- Low Priority (Polish)
 
 - [ ] **L1: Add N+1 eager loading in Filament resources** -- AiMatchingDecisionResource, CategoryResource, FeatureValuesRelationManager. *[Perf-Filament]*

@@ -153,10 +153,18 @@ class ProcessPendingProduct implements ShouldQueue
                 return;
             }
 
-            $brand = Brand::firstOrCreate(
-                ['name' => $parsed['brand'], 'tenant_id' => $product->tenant_id],
-                ['name' => $parsed['brand'], 'tenant_id' => $product->tenant_id]
-            );
+            // Reuse existing brand if one matches (fuzzy: ignore apostrophes/case/accents).
+            // Prevents brand record splits when the AI returns "DeLonghi" vs "De'Longhi".
+            $normalizedIncoming = AiService::normalizeBrandForComparison($parsed['brand']);
+
+            $brand = Brand::withoutGlobalScopes()
+                ->where('tenant_id', $product->tenant_id)
+                ->get(['id', 'name'])
+                ->first(fn ($b) => AiService::normalizeBrandForComparison($b->name) === $normalizedIncoming)
+                ?? Brand::create([
+                    'name'      => $parsed['brand'],
+                    'tenant_id' => $product->tenant_id,
+                ]);
 
             $product->update([
                 'name'                 => $aiName,
@@ -169,13 +177,27 @@ class ProcessPendingProduct implements ShouldQueue
                 'status'               => null, // fully processed
             ]);
 
-            // Invalidate stale negative matching decisions for this brand so future imports re-evaluate.
-            // Scoped to brand to avoid wiping unrelated decisions across the tenant.
-            AiMatchingDecision::withoutGlobalScopes()
+            // Invalidate stale negative matching decisions for ALL spelling variants of this brand
+            // so future imports re-evaluate. Covers "De'Longhi", "DeLonghi", "de longhi", etc.
+            $normalizedBrand = AiService::normalizeBrandForComparison($parsed['brand']);
+
+            $brandVariants = Brand::withoutGlobalScopes()
                 ->where('tenant_id', $product->tenant_id)
-                ->where('is_match', false)
-                ->where('scraped_raw_name', 'LIKE', '%' . str_replace(['%', '_'], ['\%', '\_'], $parsed['brand']) . '%')
-                ->delete();
+                ->get(['name'])
+                ->filter(fn ($b) => AiService::normalizeBrandForComparison($b->name) === $normalizedBrand)
+                ->pluck('name');
+
+            if ($brandVariants->isNotEmpty()) {
+                AiMatchingDecision::withoutGlobalScopes()
+                    ->where('tenant_id', $product->tenant_id)
+                    ->where('is_match', false)
+                    ->where(function ($q) use ($brandVariants) {
+                        foreach ($brandVariants as $variant) {
+                            $q->orWhere('scraped_raw_name', 'LIKE', '%' . str_replace(['%', '_'], ['\%', '\_'], $variant) . '%');
+                        }
+                    })
+                    ->delete();
+            }
 
             foreach ($category->features as $feature) {
                 $value = $parsed['features'][$feature->name] ?? null;

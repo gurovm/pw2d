@@ -63,7 +63,9 @@ class AiService
             . "- Remove subsidiary/division suffixes: 'AKG Professional' → 'AKG', 'Blue Microphones' → 'Blue'.\n"
             . "- Resolve umbrella brands: '512 Audio by Warm Audio' → 'Warm Audio'.\n"
             . "- Always use the parent consumer brand, not the Amazon storefront name.\n"
-            . "- Capitalize correctly: 'BRANDNAME' → 'Brandname'.\n\n"
+            . "- Capitalize correctly: 'BRANDNAME' → 'Brandname'.\n"
+            . "- Apostrophe handling: KEEP apostrophes that are part of the standard English brand name. \"De'Longhi\" stays \"De'Longhi\". Only strip non-ASCII stylistic characters.\n"
+            . "- Use the Wikipedia article title as the canonical brand spelling. Be consistent across calls.\n\n"
             . "=== STAGE 2.5: NAME NORMALIZATION ===\n\n"
             . "The raw Amazon title is verbose marketing copy. You MUST produce a clean, short product name:\n"
             . "- Keep ONLY: Brand + Model name + essential differentiator (e.g. color or size variant if it's the main SKU distinction).\n"
@@ -226,6 +228,21 @@ PROMPT;
     }
 
     /**
+     * Normalize a brand name for comparison: lowercase, strip apostrophes/quotes/accents, collapse whitespace.
+     *
+     * Used for fuzzy brand matching in the heuristic and in ProcessPendingProduct brand reuse.
+     * Must be public static so it can be called from jobs and other services.
+     */
+    public static function normalizeBrandForComparison(string $brand): string
+    {
+        // Transliterate accents (RØDE → RODE), strip apostrophes/quotes, lowercase
+        $brand = transliterator_transliterate('Any-Latin; Latin-ASCII', $brand);
+        $brand = preg_replace("/['\u{2019}`\"]/u", '', $brand);
+        $brand = preg_replace('/\s+/', ' ', trim($brand));
+        return mb_strtolower($brand);
+    }
+
+    /**
      * AI Memory Matching: check if a scraped title matches an existing product.
      *
      * Flow: cache check → heuristic (no brand products = skip AI) → AI call → save decision.
@@ -245,10 +262,15 @@ PROMPT;
             return $cached->is_match ? $cached->existing_product_id : null;
         }
 
-        // STEP 2: Heuristic — if no products exist for this brand, nothing to match against
+        // STEP 2: Heuristic — if no products exist for this brand, nothing to match against.
+        // Use fuzzy brand comparison to handle AI spelling variants ("De'Longhi" vs "DeLonghi").
+        // SQL REPLACE strips: ASCII apostrophe, right single quote (U+2019), backtick, double quote.
         $existingProducts = Product::withoutGlobalScopes()
             ->where('tenant_id', $tenantId)
-            ->whereHas('brand', fn($q) => $q->where('name', $brand))
+            ->whereHas('brand', fn($q) => $q->whereRaw(
+                "LOWER(REPLACE(REPLACE(REPLACE(REPLACE(name, '''', ''), '\u{2019}', ''), '`', ''), '\"', '')) = ?",
+                [static::normalizeBrandForComparison($brand)]
+            ))
             ->whereNull('status')
             ->where('is_ignored', false)
             ->when($excludeProductId, fn($q) => $q->where('id', '!=', $excludeProductId))
