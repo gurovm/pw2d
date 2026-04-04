@@ -15,8 +15,21 @@ class InitializeTenancyIfApplicable
         $hostname = $request->getHost();
         $centralDomains = config('tenancy.central_domains', []);
 
-        // Central domains skip tenancy initialization entirely
         if (in_array($hostname, $centralDomains)) {
+            // Filament admin handles its own tenancy — don't interfere
+            if ($request->is('admin', 'admin/*')) {
+                return $next($request);
+            }
+
+            // Central domain with a matching tenant → initialize for frontend routes
+            try {
+                $tenant = app(DomainTenantResolver::class)->resolve($hostname);
+                tenancy()->initialize($tenant);
+            } catch (\Exception) {
+                // No tenant for this central domain — continue without tenancy
+                return $next($request);
+            }
+
             return $next($request);
         }
 
