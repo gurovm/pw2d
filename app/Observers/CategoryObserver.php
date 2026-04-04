@@ -31,14 +31,23 @@ class CategoryObserver
         $parentFeatures = $parent->features;
         
         foreach ($parentFeatures as $parentFeature) {
-            Feature::create([
-                'category_id' => $category->id,
-                'name' => $parentFeature->name,
-                'slug' => $parentFeature->slug . '-cat-' . $category->id,
-                'data_type' => $parentFeature->data_type,
-                'unit' => $parentFeature->unit,
-                'weight' => $parentFeature->weight,
-            ]);
+            // Guard against duplicates in case the observer fires more than once
+            $exists = Feature::where('category_id', $category->id)
+                ->where('name', $parentFeature->name)
+                ->exists();
+
+            if (!$exists) {
+                Feature::create([
+                    'tenant_id'        => $parentFeature->tenant_id,
+                    'category_id'      => $category->id,
+                    'name'             => $parentFeature->name,
+                    'unit'             => $parentFeature->unit,
+                    'is_higher_better' => $parentFeature->is_higher_better,
+                    'min_value'        => $parentFeature->min_value,
+                    'max_value'        => $parentFeature->max_value,
+                    'sort_order'       => $parentFeature->sort_order,
+                ]);
+            }
         }
     }
 }

@@ -25,7 +25,7 @@ class ListProducts extends ListRecords
 
     protected function getHeaderActions(): array
     {
-        $failedCount = Product::withoutGlobalScopes()->where('status', 'failed')->count();
+        $failedCount = Product::where('status', 'failed')->count();
 
         return [
             Actions\CreateAction::make(),
@@ -40,8 +40,7 @@ class ListProducts extends ListRecords
                 ->modalDescription("This will requeue {$failedCount} failed product(s) for AI processing. Each product costs ~\$0.03 in Gemini API usage.")
                 ->action(function () {
                     $count = 0;
-                    Product::withoutGlobalScopes()
-                        ->where('status', 'failed')
+                    Product::where('status', 'failed')
                         ->whereNotNull('category_id')
                         ->each(function (Product $product) use (&$count) {
                             $product->update(['status' => 'pending_ai']);

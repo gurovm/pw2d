@@ -234,7 +234,7 @@
                                     open: false,
                                     search: '',
                                     selectedBrandId: @entangle('filterBrand').live,
-                                    brands: {{ $this->availableBrands->map(function ($b) {return ['id' => $b->id, 'name' => $b->name, 'count' => $b->products_count];})->toJson() }},
+                                    brands: @js($this->availableBrands->map(function ($b) {return ['id' => $b->id, 'name' => $b->name, 'count' => $b->products_count];})),
                                     get filteredBrands() {
                                         if (this.search === '') return this.brands;
                                         return this.brands.filter(b => b.name.toLowerCase().includes(this.search.toLowerCase()));

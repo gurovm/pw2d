@@ -4,17 +4,23 @@ namespace App\Filament\Resources\SearchLogResource\Pages;
 
 use App\Filament\Resources\SearchLogResource;
 use App\Models\SearchLog;
+use App\Services\AiService;
 use Filament\Actions;
-use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\Placeholder;
 use Filament\Resources\Pages\ListRecords;
-use Illuminate\Support\HtmlString;
-use Illuminate\Support\Facades\Http;
 use Filament\Notifications\Notification;
+use Illuminate\Support\HtmlString;
+use League\CommonMark\CommonMarkConverter;
 
 class ListSearchLogs extends ListRecords
 {
     protected static string $resource = SearchLogResource::class;
+
+    /**
+     * Holds the AI-generated markdown report between the action call and the
+     * re-rendered modal. Set by the action handler; read by the form closure.
+     */
+    public ?string $trendReport = null;
 
     protected function getHeaderActions(): array
     {
@@ -25,33 +31,67 @@ class ListSearchLogs extends ListRecords
                 ->color('primary')
                 ->modalHeading('AI Trends Report')
                 ->modalWidth('7xl')
-                ->modalSubmitAction(false)
+                ->modalSubmitActionLabel('Generate Report')
                 ->modalCancelActionLabel('Close')
                 ->form(function () {
-                    $logs = SearchLog::latest()->take(200)->get();
-                    $formattedLogs = $logs->map(function ($log) {
-                        return sprintf("- [%s] query: '%s', results: %s, category: %s, summary: %s",
-                            $log->type, $log->query, $log->results_count ?? 'N/A', $log->category_name ?? 'N/A',
-                            mb_substr($log->response_summary ?? 'N/A', 0, 100));
-                    })->implode("\n");
-                    
-                    $aiPromptString = "You are an expert E-commerce Product Manager. \nAnalyze the following user search logs from our affiliate website. \nProvide a concise, actionable report in Markdown format with the following sections:\n\n1. 📈 Trending Intents (What are users trying to achieve?)\n2. ⚠️ Missing Inventory / Zero Results (What products or categories do we need to scrape/add?)\n3. 🤖 AI Concierge Insights (Are users engaging well with the AI? Are there friction points?)\n4. 🎯 Actionable Recommendations (What exact 2-3 actions should I take tomorrow?)\n\n**CRITICAL SYSTEM RULES FOR ANALYSIS:**\n- For 'homepage_ai', the 'results' count represents the number of matching CATEGORIES found for redirection (usually 1).\n- For 'category_ai' and 'global_search', the 'results' count represents the number of actual PRODUCTS found.\n- DO NOT compare homepage_ai counts to category_ai counts directly, as they measure different things.\n- If 'results' is N/A or NULL, it simply means the count was not logged. It DOES NOT mean there were zero results. Only flag 'Zero Results' if the results count is explicitly 0.\n\nHere is the raw search log data:\n\n" . $formattedLogs;                    
-                    $apiKey = config('services.gemini.api_key');
-                    if (empty($apiKey)) {
-                        return [Placeholder::make('error')->hiddenLabel()->content('Gemini API key missing in config.')];
+                    if ($this->trendReport !== null) {
+                        // Report is ready — render it as HTML inside the modal.
+                        $converter = new CommonMarkConverter(['html_input' => 'strip', 'allow_unsafe_links' => false]);
+                        $html = $converter->convert($this->trendReport)->getContent();
+
+                        return [
+                            Placeholder::make('report_output')
+                                ->hiddenLabel()
+                                ->content(new HtmlString(
+                                    '<div class="prose max-w-none dark:prose-invert overflow-y-auto"'
+                                    . ' style="max-height:65vh;padding-right:1rem;">'
+                                    . $html
+                                    . '</div>'
+                                )),
+                        ];
                     }
 
-                    $promptJson = json_encode($aiPromptString, JSON_HEX_APOS | JSON_HEX_QUOT);
-                    $apiKeyJson = json_encode($apiKey, JSON_HEX_APOS | JSON_HEX_QUOT);
+                    // Initial state — show a description before the user hits Generate.
+                    $logCount = SearchLog::count();
 
                     return [
-                        Placeholder::make('ai_client_interface')
+                        Placeholder::make('description')
                             ->hiddenLabel()
-                            ->content(view('filament.pages.ai-report-modal', [
-                                'aiPromptString' => $aiPromptString,
-                                'apiKey' => $apiKey
-                            ]))
+                            ->content(new HtmlString(
+                                '<p class="text-sm text-gray-600 dark:text-gray-400">'
+                                . "Click <strong>Generate Report</strong> to analyze the latest "
+                                . number_format($logCount)
+                                . ' search log entries. The AI call runs server-side and takes up to 60 seconds.</p>'
+                            )),
                     ];
+                })
+                ->action(function (Actions\Action $action) {
+                    $logs = SearchLog::latest()->take(200)->get();
+
+                    if ($logs->isEmpty()) {
+                        Notification::make()
+                            ->title('No search logs found.')
+                            ->warning()
+                            ->send();
+
+                        return;
+                    }
+
+                    try {
+                        $aiService = app(AiService::class);
+                        $this->trendReport = $aiService->analyzeSearchTrends($logs);
+                    } catch (\Exception $e) {
+                        Notification::make()
+                            ->title('AI analysis failed')
+                            ->body($e->getMessage())
+                            ->danger()
+                            ->send();
+
+                        return;
+                    }
+
+                    // Keep the modal open so the form re-renders with the report.
+                    $action->halt();
                 }),
         ];
     }

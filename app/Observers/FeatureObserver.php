@@ -34,15 +34,17 @@ class FeatureObserver
             $exists = Feature::where('category_id', $descendant->id)
                 ->where('name', $feature->name)
                 ->exists();
-            
+
             if (!$exists) {
                 Feature::create([
-                    'category_id' => $descendant->id,
-                    'name' => $feature->name,
-                    'slug' => $feature->slug . '-cat-' . $descendant->id,
-                    'data_type' => $feature->data_type,
-                    'unit' => $feature->unit,
-                    'weight' => $feature->weight,
+                    'tenant_id'        => $feature->tenant_id,
+                    'category_id'      => $descendant->id,
+                    'name'             => $feature->name,
+                    'unit'             => $feature->unit,
+                    'is_higher_better' => $feature->is_higher_better,
+                    'min_value'        => $feature->min_value,
+                    'max_value'        => $feature->max_value,
+                    'sort_order'       => $feature->sort_order,
                 ]);
             }
         }

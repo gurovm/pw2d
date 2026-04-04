@@ -313,7 +313,8 @@ class EditCategory extends EditRecord
                             'category_id' => $record->id,
                             'name' => $featureData['name'],
                         ], [
-                            'unit' => $featureData['unit'] ?? null,
+                            'unit'             => $featureData['unit'] ?? null,
+                            'is_higher_better' => $featureData['is_higher_better'] ?? true,
                         ]);
                     }
 
@@ -443,7 +444,8 @@ class EditCategory extends EditRecord
                             'category_id' => $record->id,
                             'name'        => $featureData['name'],
                         ], [
-                            'unit' => $featureData['unit'] ?? null,
+                            'unit'             => $featureData['unit'] ?? null,
+                            'is_higher_better' => $featureData['is_higher_better'] ?? true,
                         ]);
                         $mappedFeatures[strtolower($feature->name)] = $feature;
                     }

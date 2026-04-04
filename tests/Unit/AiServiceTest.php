@@ -2,7 +2,9 @@
 
 namespace Tests\Unit;
 
+use App\Models\SearchLog;
 use App\Services\AiService;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -14,6 +16,18 @@ class AiServiceTest extends TestCase
             'generativelanguage.googleapis.com/*' => Http::response([
                 'candidates' => [[
                     'content' => ['parts' => [['text' => json_encode($jsonBody)]]],
+                    'finishReason' => $finishReason,
+                ]],
+            ]),
+        ]);
+    }
+
+    private function fakeGeminiTextResponse(string $text, string $finishReason = 'STOP'): void
+    {
+        Http::fake([
+            'generativelanguage.googleapis.com/*' => Http::response([
+                'candidates' => [[
+                    'content' => ['parts' => [['text' => $text]]],
                     'finishReason' => $finishReason,
                 ]],
             ]),
@@ -132,5 +146,50 @@ class AiServiceTest extends TestCase
         $service->parseSearchQuery('test query', []);
 
         Http::assertSent(fn ($request) => str_contains($request->url(), config('services.gemini.site_model')));
+    }
+
+    /** @test */
+    public function analyze_search_trends_returns_markdown_string(): void
+    {
+        $markdownReport = "## Trending Intents\n- Users are searching for espresso machines.\n\n## Actionable Recommendations\n1. Add more products.";
+        $this->fakeGeminiTextResponse($markdownReport);
+
+        $logs = new Collection([
+            (object) ['type' => 'homepage_ai', 'query' => 'best espresso machine', 'results_count' => 1, 'category_name' => 'Espresso', 'response_summary' => 'Redirected to espresso'],
+            (object) ['type' => 'category_ai', 'query' => 'breville barista', 'results_count' => 5, 'category_name' => 'Semi-Auto', 'response_summary' => null],
+        ]);
+
+        $service = app(AiService::class);
+        $result = $service->analyzeSearchTrends($logs);
+
+        $this->assertIsString($result);
+        $this->assertStringContainsString('Trending Intents', $result);
+        $this->assertStringContainsString('Actionable Recommendations', $result);
+    }
+
+    /** @test */
+    public function analyze_search_trends_uses_admin_model(): void
+    {
+        $this->fakeGeminiTextResponse('# Report');
+
+        $logs = new Collection([
+            (object) ['type' => 'global_search', 'query' => 'test', 'results_count' => 3, 'category_name' => null, 'response_summary' => null],
+        ]);
+
+        $service = app(AiService::class);
+        $service->analyzeSearchTrends($logs);
+
+        Http::assertSent(fn ($request) => str_contains($request->url(), config('services.gemini.admin_model')));
+    }
+
+    /** @test */
+    public function analyze_search_trends_handles_empty_collection(): void
+    {
+        $this->fakeGeminiTextResponse('# Empty Report');
+
+        $service = app(AiService::class);
+        $result = $service->analyzeSearchTrends(new Collection([]));
+
+        $this->assertIsString($result);
     }
 }

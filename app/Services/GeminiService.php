@@ -71,7 +71,15 @@ class GeminiService
             throw new \Exception('Gemini response truncated (MAX_TOKENS).');
         }
 
-        $raw = $result['candidates'][0]['content']['parts'][0]['text'] ?? '';
+        // When thinking is enabled, parts[0] is the internal reasoning (thought: true).
+        // Iterate all parts and keep the last one where `thought` is not set — that is the actual output.
+        $parts = $result['candidates'][0]['content']['parts'] ?? [];
+        $raw = '';
+        foreach ($parts as $part) {
+            if (empty($part['thought'])) {
+                $raw = $part['text'] ?? '';
+            }
+        }
 
         // Strip markdown code fences
         $content = trim(preg_replace('/^```json\s*|\s*```$/m', '', trim($raw)));

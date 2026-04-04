@@ -7,27 +7,39 @@ namespace App\Console\Commands;
 use App\Models\AiMatchingDecision;
 use App\Models\Product;
 use App\Models\ProductOffer;
+use App\Models\Tenant;
 use Illuminate\Console\Command;
+use Illuminate\Contracts\Console\Isolatable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
-class MergeDuplicateProducts extends Command
+class MergeDuplicateProducts extends Command implements Isolatable
 {
-    protected $signature = 'pw2d:merge-duplicates {--dry-run : Preview without modifying}';
+    protected $signature = 'pw2d:merge-duplicates
+                            {tenant : The tenant ID}
+                            {--dry-run : Preview without modifying}';
 
     protected $description = 'Merge duplicate products with identical (name, brand_id, category_id) into canonical records';
 
     public function handle(): int
     {
+        $tenant = Tenant::find($this->argument('tenant'));
+        if (!$tenant) {
+            $this->error("Tenant '{$this->argument('tenant')}' not found.");
+            return self::FAILURE;
+        }
+        tenancy()->initialize($tenant);
+
         $dryRun = $this->option('dry-run');
 
         // Find duplicate groups: same name, brand_id, category_id with 2+ active products
         $groups = Product::withoutGlobalScopes()
-            ->select('name', 'brand_id', 'category_id', DB::raw('COUNT(*) as cnt'), DB::raw('MIN(id) as canonical_id'))
+            ->select('tenant_id', 'name', 'brand_id', 'category_id', DB::raw('COUNT(*) as cnt'), DB::raw('MIN(id) as canonical_id'))
+            ->where('tenant_id', $tenant->id)
             ->where('is_ignored', false)
             ->whereNull('status')
             ->whereNotNull('category_id')
-            ->groupBy('name', 'brand_id', 'category_id')
+            ->groupBy('tenant_id', 'name', 'brand_id', 'category_id')
             ->having('cnt', '>', 1)
             ->get();
 

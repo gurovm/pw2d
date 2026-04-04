@@ -8,12 +8,22 @@ use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductOffer;
 use App\Models\Store;
+use App\Models\Tenant;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class MergeDuplicatesTest extends TestCase
 {
     use RefreshDatabase;
+
+    private string $tenantId = 'test-tenant';
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        Tenant::create(['id' => $this->tenantId, 'name' => 'Test Tenant']);
+        tenancy()->initialize(Tenant::find($this->tenantId));
+    }
 
     private function createDuplicatePair(
         ?Brand $brand = null,
@@ -68,7 +78,7 @@ class MergeDuplicatesTest extends TestCase
             'raw_title'     => 'Rode NT-USB Mini',
         ]);
 
-        $this->artisan('pw2d:merge-duplicates')
+        $this->artisan('pw2d:merge-duplicates', ['tenant' => $canonical->tenant_id])
             ->assertExitCode(0);
 
         // Canonical should remain, duplicate should be gone
@@ -84,7 +94,7 @@ class MergeDuplicatesTest extends TestCase
     {
         [$canonical, $duplicate] = $this->createDuplicatePair();
 
-        $this->artisan('pw2d:merge-duplicates', ['--dry-run' => true])
+        $this->artisan('pw2d:merge-duplicates', ['tenant' => $canonical->tenant_id, '--dry-run' => true])
             ->assertExitCode(0);
 
         // Both products should still exist
@@ -117,7 +127,7 @@ class MergeDuplicatesTest extends TestCase
             'raw_title'     => 'Rode NT-USB Mini',
         ]);
 
-        $this->artisan('pw2d:merge-duplicates')
+        $this->artisan('pw2d:merge-duplicates', ['tenant' => $canonical->tenant_id])
             ->assertExitCode(0);
 
         // Only one offer should remain (canonical product, lower price)

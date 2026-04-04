@@ -437,20 +437,65 @@ PROMPT;
         $validCategoryIds = array_column($categoryOptions, 'id');
 
         return collect($parsed)
-            ->filter(fn($item) => isset($item['id'], $item['reason']) && in_array($item['id'], $validProductIds))
+            ->filter(fn($item) => isset($item['id'], $item['reason']) && in_array((int) $item['id'], $validProductIds, true))
             ->map(function ($item) use ($validCategoryIds) {
-                $categoryId = $item['category_id'] ?? null;
-                if ($categoryId !== null && !in_array($categoryId, $validCategoryIds)) {
+                $categoryId = isset($item['category_id']) ? (int) $item['category_id'] : null;
+                if ($categoryId !== null && !in_array($categoryId, $validCategoryIds, true)) {
                     $categoryId = null;
                 }
                 return [
-                    'id'          => $item['id'],
+                    'id'          => (int) $item['id'],
                     'category_id' => $categoryId,
                     'reason'      => $item['reason'],
                 ];
             })
             ->values()
             ->toArray();
+    }
+
+    /**
+     * Analyze recent search logs and return an actionable markdown report.
+     *
+     * Returns the raw markdown string from the AI (not parsed JSON).
+     * Used by the ListSearchLogs "Analyze Trends" admin action.
+     *
+     * @param  Collection<int, \App\Models\SearchLog>  $logs
+     */
+    public function analyzeSearchTrends(Collection $logs): string
+    {
+        $formattedLogs = $logs->map(fn($log) => sprintf(
+            "- [%s] query: '%s', results: %s, category: %s, summary: %s",
+            $log->type,
+            $log->query,
+            $log->results_count ?? 'N/A',
+            $log->category_name ?? 'N/A',
+            mb_substr($log->response_summary ?? 'N/A', 0, 100),
+        ))->implode("\n");
+
+        $prompt = "You are an expert E-commerce Product Manager.\n"
+            . "Analyze the following user search logs from our affiliate website.\n"
+            . "Provide a concise, actionable report in Markdown format with the following sections:\n\n"
+            . "1. Trending Intents (What are users trying to achieve?)\n"
+            . "2. Missing Inventory / Zero Results (What products or categories do we need to scrape/add?)\n"
+            . "3. AI Concierge Insights (Are users engaging well with the AI? Are there friction points?)\n"
+            . "4. Actionable Recommendations (What exact 2-3 actions should I take tomorrow?)\n\n"
+            . "**CRITICAL SYSTEM RULES FOR ANALYSIS:**\n"
+            . "- For 'homepage_ai', the 'results' count represents the number of matching CATEGORIES found for "
+            . "redirection (usually 1).\n"
+            . "- For 'category_ai' and 'global_search', the 'results' count represents the number of actual PRODUCTS found.\n"
+            . "- DO NOT compare homepage_ai counts to category_ai counts directly, as they measure different things.\n"
+            . "- If 'results' is N/A or NULL, it simply means the count was not logged. It DOES NOT mean there were zero "
+            . "results. Only flag 'Zero Results' if the results count is explicitly 0.\n\n"
+            . "Here is the raw search log data:\n\n"
+            . $formattedLogs;
+
+        $result = $this->gemini->generate($prompt, [
+            'temperature'    => 0.4,
+            'maxOutputTokens' => 8192,
+            'timeout'        => 120,
+        ], config('services.gemini.admin_model'));
+
+        return $result['content'];
     }
 
     /**
