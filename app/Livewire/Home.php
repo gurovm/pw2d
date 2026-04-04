@@ -3,14 +3,12 @@
 namespace App\Livewire;
 
 use App\Models\Category;
-use App\Traits\NormalizesPrompts;
+use App\Support\SamplePrompts;
 use Illuminate\Support\Facades\Cache;
 use Livewire\Component;
 
 class Home extends Component
 {
-    use NormalizesPrompts;
-
     /**
      * Hint-chip buttons call this; it forwards the query to GlobalSearch
      * via a Livewire event so GlobalSearch can run DB + AI search inline.
@@ -39,7 +37,7 @@ class Home extends Component
                 $prompts = Category::whereNotNull('sample_prompts')
                     ->get(['id', 'sample_prompts'])
                     ->pluck('sample_prompts')
-                    ->map(fn ($v) => self::normalizePrompts($v))
+                    ->map(fn ($v) => SamplePrompts::normalize($v))
                     ->flatten()
                     ->filter()
                     ->shuffle()

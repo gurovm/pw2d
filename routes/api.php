@@ -27,7 +27,6 @@ Route::middleware([
     'throttle:30,1',
 ])->group(function () {
     Route::post('/product-import', [ProductImportController::class, 'import']);
-    Route::post('/import-product', [ProductImportController::class, 'import']);
     // Bulk SERP import — single request with array payload, no per-product throttle needed
     Route::post('/products/batch-import', [BatchImportController::class, 'import']);
 });

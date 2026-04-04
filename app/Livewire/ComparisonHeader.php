@@ -4,7 +4,7 @@ namespace App\Livewire;
 
 use App\Models\Category;
 use App\Models\Preset;
-use App\Traits\NormalizesPrompts;
+use App\Support\SamplePrompts;
 use Illuminate\Support\Str;
 use Livewire\Attributes\On;
 use Livewire\Attributes\Url;
@@ -12,7 +12,6 @@ use Livewire\Component;
 
 class ComparisonHeader extends Component
 {
-    use NormalizesPrompts;
     public $features;
     public $weights = [];
     public $priceWeight = 50;
@@ -28,7 +27,7 @@ class ComparisonHeader extends Component
     public array $samplePrompts = [];
 
     #[On('ai-weights-updated')]
-    public function syncAiWeights($weights, $priceWeight, $amazonRatingWeight)
+    public function syncAiWeights($weights, $priceWeight, $amazonRatingWeight): void
     {
         $this->weights = $weights;
         $this->priceWeight = $priceWeight;
@@ -67,34 +66,7 @@ class ComparisonHeader extends Component
 
         $category = Category::with('children')->find($this->categoryId);
 
-        // Priority 1: the category's own prompts
-        $prompts = self::normalizePrompts($category?->sample_prompts);
-
-        // Priority 2: aggregate from child categories (parent hub pages have no own prompts)
-        if (empty($prompts) && $category?->children->isNotEmpty()) {
-            $prompts = $category->children
-                ->pluck('sample_prompts')
-                ->map(fn($v) => self::normalizePrompts($v))
-                ->flatten()
-                ->filter()
-                ->shuffle()
-                ->take(6)
-                ->values()
-                ->toArray();
-        }
-
-        // Priority 3: generate sensible category-aware fallbacks
-        if (empty($prompts)) {
-            $name = strtolower($category?->name ?? 'product');
-            $prompts = [
-                "best {$name} for beginners",
-                "top budget {$name}",
-                "professional {$name} under \$200",
-                "{$name} for everyday use",
-            ];
-        }
-
-        $this->samplePrompts = $prompts;
+        $this->samplePrompts = SamplePrompts::forCategory($category, $category?->children);
 
         // Auto-apply preset if URL contains ?preset=
         if ($this->presetSlug) {
@@ -113,7 +85,7 @@ class ComparisonHeader extends Component
         }
     }
     
-    public function applyPreset($presetId)
+    public function applyPreset($presetId): void
     {
         $this->selectedPreset = $presetId;
 
@@ -199,7 +171,7 @@ class ComparisonHeader extends Component
         $this->dispatch('preset-slug-changed', slug: null);
     }
 
-    public function updatedWeights()
+    public function updatedWeights(): void
     {
         $this->dispatch('weights-updated', 
             weights: $this->weights, 
@@ -208,7 +180,7 @@ class ComparisonHeader extends Component
         );
     }
 
-    public function updatedPriceWeight()
+    public function updatedPriceWeight(): void
     {
         $this->dispatch('weights-updated', 
             weights: $this->weights, 
@@ -217,7 +189,7 @@ class ComparisonHeader extends Component
         );
     }
     
-    public function updatedAmazonRatingWeight()
+    public function updatedAmazonRatingWeight(): void
     {
         $this->dispatch('weights-updated', 
             weights: $this->weights, 
@@ -230,7 +202,7 @@ class ComparisonHeader extends Component
     public $aiMessage = '';
     public $isThinking = false;
 
-    public function submitAiPrompt()
+    public function submitAiPrompt(): void
     {
         if (empty(trim($this->aiPrompt))) {
             return;
@@ -242,15 +214,15 @@ class ComparisonHeader extends Component
     }
 
     #[On('ai-message-received')]
-    public function receiveAiMessage($message)
+    public function receiveAiMessage($message): void
     {
         $this->aiMessage = $message;
         $this->isThinking = false;
     }
 
-    public function toggleAiChat()
+    public function toggleAiChat(): void
     {
-        $this->dispatch('toggle-ai-chat'); 
+        $this->dispatch('toggle-ai-chat');
     }
 
     public function render()

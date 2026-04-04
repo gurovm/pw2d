@@ -2,12 +2,13 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Stancl\Tenancy\Database\Concerns\BelongsToTenant;
 
 class SearchLog extends Model
 {
-    use BelongsToTenant;
+    use HasFactory, BelongsToTenant;
     protected $fillable = [
         'tenant_id',
         'type',
