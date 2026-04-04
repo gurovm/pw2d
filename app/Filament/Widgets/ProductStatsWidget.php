@@ -5,6 +5,7 @@ namespace App\Filament\Widgets;
 use App\Models\Product;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 class ProductStatsWidget extends BaseWidget
@@ -13,12 +14,24 @@ class ProductStatsWidget extends BaseWidget
 
     protected function getStats(): array
     {
-        $total      = Product::count();
-        $live       = Product::where('is_ignored', false)->whereNull('status')->count();
-        $pendingAi  = Product::where('status', 'pending_ai')->count();
-        $failed     = Product::where('status', 'failed')->count();
-        $ignored    = Product::where('is_ignored', true)->count();
-        $noQueue    = DB::table('jobs')->count();
+        $tenantId = tenant('id');
+        $stats = Cache::remember("product-stats-widget:{$tenantId}", 60, function () {
+            return [
+                'total'     => Product::count(),
+                'live'      => Product::where('is_ignored', false)->whereNull('status')->count(),
+                'pendingAi' => Product::where('status', 'pending_ai')->count(),
+                'failed'    => Product::where('status', 'failed')->count(),
+                'ignored'   => Product::where('is_ignored', true)->count(),
+                'noQueue'   => DB::table('jobs')->count(),
+            ];
+        });
+
+        $total     = $stats['total'];
+        $live      = $stats['live'];
+        $pendingAi = $stats['pendingAi'];
+        $failed    = $stats['failed'];
+        $ignored   = $stats['ignored'];
+        $noQueue   = $stats['noQueue'];
 
         return [
             Stat::make('Live Products', $live)

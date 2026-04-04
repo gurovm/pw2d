@@ -4,12 +4,20 @@ namespace Tests\Feature;
 
 use App\Models\Category;
 use App\Models\Product;
+use App\Models\Tenant;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class SitemapCursorTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        Tenant::create(['id' => 'test-tenant', 'name' => 'Test']);
+        tenancy()->initialize(Tenant::find('test-tenant'));
+    }
 
     public function test_sitemap_generates_successfully(): void
     {

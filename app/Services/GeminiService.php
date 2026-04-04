@@ -48,12 +48,28 @@ class GeminiService
             $payload['generationConfig']['thinkingConfig'] = $config['thinkingConfig'];
         }
 
-        $response = Http::timeout($timeout)
-            ->withHeaders(['x-goog-api-key' => $apiKey])
-            ->post(
-                "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent",
-                $payload
+        try {
+            $response = Http::timeout($timeout)
+                ->retry(
+                    3,
+                    fn (int $attempt) => $attempt * 2000,
+                    when: fn (\Throwable $e) => $e instanceof \Illuminate\Http\Client\RequestException
+                        && $e->response?->status() === 429,
+                    throw: false,
+                )
+                ->withHeaders(['x-goog-api-key' => $apiKey])
+                ->post(
+                    "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent",
+                    $payload
+                );
+        } catch (\Illuminate\Http\Client\RequestException $e) {
+            $status = $e->response?->status();
+            throw new \Exception(
+                $status === 429
+                    ? 'Gemini rate limit hit. Please retry.'
+                    : "Gemini API error: {$status}"
             );
+        }
 
         if (! $response->successful()) {
             $status = $response->status();

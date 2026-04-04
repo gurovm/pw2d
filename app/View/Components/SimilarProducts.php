@@ -26,6 +26,7 @@ class SimilarProducts extends Component
                     ->where('price_tier', $product->price_tier)
                     ->whereNull('status')
                     ->where('is_ignored', false)
+                    ->with(['brand', 'offers.store'])
                     ->inRandomOrder()
                     ->limit(4)
                     ->get();
@@ -40,6 +41,7 @@ class SimilarProducts extends Component
                         ->whereNull('status')
                         ->where('is_ignored', false)
                         ->whereNotIn('id', $sameTier->pluck('id'))
+                        ->with(['brand', 'offers.store'])
                         ->inRandomOrder()
                         ->limit($needed)
                         ->get();

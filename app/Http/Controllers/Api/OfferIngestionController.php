@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Services\OfferIngestionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class OfferIngestionController extends Controller
 {
@@ -20,7 +21,7 @@ class OfferIngestionController extends Controller
             'brand'         => 'nullable|string|max:100',
             'scraped_price' => 'nullable|numeric|min:0',
             'image_url'     => 'nullable|url|max:2000',
-            'category_id'   => 'required|exists:categories,id',
+            'category_id'   => ['required', Rule::exists('categories', 'id')->where('tenant_id', tenant('id'))],
             'rating'        => 'nullable|numeric|min:0|max:5',
             'reviews_count' => 'nullable|integer|min:0',
         ]);

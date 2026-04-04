@@ -173,7 +173,7 @@
                                                             [&_ul]:space-y-2 [&_ul]:my-3 [&_li]:text-[12px] sm:[&_li]:text-[13px] [&_li]:text-gray-600 [&_li]:leading-relaxed [&_li]:ml-4 [&_li]:list-disc [&_li]:pl-1
                                                             [&_p]:text-[12px] sm:[&_p]:text-[13px] [&_p]:leading-relaxed [&_p]:text-gray-600 [&_p]:mb-3 [&_p]:last:mb-0
                                                             [&_strong]:text-gray-900 [&_strong]:font-semibold">
-                                                                                                        {!! strip_tags($data['content'], '<p><br><ul><ol><li><strong><em><h3><h4><a>') !!}
+                                                                                                        {!! preg_replace('/href\s*=\s*["\']javascript:[^"\']*["\']/i', '', strip_tags($data['content'], '<p><br><ul><ol><li><strong><em><h3><h4><a>')) !!}
                                                                                                 </div>
                                                                                         @endif
                                                                                 @endforeach
@@ -319,7 +319,7 @@
                                 <div class="flex items-center gap-2 bg-white border border-gray-200 rounded-full px-4 py-1.5 shadow-sm">
                                         <span class="text-sm text-gray-500 whitespace-nowrap">Max price:</span>
                                         <input type="range"
-                                               wire:model.live="selectedPrice"
+                                               wire:model.live.debounce.300ms="selectedPrice"
                                                min="0"
                                                max="{{ $maxPrice }}"
                                                step="5"

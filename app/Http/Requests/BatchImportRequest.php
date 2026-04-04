@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class BatchImportRequest extends FormRequest
 {
@@ -16,7 +17,7 @@ class BatchImportRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'category_id'                => 'required|exists:categories,id',
+            'category_id'                => ['required', Rule::exists('categories', 'id')->where('tenant_id', tenant('id'))],
             'products'                   => 'required|array|min:1|max:100',
             'products.*.asin'            => 'required|string|max:20',
             'products.*.title'           => 'required|string|min:3|max:500',

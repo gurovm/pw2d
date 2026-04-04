@@ -17,6 +17,7 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\Cache;
 
 class ProblemProducts extends Page implements HasTable
 {
@@ -45,7 +46,9 @@ class ProblemProducts extends Page implements HasTable
 
     public static function getNavigationBadge(): ?string
     {
-        $count = static::problemQuery()->count();
+        $count = Cache::remember('problem-products-badge:' . tenant('id'), 120, function () {
+            return static::problemQuery()->count();
+        });
         return $count > 0 ? (string) $count : null;
     }
 

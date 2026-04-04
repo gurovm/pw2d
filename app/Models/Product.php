@@ -110,6 +110,7 @@ class Product extends Model
         return Attribute::make(
             get: function () {
                 return $this->offers
+                    ->filter(fn ($o) => $o->scraped_price !== null)
                     ->sortBy([
                         ['scraped_price', 'asc'],
                         [fn ($a, $b) => ($b->store?->commission_rate ?? 0) <=> ($a->store?->commission_rate ?? 0)],

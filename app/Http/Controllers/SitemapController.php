@@ -11,6 +11,10 @@ class SitemapController extends Controller
 {
     public function index()
     {
+        if (!tenancy()->initialized) {
+            abort(404);
+        }
+
         $categories = Category::select(['id', 'slug', 'updated_at'])->get();
         $products   = Product::where('is_ignored', false)
                         ->whereNull('status')

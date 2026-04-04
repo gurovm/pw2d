@@ -4,12 +4,12 @@ namespace App\Livewire;
 
 use App\Models\Category;
 use App\Models\Feature;
-use App\Models\Preset;
 use App\Models\Product;
 use App\Models\ProductOffer;
 use App\Models\SearchLog;
 use App\Services\ProductScoringService;
-use App\Traits\NormalizesPrompts;
+use App\Support\SamplePrompts;
+use App\Support\SeoSchema;
 use Illuminate\Support\Facades\Cache;
 use App\Services\AiService;
 use Livewire\Attributes\Layout;
@@ -21,7 +21,6 @@ use Livewire\Component;
 
 class ProductCompare extends Component
 {
-    use NormalizesPrompts;
     public $category;
     public $subcategories; // Child categories (if this is a parent category)
     public $features; // Keeping this public is fine as it's a small collection
@@ -89,7 +88,7 @@ class ProductCompare extends Component
     public function selectedProduct()
     {
         return $this->selectedProductSlug
-            ? \App\Models\Product::with(['brand', 'featureValues.feature'])->where('slug', $this->selectedProductSlug)->first()
+            ? \App\Models\Product::with(['brand', 'featureValues.feature', 'offers.store'])->where('slug', $this->selectedProductSlug)->first()
             : null;
     }
 
@@ -180,7 +179,7 @@ class ProductCompare extends Component
             $scoreMap = $scored->keyBy('id');
 
             $fullProducts = Product::whereIn('id', $compareIds)
-                ->with(['brand', 'featureValues.feature'])
+                ->with(['brand', 'featureValues.feature', 'offers.store'])
                 ->get()
                 ->keyBy('id');
 
@@ -206,7 +205,7 @@ class ProductCompare extends Component
 
         // Full data query for only the visible products
         $fullProducts = Product::whereIn('id', $topIds)
-            ->with(['brand', 'featureValues.feature'])
+            ->with(['brand', 'featureValues.feature', 'offers.store'])
             ->get()
             ->keyBy('id');
 
@@ -354,16 +353,29 @@ class ProductCompare extends Component
         $this->isComparing = false;
     }
 
-    public function clearFilters()
+    public function clearFilters(): void
     {
         $this->filterBrand = '';
         $this->selectedPrice = $this->maxPrice;
     }
 
-    public function analyzeUserNeeds()
+    public function analyzeUserNeeds(): void
     {
         if (empty(trim($this->userInput))) {
             return;
+        }
+
+        // Rate limit: max 10 AI calls per minute per session/IP
+        $rateLimitKey = 'ai-search:' . (session()->getId() ?? request()->ip());
+        if (cache()->get($rateLimitKey, 0) >= 10) {
+            $this->aiMessage = 'Too many requests. Please wait a moment before trying again.';
+            $this->dispatch('ai-message-received', message: $this->aiMessage);
+            return;
+        }
+        $newCount = cache()->increment($rateLimitKey);
+        // Set the TTL on first increment; subsequent increments preserve the existing key
+        if ($newCount === 1) {
+            cache()->put($rateLimitKey, 1, 60);
         }
 
         $this->isAiProcessing = true;
@@ -435,7 +447,7 @@ class ProductCompare extends Component
         }
     }
 
-    public function sendMessage()
+    public function sendMessage(): void
     {
         $this->analyzeUserNeeds();
     }
@@ -447,7 +459,7 @@ class ProductCompare extends Component
     }
 
     #[On('weights-updated')]
-    public function handleWeightsUpdated($weights, $priceWeight, $amazonRatingWeight, $isFromAi = false)
+    public function handleWeightsUpdated($weights, $priceWeight, $amazonRatingWeight, $isFromAi = false): void
     {
         $this->weights = $weights;
         $this->priceWeight = $priceWeight;
@@ -461,20 +473,20 @@ class ProductCompare extends Component
     }
 
     #[On('toggle-ai-chat')]
-    public function toggleAiChat()
+    public function toggleAiChat(): void
     {
         $this->showAiChat = !$this->showAiChat;
     }
 
     #[On('trigger-ai-concierge')]
-    public function triggerAiConcierge($prompt)
+    public function triggerAiConcierge($prompt): void
     {
         $this->userInput = $prompt;
         $this->showAiChat = true;
         $this->analyzeUserNeeds();
     }
 
-    public function loadMore()
+    public function loadMore(): void
     {
         $this->displayLimit += 12;
     }
@@ -482,180 +494,32 @@ class ProductCompare extends Component
     #[Layout('components.layouts.app')]
     public function render()
     {
-        if ($this->selectedProductSlug && $this->selectedProduct) {
-            $metaTitle = "{$this->selectedProduct->name} - AI Review & Match Score";
-            $metaDescription = $this->selectedProduct->ai_summary
-                ? \Illuminate\Support\Str::limit(strip_tags($this->selectedProduct->ai_summary), 150)
-                : "Read the comprehensive AI review and view the Match Score for the {$this->selectedProduct->name}.";
-            $canonicalUrl = route('product.show', ['product' => $this->selectedProduct->slug]);
-
-            $schema = [
-                '@context' => 'https://schema.org/',
-                '@type' => 'Product',
-                'name' => $this->selectedProduct->name,
-                'description' => $this->selectedProduct->ai_summary ? strip_tags($this->selectedProduct->ai_summary) : $this->selectedProduct->name,
-                'brand' => ['@type' => 'Brand', 'name' => $this->selectedProduct->brand?->name ?? '']
-            ];
-
-            if ($this->selectedProduct->image_path) {
-                $schema['image'] = \Illuminate\Support\Facades\Storage::url($this->selectedProduct->image_path);
-            }
-
-            if ($this->selectedProduct->amazon_reviews_count > 0 && $this->selectedProduct->amazon_rating) {
-                $schema['aggregateRating'] = [
-                    '@type' => 'AggregateRating',
-                    'ratingValue' => $this->selectedProduct->amazon_rating,
-                    'reviewCount' => $this->selectedProduct->amazon_reviews_count
-                ];
-            }
-        } elseif ($this->subcategories->isNotEmpty()) {
-            $currentYear = date('Y');
-            $metaTitle = "{$this->category->name} - Browse Categories | pw2d";
-            $metaDescription = $this->category->description
-                ? \Illuminate\Support\Str::limit($this->category->description, 150)
-                : "Browse all {$this->category->name} subcategories and find the best products for your needs.";
-            $canonicalUrl = route('category.show', ['slug' => $this->category->slug]);
-            $schema = [
-                '@context' => 'https://schema.org/',
-                '@type' => 'CollectionPage',
-                'name' => $this->category->name,
-                'description' => $metaDescription,
-            ];
-        } else {
-            $currentYear = date('Y');
-            $metaTitle = "{$this->category->name} - Compare Best Models in {$currentYear} | pw2d";
-
-            $descriptionText = '';
-            if (is_array($this->category->buying_guide) && !empty($this->category->buying_guide['how_to_decide'])) {
-                $descriptionText = strip_tags($this->category->buying_guide['how_to_decide']);
-            }
-            $metaDescription = !empty($descriptionText)
-                ? \Illuminate\Support\Str::limit($descriptionText, 150)
-                : "Compare the absolute best {$this->category->name} on the market. Use our AI-driven sliders to find the perfect match for your exact needs.";
-
-            $canonicalUrl = route('category.show', ['slug' => $this->category->slug]);
-
-            // Preset landing page: override title, description, and canonical with preset-specific values.
-            // $activePresetSlug comes from #[Url(as: 'preset')] so it's valid on both initial load and Livewire re-renders.
-            if (!empty($this->activePresetSlug)) {
-                $activePreset = Preset::where('category_id', $this->category->id)
-                    ->get()
-                    ->first(fn(Preset $p) => \Illuminate\Support\Str::slug($p->name) === $this->activePresetSlug);
-
-                if ($activePreset) {
-                    $metaTitle = "Best {$this->category->name} for {$activePreset->name} | pw2d";
-                    $metaDescription = $activePreset->seo_description
-                        ?? "Top-ranked {$this->category->name} for {$activePreset->name} users. Compare by the features that matter most for your specific use case.";
-                    $canonicalUrl = route('category.show', ['slug' => $this->category->slug]) . "?preset={$this->activePresetSlug}";
-                }
-            }
-
-            $schema = [
-                '@context' => 'https://schema.org/',
-                '@type' => 'ItemList',
-                'name' => 'Best ' . $this->category->name,
-                'description' => !empty($descriptionText) ? \Illuminate\Support\Str::limit($descriptionText, 200, '') : '',
-                'itemListElement' => []
-            ];
-
-            $position = 1;
-            // WE NOW USE ONLY THE VISIBLE PRODUCTS FOR SCHEMA (GREAT FOR SEO!)
-            foreach ($this->visibleProducts as $product) {
-                $item = [
-                    '@type' => 'Product',
-                    'name'  => $product->name,
-                    'url'   => route('product.show', ['product' => $product->slug]),
-                ];
-
-                // image — use Amazon CDN URL (complies with Associates TOS; no local paths)
-                $offerImage = $product->offers?->first()?->image_url;
-                if (!empty($offerImage)) {
-                    $item['image'] = $offerImage;
-                }
-
-                // description — strip any HTML tags from the AI-generated verdict
-                if (!empty($product->ai_summary)) {
-                    $item['description'] = strip_tags($product->ai_summary);
-                }
-
-                // brand — fall back to first word of product name if brand relation is missing
-                $brandName = $product->brand?->name ?? explode(' ', $product->name)[0];
-                $item['brand'] = ['@type' => 'Brand', 'name' => $brandName];
-
-                // aggregateRating — use real Amazon stars/reviews; fall back reviewCount to 50
-                // so Google always has a valid integer alongside ratingValue.
-                // Offers (price) intentionally omitted — scraped prices are estimates and
-                // violate Google's strict price-matching rules for Merchant Center rich snippets.
-                if (!empty($product->amazon_rating)) {
-                    $item['aggregateRating'] = [
-                        '@type'       => 'AggregateRating',
-                        'ratingValue' => $product->amazon_rating,
-                        'bestRating'  => 5,
-                        'worstRating' => 1,
-                        'reviewCount' => $product->amazon_reviews_count > 0
-                            ? $product->amazon_reviews_count
-                            : 50,
-                    ];
-                }
-
-                $schema['itemListElement'][] = [
-                    '@type'    => 'ListItem',
-                    'position' => $position,
-                    'item'     => $item,
-                ];
-                $position++;
-            }
-        }
+        $seo = SeoSchema::forCategoryPage(
+            $this->category,
+            $this->subcategories,
+            $this->selectedProductSlug,
+            $this->selectedProduct,
+            $this->activePresetSlug,
+            $this->visibleProducts,
+        );
 
         // Build sample_prompts for the parent-category hero search typewriter.
         // Only computed when subcategories exist (parent category view).
-        $samplePrompts = [];
-        if ($this->subcategories->isNotEmpty()) {
-            // Priority 1: the category's own prompts
-            $samplePrompts = self::normalizePrompts($this->category->sample_prompts);
+        $samplePrompts = $this->subcategories->isNotEmpty()
+            ? SamplePrompts::forCategory($this->category, $this->subcategories)
+            : [];
 
-            // Priority 2: aggregate from the loaded subcategories
-            if (empty($samplePrompts)) {
-                $samplePrompts = $this->subcategories
-                    ->pluck('sample_prompts')
-                    ->map(fn($v) => self::normalizePrompts($v))
-                    ->flatten()
-                    ->filter()
-                    ->shuffle()
-                    ->take(6)
-                    ->values()
-                    ->toArray();
-            }
-
-            // Priority 3: category-aware fallback
-            if (empty($samplePrompts)) {
-                $name = strtolower($this->category->name);
-                $samplePrompts = [
-                    "best {$name} for beginners",
-                    "top budget {$name}",
-                    "professional {$name} under \$200",
-                    "{$name} for everyday use",
-                ];
-            }
-        }
-
-        // Build absolute OG image URL for the initial SSR (covers Googlebot + social scrapers)
-        $ogImage = null;
-        if ($this->selectedProductSlug && $this->selectedProduct) {
-            $imageUrl = $this->selectedProduct->image_url;
-            $ogImage  = $imageUrl
-                ? (str_starts_with($imageUrl, 'http') ? $imageUrl : url($imageUrl))
-                : null;
-        }
-
-        return view('livewire.product-compare', ['samplePrompts' => $samplePrompts, 'activePreset' => $activePreset ?? null])
+        return view('livewire.product-compare', [
+            'samplePrompts' => $samplePrompts,
+            'activePreset'  => $seo['activePreset'],
+        ])
             ->layoutData([
-                'metaTitle'       => $metaTitle,
-                'metaDescription' => $metaDescription,
-                'canonicalUrl'    => $canonicalUrl,
-                'ogType'          => ($this->selectedProductSlug && $this->selectedProduct) ? 'product' : 'website',
-                'ogImage'         => $ogImage,
-                'schemaJson'      => json_encode($schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+                'metaTitle'       => $seo['title'],
+                'metaDescription' => $seo['description'],
+                'canonicalUrl'    => $seo['canonical'],
+                'ogType'          => $seo['ogType'],
+                'ogImage'         => $seo['ogImage'],
+                'schemaJson'      => json_encode($seo['schemas'][0], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
             ]);
     }
 }

@@ -169,10 +169,12 @@ class ProcessPendingProduct implements ShouldQueue
                 'status'               => null, // fully processed
             ]);
 
-            // Invalidate stale negative matching decisions so future imports re-evaluate
+            // Invalidate stale negative matching decisions for this brand so future imports re-evaluate.
+            // Scoped to brand to avoid wiping unrelated decisions across the tenant.
             AiMatchingDecision::withoutGlobalScopes()
                 ->where('tenant_id', $product->tenant_id)
                 ->where('is_match', false)
+                ->where('scraped_raw_name', 'LIKE', '%' . str_replace(['%', '_'], ['\%', '\_'], $parsed['brand']) . '%')
                 ->delete();
 
             foreach ($category->features as $feature) {

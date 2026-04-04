@@ -12,7 +12,6 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 
 class EditCategory extends EditRecord
@@ -38,73 +37,32 @@ class EditCategory extends EditRecord
         ];
     }
 
-    // ─── HELPER: Call Gemini Text API ───────────────────────────
+    // ─── HELPER: Call AiService for text generation ─────────────
 
-    private function callGeminiText(string $prompt): string
+    private function callAiText(string $prompt): string
     {
-        $gemini = app(\App\Services\GeminiService::class);
-        $result = $gemini->generate($prompt, [
-            'timeout'         => 120,
-            'maxOutputTokens' => 8000,
-        ], config('services.gemini.admin_model'));
-
-        return $result['content'];
+        return app(\App\Services\AiService::class)->generateCategoryContent($prompt);
     }
 
-    // ─── HELPER: Call Gemini Image API and save file ─────────────
+    // ─── HELPER: Call AiService for image generation and save file ─
 
     /**
-     * Calls the Gemini image generation API and saves the resulting image to storage.
-     * Returns the storage path (e.g. "categories/images/slug-ai.png") on success.
+     * Calls AiService to generate an image and saves the resulting file to storage.
+     * Returns the storage path (e.g. "categories/images/slug-ai.webp") on success.
      * Throws on any failure so callers can handle notifications themselves.
      */
-    private function callGeminiImage(string $imagePrompt, $record): string
+    private function callAiImage(string $imagePrompt, $record): string
     {
-        $apiKey = config('services.gemini.api_key');
-        if (!$apiKey) {
-            throw new \Exception('GEMINI_API_KEY is not set in your .env file.');
-        }
+        $image = app(\App\Services\AiService::class)->generateCategoryImage($imagePrompt);
 
-        $response = Http::timeout(120)->withHeaders([
-            'x-goog-api-key' => $apiKey,
-        ])->post('https://generativelanguage.googleapis.com/v1beta/models/' . config('services.gemini.image_model') . ':generateContent', [
-            'contents' => [
-                ['parts' => [['text' => $imagePrompt]]]
-            ],
-            'generationConfig' => [
-                'responseModalities' => ['TEXT', 'IMAGE'],
-            ],
-        ]);
-
-        if ($response->failed()) {
-            throw new \Exception('Image API failed: ' . $response->body());
-        }
-
-        $responseData = $response->json();
-        $parts = $responseData['candidates'][0]['content']['parts'] ?? [];
-
-        $imageData = null;
-        $mimeType = 'image/png';
-        foreach ($parts as $part) {
-            if (isset($part['inlineData'])) {
-                $imageData = $part['inlineData']['data'];
-                $mimeType  = $part['inlineData']['mimeType'] ?? 'image/png';
-                break;
-            }
-        }
-
-        if (!$imageData) {
-            throw new \Exception('No image data returned from AI. The model may not support image generation with this prompt.');
-        }
-
-        $extension = match ($mimeType) {
+        $extension = match ($image['mimeType']) {
             'image/jpeg', 'image/jpg' => 'jpg',
             'image/webp'              => 'webp',
             default                   => 'png',
         };
 
         $filename = 'categories/images/' . $record->slug . '-ai.' . $extension;
-        Storage::disk('public')->put($filename, base64_decode($imageData));
+        Storage::disk('public')->put($filename, $image['data']);
 
         // Optimize: convert to WebP, resize to 800px, delete original
         $absolutePath = Storage::disk('public')->path($filename);
@@ -212,7 +170,7 @@ class EditCategory extends EditRecord
                 set_time_limit(120);
 
                 try {
-                    $this->callGeminiImage($data['image_prompt'], $record);
+                    $this->callAiImage($data['image_prompt'], $record);
 
                     Notification::make()
                         ->title('Category Image Generated')
@@ -252,7 +210,7 @@ class EditCategory extends EditRecord
                 set_time_limit(120);
 
                 try {
-                    $responseText = $this->callGeminiText($data['ai_prompt']);
+                    $responseText = $this->callAiText($data['ai_prompt']);
                     $decoded = json_decode($responseText, true);
 
                     if (json_last_error() !== JSON_ERROR_NONE || !isset($decoded['buying_guide'])) {
@@ -299,7 +257,7 @@ class EditCategory extends EditRecord
                         $record->features()->delete();
                     }
 
-                    $responseText = $this->callGeminiText($data['ai_prompt']);
+                    $responseText = $this->callAiText($data['ai_prompt']);
                     $decoded = json_decode($responseText, true);
 
                     if (json_last_error() !== JSON_ERROR_NONE || !isset($decoded['features'])) {
@@ -356,7 +314,7 @@ class EditCategory extends EditRecord
                         $record->presets()->delete();
                     }
 
-                    $responseText = $this->callGeminiText($data['ai_prompt']);
+                    $responseText = $this->callAiText($data['ai_prompt']);
                     $decoded = json_decode($responseText, true);
 
                     if (json_last_error() !== JSON_ERROR_NONE || !isset($decoded['presets'])) {
@@ -417,7 +375,7 @@ class EditCategory extends EditRecord
                         $record->presets()->delete();
                     }
 
-                    $responseText = $this->callGeminiText($data['ai_prompt']);
+                    $responseText = $this->callAiText($data['ai_prompt']);
                     $decoded = json_decode($responseText, true);
 
                     if (json_last_error() !== JSON_ERROR_NONE || !isset($decoded['features']) || !isset($decoded['presets'])) {
@@ -456,7 +414,7 @@ class EditCategory extends EditRecord
 
                     // Optionally generate the hero image
                     if ($data['generate_image']) {
-                        $this->callGeminiImage($this->imagePrompt($record->name), $record);
+                        $this->callAiImage($this->imagePrompt($record->name), $record);
 
                         Notification::make()->title('Category Image Generated')->success()->send();
                     }

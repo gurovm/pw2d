@@ -499,6 +499,70 @@ PROMPT;
     }
 
     /**
+     * Generate category content (buying guide, features, presets, etc.) from an admin prompt.
+     * Used by EditCategory AI generator actions.
+     *
+     * Returns the raw text content string from the model.
+     */
+    public function generateCategoryContent(string $prompt): string
+    {
+        $result = $this->gemini->generate($prompt, [
+            'timeout'         => 120,
+            'maxOutputTokens' => 8000,
+        ], config('services.gemini.admin_model'));
+
+        return $result['content'];
+    }
+
+    /**
+     * Generate a category hero image from a text prompt using the image model.
+     * Used by EditCategory AI generator actions.
+     *
+     * Returns the base64-decoded image binary and its MIME type so the caller
+     * can persist the file without this service touching the filesystem.
+     *
+     * @return array{data: string, mimeType: string}
+     * @throws \Exception on API error or when the model returns no image.
+     */
+    public function generateCategoryImage(string $prompt): array
+    {
+        $apiKey = config('services.gemini.api_key');
+        if (!$apiKey) {
+            throw new \Exception('GEMINI_API_KEY is not set in your .env file.');
+        }
+
+        $model = config('services.gemini.image_model');
+
+        $response = \Illuminate\Support\Facades\Http::timeout(120)
+            ->withHeaders(['x-goog-api-key' => $apiKey])
+            ->post("https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent", [
+                'contents'         => [
+                    ['parts' => [['text' => $prompt]]],
+                ],
+                'generationConfig' => [
+                    'responseModalities' => ['TEXT', 'IMAGE'],
+                ],
+            ]);
+
+        if ($response->failed()) {
+            throw new \Exception('Image API failed: ' . $response->body());
+        }
+
+        $parts = $response->json('candidates.0.content.parts') ?? [];
+
+        foreach ($parts as $part) {
+            if (isset($part['inlineData'])) {
+                return [
+                    'data'     => base64_decode($part['inlineData']['data']),
+                    'mimeType' => $part['inlineData']['mimeType'] ?? 'image/png',
+                ];
+            }
+        }
+
+        throw new \Exception('No image data returned from AI. The model may not support image generation with this prompt.');
+    }
+
+    /**
      * Extract product data from raw pasted text (admin Filament import).
      * Used by ListProducts "Import via AI" action.
      */

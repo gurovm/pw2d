@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class ProductImportRequest extends FormRequest
 {
@@ -16,7 +17,7 @@ class ProductImportRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'category_id'   => 'required|exists:categories,id',
+            'category_id'   => ['required', Rule::exists('categories', 'id')->where('tenant_id', tenant('id'))],
             'external_id'   => 'required|string|max:20',
             'title'         => 'required|string|min:3|max:500',
             'price'         => 'nullable|numeric|min:0',

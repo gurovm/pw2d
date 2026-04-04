@@ -105,6 +105,19 @@ class GlobalSearch extends Component
             return;
         }
 
+        // Rate limit: max 10 AI calls per minute per session/IP
+        $rateLimitKey = 'ai-search:' . (session()->getId() ?? request()->ip());
+        if (cache()->get($rateLimitKey, 0) >= 10) {
+            $this->aiError       = 'Too many requests. Please wait a moment before trying again.';
+            $this->isAiSearching = false;
+            $this->open          = true;
+            return;
+        }
+        $newCount = cache()->increment($rateLimitKey);
+        if ($newCount === 1) {
+            cache()->put($rateLimitKey, 1, 60);
+        }
+
         $this->dbResults     = [];
         $this->aiSuggestion  = null;
         $this->aiError       = null;
