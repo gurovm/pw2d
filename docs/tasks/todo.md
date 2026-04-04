@@ -84,6 +84,8 @@ Consolidated from 15 parallel agent audits (5 chunks x 3 agents). Deduplicated a
 
 - [x] **Spec 013: Enhance MergeDuplicateProducts command** -- Added `--category` option, Phase 2 brand-spelling dedup via `normalizeBrandForComparison()`, feature value transfer in `mergeDuplicate()`, `price_tier` recalculation after merges, and improved two-phase console output.
 
+- [ ] **Chrome extension: fix Amazon reviews_count extraction** -- 88 Amazon products ended up with `amazon_reviews_count=0`, likely from an older extension version or Amazon layouts not covered by the current 5-strategy `extractReviewsCount()` in `chrome_extension/content.js:126`. Action items: (a) find a specific product URL where the extension currently returns 0 reviews, (b) inspect DOM to find the correct selector, (c) add as 6th strategy. Also fix `BatchImportController.php` lines 80/100 and `ProductImportController.php` lines 100/115 to store `null` instead of `0` when scraper sends missing reviews_count — so we can distinguish "missing data" from "zero reviews". *[Extension, API]*
+
 ## P3 -- Low Priority (Polish)
 
 - [ ] **L1: Add N+1 eager loading in Filament resources** -- AiMatchingDecisionResource, CategoryResource, FeatureValuesRelationManager. *[Perf-Filament]*

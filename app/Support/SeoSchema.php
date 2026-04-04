@@ -224,19 +224,18 @@ class SeoSchema
             $brandName    = $product->brand?->name ?? explode(' ', $product->name)[0];
             $item['brand'] = ['@type' => 'Brand', 'name' => $brandName];
 
-            // aggregateRating — use real Amazon stars/reviews; fall back reviewCount to 50
-            // so Google always has a valid integer alongside ratingValue.
+            // aggregateRating — only emit when BOTH rating and reviewCount are real.
+            // Google rejects AggregateRating with missing/zero reviewCount, which can
+            // prevent indexing. Better to omit entirely than to emit invalid data.
             // Offers (price) intentionally omitted — scraped prices are estimates and
             // violate Google's strict price-matching rules for Merchant Center rich snippets.
-            if (!empty($product->amazon_rating)) {
+            if (!empty($product->amazon_rating) && (int) $product->amazon_reviews_count > 0) {
                 $item['aggregateRating'] = [
                     '@type'       => 'AggregateRating',
                     'ratingValue' => $product->amazon_rating,
                     'bestRating'  => 5,
                     'worstRating' => 1,
-                    'reviewCount' => $product->amazon_reviews_count > 0
-                        ? $product->amazon_reviews_count
-                        : 50,
+                    'reviewCount' => $product->amazon_reviews_count,
                 ];
             }
 
