@@ -20,31 +20,31 @@ Consolidated from 15 parallel agent audits (5 chunks x 3 agents). Deduplicated a
 
 ## P1 -- Fix Before Next Deploy (Security + Performance)
 
-- [ ] **S8: Tenant-scope `exists:categories,id` validation** -- Bypasses Eloquent scope (3 locations). Add `->where('tenant_id', tenant('id'))` to `Rule::exists()`. *[Security-API, Security-Models]*
+- [x] **S8: Tenant-scope `exists:categories,id` validation** -- Added `Rule::exists()->where('tenant_id', tenant('id'))` in 3 files.
 
-- [ ] **S9: Guard SitemapController on central domain** -- Leaks all tenants' data when tenancy not initialized. Add `if (!tenancy()->initialized) abort(404)`. *[Security-API]*
+- [x] **S9: Guard SitemapController on central domain** -- Added `abort(404)` when tenancy not initialized.
 
-- [ ] **S10: Route EditCategory AI calls through AiService** -- Calls `GeminiService` directly + raw HTTP. Bypasses mandatory AiService layer. *[Review-Filament, Security-Filament]*
+- [x] **S10: Route EditCategory AI calls through AiService** -- Added `generateCategoryContent()` and `generateCategoryImage()` to AiService.
 
-- [ ] **S11: Add rate limit on AI search** -- `analyzeUserNeeds()` and `triggerAiSearch()` have no rate limiting. Anonymous users can exhaust Gemini quota. *[Security-Frontend]*
+- [x] **S11: Add rate limit on AI search** -- 10 calls/min per session in ProductCompare and GlobalSearch.
 
-- [ ] **S12: Fix `strip_tags` allowing `javascript:` URIs** -- Buying guide `strip_tags($html, '<a>')` permits `<a href="javascript:...">`. Sanitize href attribute. *[Security-Frontend, Review-Filament]*
+- [x] **S12: Fix `strip_tags` allowing `javascript:` URIs** -- Added `preg_replace` to strip `javascript:` hrefs.
 
-- [ ] **P1: Add `offers.store` eager loading everywhere** -- Missing in `visibleProducts`, `selectedProduct`, `SimilarProducts`. ~36-48 extra queries per page render. *[Perf-Models, Perf-Frontend, Review-Models, Review-Frontend]*
+- [x] **P1: Add `offers.store` eager loading everywhere** -- Added to visibleProducts, selectedProduct, SimilarProducts.
 
-- [ ] **P2: Debounce price slider** -- `wire:model.live` fires 20-50 requests per drag. Use `wire:model.live.debounce.300ms`. *[Perf-Frontend]*
+- [x] **P2: Debounce price slider** -- Changed to `wire:model.live.debounce.300ms`.
 
 - [ ] **P3: Wrap batch import in transaction + bulk insert** -- 200+ individual INSERTs per batch. Use `insert()` inside `DB::transaction()`. *[Perf-API]*
 
-- [ ] **P4: Add HTTP retry for Gemini 429** -- Currently throws immediately, wasting job retries. Add `Http::retry(3, ...)` with 429-only when clause. *[Perf-AI]*
+- [x] **P4: Add HTTP retry for Gemini 429** -- 3 attempts with exponential backoff, 429-only.
 
-- [ ] **P5: Narrow negative matching decision purge** -- Deletes ALL negative decisions per tenant on every product. Scope to same-brand only. *[Perf-AI, Review-AI]*
+- [x] **P5: Narrow negative matching decision purge** -- Scoped to same-brand only.
 
-- [ ] **P6: Cache ProblemProducts badge query** -- Heavy REGEXP query fires on every admin page render. Add `Cache::remember()` 120s. *[Perf-Filament]*
+- [x] **P6: Cache ProblemProducts badge query** -- 120s TTL with tenant-scoped key.
 
-- [ ] **P7: Cache ProductStatsWidget queries** -- 6 uncached COUNT queries on every dashboard render. Consolidate + cache 60s. *[Perf-Filament]*
+- [x] **P7: Cache ProductStatsWidget queries** -- 60s TTL, consolidated 6 queries into 1 cached block.
 
-- [ ] **P8: Fix null-price offers surfacing as "best"** -- `bestOffer` accessor doesn't filter `scraped_price = null`. *[Review-Models]*
+- [x] **P8: Fix null-price offers surfacing as "best"** -- Added null filter before sort.
 
 ## P2 -- Fix Soon (Code Quality + Medium Security)
 
