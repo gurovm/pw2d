@@ -797,15 +797,23 @@ function extractWllRatingAndReviews(scope) {
     let rating = null;
     let reviews_count = null;
 
-    // 1. Yotpo: aria-label/title on stars span contains both values
-    //    e.g. "4.9 out 5 stars rating in total 487 reviews"
-    const yotpoStar = scope.querySelector('.yotpo-sr-bottom-line-summary [aria-label*="rating"], .yotpo-sr-bottom-line-summary [title*="rating"]');
-    if (yotpoStar) {
-        const label = yotpoStar.getAttribute('aria-label') || yotpoStar.getAttribute('title') || '';
+    // 1. Yotpo: any element with aria-label/title matching "X out 5 stars ... N reviews"
+    //    The attribute may be on the button (product page) or on a nested span (listing page).
+    const yotpoSelectors = [
+        '[aria-label*="stars rating in total"]',
+        '[title*="stars rating in total"]',
+        '[aria-label*="out 5 stars"]',
+        '[title*="out 5 stars"]',
+    ];
+    for (const sel of yotpoSelectors) {
+        const el = scope.querySelector(sel);
+        if (!el) continue;
+        const label = el.getAttribute('aria-label') || el.getAttribute('title') || '';
         const rm = label.match(/([\d.]+)\s+out\s+(?:of\s+)?5/i);
         if (rm) rating = parseFloat(rm[1]);
         const cm = label.match(/(\d[\d,]*)\s+reviews?/i);
         if (cm) reviews_count = parseInt(cm[1].replace(/,/g, ''));
+        if (rating !== null || reviews_count !== null) break;
     }
 
     // 2. Yotpo: visible "N Reviews" text
