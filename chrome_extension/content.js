@@ -786,6 +786,53 @@ function extractSeattleCoffeeGearProduct(url) {
 
 // ── Whole Latte Love extractors ───────────────────────────────
 
+/**
+ * Extract rating + reviews_count from a WLL card or product page.
+ * Handles Yotpo widgets (aria-label/title on stars span, or visible "N Reviews" text),
+ * stamped.io, judge.me, and generic data-rating/data-number-of-reviews attributes.
+ * Returns { rating, reviews_count } with null values if not found.
+ */
+function extractWllRatingAndReviews(scope) {
+    scope = scope || document;
+    let rating = null;
+    let reviews_count = null;
+
+    // 1. Yotpo: aria-label/title on stars span contains both values
+    //    e.g. "4.9 out 5 stars rating in total 487 reviews"
+    const yotpoStar = scope.querySelector('.yotpo-sr-bottom-line-summary [aria-label*="rating"], .yotpo-sr-bottom-line-summary [title*="rating"]');
+    if (yotpoStar) {
+        const label = yotpoStar.getAttribute('aria-label') || yotpoStar.getAttribute('title') || '';
+        const rm = label.match(/([\d.]+)\s+out\s+(?:of\s+)?5/i);
+        if (rm) rating = parseFloat(rm[1]);
+        const cm = label.match(/(\d[\d,]*)\s+reviews?/i);
+        if (cm) reviews_count = parseInt(cm[1].replace(/,/g, ''));
+    }
+
+    // 2. Yotpo: visible "N Reviews" text
+    if (reviews_count === null) {
+        const yotpoText = scope.querySelector('.yotpo-sr-bottom-line-text');
+        if (yotpoText) {
+            const m = yotpoText.textContent.match(/(\d[\d,]*)\s+reviews?/i);
+            if (m) reviews_count = parseInt(m[1].replace(/,/g, ''));
+        }
+    }
+
+    // 3. Legacy: stamped/judge.me/SPR data attributes
+    if (rating === null) {
+        const ratingEl = scope.querySelector('[data-rating], .stamped-badge [data-rating], .jdgm-prev-badge [data-average-rating]');
+        if (ratingEl) rating = parseFloat(ratingEl.getAttribute('data-rating') || ratingEl.getAttribute('data-average-rating'));
+    }
+    if (reviews_count === null) {
+        const reviewsEl = scope.querySelector('[data-number-of-reviews], .stamped-badge-caption, .jdgm-prev-badge [data-number-of-reviews]');
+        if (reviewsEl) {
+            const m = (reviewsEl.getAttribute('data-number-of-reviews') || reviewsEl.textContent).match(/(\d[\d,]*)/);
+            if (m) reviews_count = parseInt(m[1].replace(/,/g, ''));
+        }
+    }
+
+    return { rating, reviews_count };
+}
+
 function extractWholeLatteLoveProduct(url) {
     // Title: from data attribute on gallery, or h1, or product__title
     let title = document.querySelector('media-gallery[data-product-title]')?.getAttribute('data-product-title');
@@ -823,17 +870,8 @@ function extractWholeLatteLoveProduct(url) {
         if (image.startsWith('//')) image = 'https:' + image;
     }
 
-    // Rating from stamped/judge.me/SPR review badges
-    let rating = null;
-    const ratingEl = document.querySelector('[data-rating], .stamped-badge [data-rating], .jdgm-prev-badge [data-average-rating]');
-    if (ratingEl) rating = parseFloat(ratingEl.getAttribute('data-rating') || ratingEl.getAttribute('data-average-rating'));
-
-    let reviews_count = null;
-    const reviewsEl = document.querySelector('[data-number-of-reviews], .stamped-badge-caption, .jdgm-prev-badge [data-number-of-reviews]');
-    if (reviewsEl) {
-        const m = (reviewsEl.getAttribute('data-number-of-reviews') || reviewsEl.textContent).match(/(\d+)/);
-        if (m) reviews_count = parseInt(m[1]);
-    }
+    // Rating + reviews count (Yotpo, stamped, judge.me, etc.)
+    const { rating, reviews_count } = extractWllRatingAndReviews(document);
 
     return {
         url,
@@ -923,6 +961,9 @@ function extractWholeLatteLoveListing() {
 
             const fullUrl = cleanHref.startsWith('http') ? cleanHref : `https://${host}${cleanHref}`;
 
+            // Rating + reviews count scoped to this card (Yotpo widget)
+            const { rating, reviews_count } = extractWllRatingAndReviews(card);
+
             products.push({
                 url: fullUrl,
                 store_slug: 'whole-latte-love',
@@ -930,8 +971,8 @@ function extractWholeLatteLoveListing() {
                 brand,
                 scraped_price: price,
                 image_url: image,
-                rating: null,
-                reviews_count: null,
+                rating,
+                reviews_count,
             });
         } catch (e) {
             console.warn('PW2D: Skipped WLL product:', e);
