@@ -37,6 +37,9 @@ class ProblemProducts extends Page implements HasTable
         'knock box', 'tamper', 'portafilter basket',
     ];
 
+    /** Stores whose product pages expose review counts — we expect this data. */
+    private const STORES_WITH_REVIEWS = ['amazon', 'clive-coffee', 'whole-latte-love'];
+
     private static function keywordRegex(): string
     {
         return implode('|', array_map(
@@ -76,10 +79,10 @@ class ProblemProducts extends Page implements HasTable
                       ->whereNull('image_path')
                       ->whereDoesntHave('offers', fn ($oq) => $oq->whereNotNull('image_url')))
                   ->orWhereNull('ai_summary')
-                  // No reviews: product has an Amazon offer but zero/null review count
+                  // No reviews: product has an offer from a store that exposes reviews but zero/null review count
                   ->orWhere(fn (Builder $rQ) => $rQ
                       ->where(fn ($q2) => $q2->whereNull('amazon_reviews_count')->orWhere('amazon_reviews_count', 0))
-                      ->whereHas('offers.store', fn ($sq) => $sq->where('slug', 'amazon')))
+                      ->whereHas('offers.store', fn ($sq) => $sq->whereIn('slug', self::STORES_WITH_REVIEWS)))
                   ->orWhereRaw('LOWER(name) REGEXP ?', [$regex]);
             });
     }
@@ -107,9 +110,9 @@ class ProblemProducts extends Page implements HasTable
             $problems[] = 'No AI summary';
         }
 
-        // Amazon product without review count — likely scrape failed
+        // Product from a review-supporting store but no review count — likely scrape failed
         if (empty($record->amazon_reviews_count)
-            && $record->offers->contains(fn ($o) => $o->store?->slug === 'amazon')
+            && $record->offers->contains(fn ($o) => in_array($o->store?->slug, self::STORES_WITH_REVIEWS, true))
         ) {
             $problems[] = 'No reviews';
         }
@@ -205,7 +208,7 @@ class ProblemProducts extends Page implements HasTable
                         'low_price'   => 'Low price',
                         'no_image'    => 'No image',
                         'no_summary'  => 'No AI summary',
-                        'no_reviews'  => 'No reviews (Amazon)',
+                        'no_reviews'  => 'No reviews',
                         'suspect'     => 'Suspect title',
                     ])
                     ->query(function (Builder $query, array $data) {
@@ -220,7 +223,7 @@ class ProblemProducts extends Page implements HasTable
                             'no_summary' => $query->whereNull('ai_summary'),
                             'no_reviews' => $query
                                 ->where(fn ($q) => $q->whereNull('amazon_reviews_count')->orWhere('amazon_reviews_count', 0))
-                                ->whereHas('offers.store', fn ($sq) => $sq->where('slug', 'amazon')),
+                                ->whereHas('offers.store', fn ($sq) => $sq->whereIn('slug', self::STORES_WITH_REVIEWS)),
                             'suspect'    => $query->whereRaw('LOWER(name) REGEXP ?', [$regex]),
                             default      => null,
                         };

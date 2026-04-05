@@ -571,12 +571,19 @@ function extractCliveCoffeeProduct(url) {
     const starsEl = document.querySelector('[data-reviews-average]');
     if (starsEl) rating = parseFloat(starsEl.getAttribute('data-reviews-average'));
 
-    // Reviews count
+    // Reviews count — try stars widget title attribute first ("59 reviews"),
+    // then fall back to dedicated review count elements.
     let reviews_count = null;
-    const reviewsEl = document.querySelector('.stars-scale__reviews_count, [itemprop="votes"]');
-    if (reviewsEl) {
-        const m = reviewsEl.textContent.match(/(\d+)/);
+    if (starsEl) {
+        const m = starsEl.getAttribute('title')?.match(/(\d+)\s+reviews?/i);
         if (m) reviews_count = parseInt(m[1]);
+    }
+    if (reviews_count === null) {
+        const reviewsEl = document.querySelector('.stars-scale__reviews_count, [itemprop="votes"]');
+        if (reviewsEl) {
+            const m = reviewsEl.textContent.match(/(\d+)/);
+            if (m) reviews_count = parseInt(m[1]);
+        }
     }
 
     return {
