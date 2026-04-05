@@ -62,6 +62,21 @@ class OfferIngestionService
                 'image_url'     => $data['image_url'] ?? $existingOffer->image_url,
             ]);
 
+            // Backfill rating/reviews on the product if the scraper has them and the product doesn't
+            $product = Product::find($existingOffer->product_id);
+            if ($product) {
+                $updates = [];
+                if (!empty($data['reviews_count']) && empty($product->amazon_reviews_count)) {
+                    $updates['amazon_reviews_count'] = $data['reviews_count'];
+                }
+                if (!empty($data['rating']) && empty($product->amazon_rating)) {
+                    $updates['amazon_rating'] = $data['rating'];
+                }
+                if (!empty($updates)) {
+                    $product->update($updates);
+                }
+            }
+
             Log::info('OfferIngestion: refreshed existing offer', [
                 'offer_id' => $existingOffer->id,
                 'store'    => $store->name,
@@ -109,21 +124,38 @@ class OfferIngestionService
         }
 
         if ($matchedProductId) {
-            // 4. Match found → attach offer to existing product
-            ProductOffer::create([
-                'tenant_id'     => $tenantId,
-                'product_id'    => $matchedProductId,
-                'store_id'      => $store->id,
-                'url'           => $data['url'],
-                'scraped_price' => $data['scraped_price'],
-                'raw_title'     => mb_substr($data['raw_title'], 0, 500),
-                'image_url'     => $data['image_url'] ?? null,
-            ]);
+            // 4. Match found → attach (or update) offer on existing product.
+            // Use updateOrCreate to respect (product_id, store_id) unique constraint —
+            // if this product already has an offer from this store, refresh it.
+            ProductOffer::updateOrCreate(
+                ['product_id' => $matchedProductId, 'store_id' => $store->id],
+                [
+                    'tenant_id'     => $tenantId,
+                    'url'           => $data['url'],
+                    'scraped_price' => $data['scraped_price'],
+                    'raw_title'     => mb_substr($data['raw_title'], 0, 500),
+                    'image_url'     => $data['image_url'] ?? null,
+                ]
+            );
 
-            // Recalculate price tier with new offer
-            $product = Product::with('offers')->find($matchedProductId);
-            if ($product?->category) {
-                $product->update(['price_tier' => $product->category->priceTierFor((float) $product->best_price)]);
+            // Update rating/reviews on the matched product if the scraper provided them
+            // and they improve on what's stored. Only overwrites 0/null values.
+            $product = Product::with(['offers', 'category'])->find($matchedProductId);
+            if ($product) {
+                $updates = [];
+                if (!empty($data['reviews_count']) && empty($product->amazon_reviews_count)) {
+                    $updates['amazon_reviews_count'] = $data['reviews_count'];
+                }
+                if (!empty($data['rating']) && empty($product->amazon_rating)) {
+                    $updates['amazon_rating'] = $data['rating'];
+                }
+                // Recalculate price tier with new offer
+                if ($product->category) {
+                    $updates['price_tier'] = $product->category->priceTierFor((float) $product->best_price);
+                }
+                if (!empty($updates)) {
+                    $product->update($updates);
+                }
             }
 
             Log::info('OfferIngestion: matched to existing product', [
