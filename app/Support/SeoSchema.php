@@ -89,8 +89,14 @@ class SeoSchema
 
     /**
      * Meta + schema when a product modal is open.
+     *
+     * Public so ProductCompare::openProduct() can reuse the same payload it
+     * dispatches to the browser via the meta:product-opened event — keeps
+     * the SSR path and the JS-update path in sync.
+     *
+     * @return array{title: string, description: string, canonical: string, ogType: string, ogImage: string|null, schemas: array, activePreset: null}
      */
-    private static function forSelectedProduct(Product $product): array
+    public static function forSelectedProduct(Product $product): array
     {
         $title = "{$product->name} - AI Review & Match Score";
 

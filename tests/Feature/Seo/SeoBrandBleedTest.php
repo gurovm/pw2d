@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Seo;
 
+use App\Livewire\ProductCompare;
 use App\Models\Category;
 use App\Models\Preset;
 use App\Models\Product;
 use App\Models\ProductOffer;
 use App\Models\Tenant;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 /**
@@ -52,7 +54,7 @@ class SeoBrandBleedTest extends TestCase
 
         $html = $response->getContent();
         $this->assertStringContainsString('Acme Shop', $html);
-        $this->assertStringNotContainsString('| pw2d', $html);
+        $this->assertNoBrandBleed($html);
     }
 
     public function test_og_site_name_uses_tenant_brand_name(): void
@@ -62,9 +64,7 @@ class SeoBrandBleedTest extends TestCase
 
         $html = $response->getContent();
         $this->assertStringContainsString('Acme Shop', $html);
-
-        // og:site_name must NOT contain the literal "pw2d" string
-        $this->assertStringNotContainsString('og:site_name" content="pw2d', $html);
+        $this->assertNoBrandBleed($html);
     }
 
     public function test_homepage_og_image_falls_back_to_tenant_default_not_pw2d_logo(): void
@@ -92,9 +92,8 @@ class SeoBrandBleedTest extends TestCase
         $response->assertOk();
 
         $html = $response->getContent();
-        // Title suffix must be brand name, not "pw2d"
-        $this->assertStringNotContainsString('| pw2d', $html);
         $this->assertStringContainsString('Acme Shop', $html);
+        $this->assertNoBrandBleed($html);
     }
 
     public function test_leaf_category_title_uses_tenant_brand_name(): void
@@ -105,8 +104,8 @@ class SeoBrandBleedTest extends TestCase
         $response->assertOk();
 
         $html = $response->getContent();
-        $this->assertStringNotContainsString('| pw2d', $html);
         $this->assertStringContainsString('Acme Shop', $html);
+        $this->assertNoBrandBleed($html);
     }
 
     public function test_preset_page_title_uses_tenant_brand_name(): void
@@ -122,8 +121,8 @@ class SeoBrandBleedTest extends TestCase
         $response->assertOk();
 
         $html = $response->getContent();
-        $this->assertStringNotContainsString('| pw2d', $html);
         $this->assertStringContainsString('Acme Shop', $html);
+        $this->assertNoBrandBleed($html);
     }
 
     public function test_product_page_title_uses_tenant_brand_name(): void
@@ -141,8 +140,56 @@ class SeoBrandBleedTest extends TestCase
         $response->assertOk();
 
         $html = $response->getContent();
-        // Product pages use the product name for title — just ensure no pw2d bleed
-        $this->assertStringNotContainsString('| pw2d', $html);
-        $this->assertStringNotContainsString('og:site_name" content="pw2d', $html);
+        $this->assertNoBrandBleed($html);
+    }
+
+    /**
+     * Regression for the bug where ProductCompare::openProduct() dispatched a
+     * `meta:product-opened` Livewire event whose `title` was hardcoded with
+     * "| pw2d", causing the modal navigation to overwrite document.title with
+     * pw2d branding even on tenant domains. The SSR HTML test above doesn't
+     * catch this because the offending string lives in a JS dispatch payload.
+     */
+    public function test_open_product_dispatches_event_with_no_pw2d_in_title(): void
+    {
+        $category = Category::factory()->create(['name' => 'Espresso Machines']);
+        $product  = Product::factory()->create([
+            'name'        => 'DeLonghi Dedica',
+            'slug'        => 'delonghi-dedica',
+            'category_id' => $category->id,
+            'is_ignored'  => false,
+            'status'      => null,
+        ]);
+
+        Livewire::test(ProductCompare::class, ['slug' => $category->slug])
+            ->call('openProduct', $product->slug)
+            ->assertDispatched(
+                'meta:product-opened',
+                fn (string $event, array $params) => ! preg_match('/pw2d/i', $params['title'])
+                    && ! preg_match('/Power to Decide/i', $params['title'])
+            );
+    }
+
+    /**
+     * Asserts the rendered HTML contains no leak of the pw2d brand identity.
+     *
+     * Case-insensitive on purpose — catches "pw2d", "Pw2D", "PW2D", and the
+     * full "Power to Decide" string. Used by every page-scenario test in
+     * this file.
+     */
+    private function assertNoBrandBleed(string $html): void
+    {
+        // Case-insensitive — catches "pw2d", "Pw2D", "PW2D" anywhere in the
+        // rendered HTML. Also asserts the long-form brand string is absent.
+        $count = preg_match_all('/pw2d/i', $html);
+
+        if ($count > 0) {
+            // Dump context around each hit to make regressions easy to diagnose.
+            preg_match_all('/.{0,30}pw2d.{0,30}/i', $html, $m);
+            $hits = implode("\n  ", $m[0] ?? []);
+            $this->fail("Brand bleed regression: found {$count} occurrences of 'pw2d' in HTML.\nHits:\n  {$hits}");
+        }
+
+        $this->assertStringNotContainsString('Power to Decide', $html);
     }
 }

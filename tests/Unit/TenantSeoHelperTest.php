@@ -63,9 +63,30 @@ class TenantSeoHelperTest extends TestCase
         $this->assertStringContainsString('AI-powered', $result);
     }
 
-    public function test_unknown_key_returns_null(): void
+    public function test_unknown_key_returns_empty_string(): void
     {
-        $this->assertNull(tenant_seo('nonexistent_key'));
+        $this->assertSame('', tenant_seo('nonexistent_key'));
+    }
+
+    public function test_empty_string_brand_name_falls_back_to_pw2d(): void
+    {
+        // A misconfigured Filament edit could save brand_name as ''
+        $this->bindMockTenant('acme', ['brand_name' => '']);
+
+        $this->assertSame('Pw2D', tenant_seo('title_suffix'));
+        $this->assertStringContainsString('Pw2D', tenant_seo('default_title'));
+    }
+
+    public function test_empty_string_seo_value_falls_back_to_brand_default(): void
+    {
+        $this->bindMockTenant('acme', [
+            'brand_name'        => 'Acme Shop',
+            'seo_title_suffix'  => '',
+            'seo_default_title' => '',
+        ]);
+
+        $this->assertSame('Acme Shop', tenant_seo('title_suffix'));
+        $this->assertSame('Acme Shop — AI Product Recommendations', tenant_seo('default_title'));
     }
 
     // ── Tenant with brand_name but no explicit seo_* keys ───────────────────

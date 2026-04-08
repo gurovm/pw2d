@@ -1,15 +1,15 @@
 <div
     x-data="{ showPreferences: false, teaser: false }"
     x-init="
-        if (!localStorage.getItem('pw2d_customize_seen')) {
-            localStorage.setItem('pw2d_customize_seen', '1');
-            setTimeout(() => window.dispatchEvent(new CustomEvent('pw2d-open-sidebar')), 3000);
+        if (!localStorage.getItem('app_customize_seen')) {
+            localStorage.setItem('app_customize_seen', '1');
+            setTimeout(() => window.dispatchEvent(new CustomEvent('app-open-sidebar')), 3000);
         } else {
             teaser = true;
             setTimeout(() => teaser = false, 3500);
         }
     "
-    x-on:pw2d-open-sidebar.window="showPreferences = true"
+    x-on:app-open-sidebar.window="showPreferences = true"
     @keyup.escape.window="showPreferences = false"
 >
     @php $categoryName = \App\Models\Category::find($categoryId)->name ?? 'Unknown Category'; @endphp
