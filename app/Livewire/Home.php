@@ -4,7 +4,9 @@ namespace App\Livewire;
 
 use App\Models\Category;
 use App\Support\SamplePrompts;
+use App\Support\SeoSchema;
 use Illuminate\Support\Facades\Cache;
+use Livewire\Attributes\Layout;
 use Livewire\Component;
 
 class Home extends Component
@@ -18,6 +20,7 @@ class Home extends Component
         $this->dispatch('set-search-query', query: $query);
     }
 
+    #[Layout('components.layouts.app')]
     public function render()
     {
         $popularCategories = Cache::remember(
@@ -64,10 +67,19 @@ class Home extends Component
             ->values()
             ->toArray();
 
+        $seo = SeoSchema::forHomepage();
+
         return view('livewire.home', [
             'popularCategories' => $popularCategories,
             'samplePrompts'     => $samplePrompts,
             'searchHints'       => $searchHints,
+        ])->layoutData([
+            'metaTitle'       => $seo['title'],
+            'metaDescription' => $seo['description'],
+            'canonicalUrl'    => $seo['canonical'],
+            'ogType'          => $seo['ogType'],
+            'ogImage'         => $seo['ogImage'],
+            'schemaJson'      => json_encode($seo['schemas'][0], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
         ]);
     }
 }

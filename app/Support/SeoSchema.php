@@ -43,10 +43,44 @@ class SeoSchema
         }
 
         if ($subcategories->isNotEmpty()) {
-            return self::forParentCategory($category);
+            return self::forParentCategory($category, $subcategories);
         }
 
         return self::forLeafCategory($category, $activePresetSlug, $visibleProducts);
+    }
+
+    /**
+     * Build meta + schema for the tenant homepage.
+     *
+     * Homepage has no dynamic content — all values come from tenants.data
+     * via tenant_seo() with sensible fallbacks.
+     *
+     * @return array{title: string, description: string, canonical: string, ogType: string, ogImage: string|null, schemas: array, activePreset: null}
+     */
+    public static function forHomepage(): array
+    {
+        $title       = tenant_seo('default_title');
+        $description = tenant_seo('default_description');
+        $canonical   = route('home');
+        $brand       = tenant('brand_name') ?? 'Pw2D';
+
+        $schema = [
+            '@context'    => 'https://schema.org/',
+            '@type'       => 'WebSite',
+            'name'        => $brand,
+            'description' => $description,
+            'url'         => $canonical,
+        ];
+
+        return [
+            'title'        => $title,
+            'description'  => $description,
+            'canonical'    => $canonical,
+            'ogType'       => 'website',
+            'ogImage'      => tenant_seo('default_image'),
+            'schemas'      => [$schema],
+            'activePreset' => null,
+        ];
     }
 
     // -------------------------------------------------------------------------
@@ -106,8 +140,11 @@ class SeoSchema
 
     /**
      * Meta + schema for a parent category (has subcategories, no product scoring).
+     *
+     * @param  Category   $category
+     * @param  Collection $subcategories  Child categories — used to build hasPart in the schema.
      */
-    private static function forParentCategory(Category $category): array
+    private static function forParentCategory(Category $category, Collection $subcategories): array
     {
         $description = $category->description
             ? Str::limit($category->description, 150)
@@ -115,19 +152,30 @@ class SeoSchema
 
         $canonical = route('category.show', ['slug' => $category->slug]);
 
+        // Use category image if available, else fall back to tenant default.
+        $ogImage = $category->image
+            ? (str_starts_with($category->image, 'http') ? $category->image : url(Storage::url($category->image)))
+            : tenant_seo('default_image');
+
         $schema = [
             '@context'    => 'https://schema.org/',
             '@type'       => 'CollectionPage',
             'name'        => $category->name,
             'description' => $description,
+            'url'         => $canonical,
+            'hasPart'     => $subcategories->map(fn (Category $c) => [
+                '@type' => 'CollectionPage',
+                'name'  => $c->name,
+                'url'   => route('category.show', ['slug' => $c->slug]),
+            ])->values()->all(),
         ];
 
         return [
-            'title'        => "{$category->name} - Browse Categories | pw2d",
+            'title'        => "{$category->name} - Browse Categories | " . tenant_seo('title_suffix'),
             'description'  => $description,
             'canonical'    => $canonical,
             'ogType'       => 'website',
-            'ogImage'      => null,
+            'ogImage'      => $ogImage,
             'schemas'      => [$schema],
             'activePreset' => null,
         ];
@@ -142,7 +190,7 @@ class SeoSchema
         Collection $visibleProducts,
     ): array {
         $currentYear = date('Y');
-        $title       = "{$category->name} - Compare Best Models in {$currentYear} | pw2d";
+        $title       = "{$category->name} - Compare Best Models in {$currentYear} | " . tenant_seo('title_suffix');
         $canonical   = route('category.show', ['slug' => $category->slug]);
 
         // Extract plain-text description from the buying guide for meta + schema.
@@ -163,7 +211,7 @@ class SeoSchema
                 ->first(fn(Preset $p) => Str::slug($p->name) === $activePresetSlug);
 
             if ($activePreset) {
-                $title       = "Best {$category->name} for {$activePreset->name} | pw2d";
+                $title       = "Best {$category->name} for {$activePreset->name} | " . tenant_seo('title_suffix');
                 $description = $activePreset->seo_description
                     ?? "Top-ranked {$category->name} for {$activePreset->name} users. Compare by the features that matter most for your specific use case.";
                 $canonical   = route('category.show', ['slug' => $category->slug]) . "?preset={$activePresetSlug}";
@@ -172,12 +220,16 @@ class SeoSchema
 
         $schema = self::buildItemListSchema($category, $descriptionText, $visibleProducts);
 
+        // Use the first visible product's offer image for og:image; fall back to tenant default.
+        $ogImage = $visibleProducts->first()?->offers?->first()?->image_url
+            ?? tenant_seo('default_image');
+
         return [
             'title'        => $title,
             'description'  => $description,
             'canonical'    => $canonical,
             'ogType'       => 'website',
-            'ogImage'      => null,
+            'ogImage'      => $ogImage,
             'schemas'      => [$schema],
             'activePreset' => $activePreset,
         ];

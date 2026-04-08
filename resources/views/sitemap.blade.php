@@ -8,6 +8,15 @@
         <priority>1.0</priority>
     </url>
 
+    {{-- Static pages --}}
+    @foreach (['about', 'contact', 'privacy-policy', 'terms-of-service'] as $staticPage)
+    <url>
+        <loc>{{ route($staticPage) }}</loc>
+        <changefreq>monthly</changefreq>
+        <priority>0.3</priority>
+    </url>
+    @endforeach
+
     {{-- Categories --}}
     @foreach ($categories as $category)
     <url>
