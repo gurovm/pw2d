@@ -49,7 +49,11 @@ class SeoMetric extends Model
 
     /** @var array<string, string> */
     protected $casts = [
-        'metric_date'      => 'date',
+        // date:Y-m-d (not bare 'date') so the cast serializes as '2026-04-11'
+        // without the '00:00:00' time suffix. On sqlite (in-memory tests) the
+        // DATE column is stored as TEXT and whereBetween does lexicographic
+        // string comparison — the suffix would push boundary rows out of range.
+        'metric_date'      => 'date:Y-m-d',
         'gsc_ctr'          => 'float',
         'gsc_position'     => 'float',
         'ga4_bounce_rate'  => 'float',

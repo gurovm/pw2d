@@ -94,10 +94,7 @@ final class PullGscMetrics
 
             $upserted = count($batch);
         } catch (\Throwable $e) {
-            return new PullResult(
-                upserted: $upserted,
-                errors: [$e->getMessage()],
-            );
+            return PullResult::fromThrowable($e, $upserted);
         }
 
         return new PullResult(upserted: $upserted, errors: []);

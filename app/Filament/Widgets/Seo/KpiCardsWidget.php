@@ -18,6 +18,10 @@ class KpiCardsWidget extends BaseWidget
 {
     protected static bool $isLazy = true;
 
+    // SEO data only changes once per day at 03:00 when pw2d:seo:pull runs.
+    // Polling every 5s (Filament default) would hit seo_metrics continuously.
+    protected static ?string $pollingInterval = null;
+
     protected function getStats(): array
     {
         $tenantId = filament()->getTenant()?->getTenantKey();

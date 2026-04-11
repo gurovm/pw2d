@@ -25,6 +25,9 @@ class TopMoversWidget extends BaseWidget
 {
     protected static bool $isLazy = true;
 
+    // SEO data only changes once per day at 03:00 when pw2d:seo:pull runs.
+    protected static ?string $pollingInterval = null;
+
     protected function getStats(): array
     {
         $tenantId = filament()->getTenant()?->getTenantKey();

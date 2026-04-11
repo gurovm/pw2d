@@ -26,6 +26,11 @@ class UrlCoverageWidget extends BaseWidget
 {
     protected static bool $isLazy = true;
 
+    // SEO data only changes once per day at 03:00 when pw2d:seo:pull runs.
+    // Without this override, this widget would re-run SitemapController's
+    // query logic every 5s against the main products/categories tables.
+    protected static ?string $pollingInterval = null;
+
     protected function getStats(): array
     {
         $tenant = filament()->getTenant();

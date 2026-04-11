@@ -25,4 +25,20 @@ final readonly class PullResult
     {
         return count($this->errors) > 0;
     }
+
+    /**
+     * Build a failure result from an exception, redacting the service-account
+     * path from the message so CLI output and log aggregators cannot leak it.
+     */
+    public static function fromThrowable(\Throwable $e, int $upserted = 0): self
+    {
+        $saPath = (string) config('seo.google.service_account_path');
+        $msg    = $e->getMessage();
+
+        if ($saPath !== '' && str_contains($msg, $saPath)) {
+            $msg = str_replace($saPath, '[REDACTED_SA_PATH]', $msg);
+        }
+
+        return new self(upserted: $upserted, errors: [$msg]);
+    }
 }

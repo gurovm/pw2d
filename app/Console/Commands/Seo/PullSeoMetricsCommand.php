@@ -46,15 +46,18 @@ class PullSeoMetricsCommand extends Command
         }
 
         $action = new PullSeoMetrics;
-        $allFailed = true;
+        $anySucceeded = false;
 
         foreach ($tenants as $tenant) {
             $this->line("Processing tenant: <info>{$tenant->getTenantKey()}</info>");
 
             $result = $action->execute($tenant, $date);
 
-            if ($result->totalUpserted() > 0 || empty($result->errors)) {
-                $allFailed = false;
+            // A tenant counts as "succeeded" only if it actually upserted
+            // at least one row with no errors. Zero-upsert-zero-error is
+            // treated as a no-op (e.g., API returned no data for the day).
+            if ($result->totalUpserted() > 0 && ! $result->hasErrors()) {
+                $anySucceeded = true;
             }
 
             // Display per-source summary as a table row.
@@ -76,12 +79,10 @@ class PullSeoMetricsCommand extends Command
                 foreach ($result->errors as $error) {
                     $this->warn("  {$error}");
                 }
-            } else {
-                $allFailed = false;
             }
         }
 
-        return $allFailed ? self::FAILURE : self::SUCCESS;
+        return $anySucceeded ? self::SUCCESS : self::FAILURE;
     }
 
     /**
@@ -135,16 +136,18 @@ class PullSeoMetricsCommand extends Command
             return collect([$tenant]);
         }
 
-        // Load all tenants and filter by the seo_enabled data key.
-        // We avoid a raw DB filter because the value lives inside a JSON blob
-        // and normalisation (bool/string/int) is handled by the helper.
-        return Tenant::all()->filter(function (Tenant $tenant) {
-            // Initialize briefly just to read the config key, then end.
-            tenancy()->initialize($tenant);
-            $enabled = tenant_seo_enabled();
-            tenancy()->end();
-
-            return $enabled;
-        })->values();
+        // Load all tenants and filter by the seo_enabled data-JSON key.
+        // stancl/tenancy's VirtualColumn trait exposes JSON data keys as
+        // direct attributes on retrieval, so no tenancy init is needed —
+        // reading $tenant->seo_enabled works on any Tenant instance.
+        // Normalization (bool|string|int Filament Toggle variance) handled
+        // by filter_var; tenant_seo_enabled() is for global-context callers.
+        return Tenant::all()->filter(
+            fn (Tenant $tenant) => filter_var(
+                $tenant->seo_enabled,
+                FILTER_VALIDATE_BOOLEAN,
+                FILTER_NULL_ON_FAILURE,
+            ) === true,
+        )->values();
     }
 }

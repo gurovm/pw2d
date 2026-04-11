@@ -70,39 +70,26 @@ class SeoDashboardTest extends TestCase
 
     public function test_kpi_widget_only_shows_current_tenant_rows(): void
     {
-        // Seed overlapping URLs for both tenants.
         $date = Carbon::now()->subDays(5)->toDateString();
 
-        \Illuminate\Support\Facades\DB::table('seo_metrics')->insert([
-            [
-                'tenant_id'      => 'tenant-a',
-                'source'         => 'gsc',
-                'url'            => 'https://shared-url.com/',
-                'url_hash'       => hash('sha256', 'https://shared-url.com/'),
-                'metric_date'    => $date,
-                'gsc_impressions' => 500,
-                'gsc_clicks'     => 50,
-                'gsc_ctr'        => 0.1,
-                'gsc_position'   => 3.5,
-                'created_at'     => now(),
-                'updated_at'     => now(),
-            ],
-            [
-                'tenant_id'      => 'tenant-b',
-                'source'         => 'gsc',
-                'url'            => 'https://shared-url.com/',
-                'url_hash'       => hash('sha256', 'https://shared-url.com/'),
-                'metric_date'    => $date,
-                'gsc_impressions' => 9999,  // should NOT appear in tenant-a queries
-                'gsc_clicks'     => 999,
-                'gsc_ctr'        => 0.1,
-                'gsc_position'   => 1.0,
-                'created_at'     => now(),
-                'updated_at'     => now(),
-            ],
+        SeoMetric::factory()->gsc()->create([
+            'tenant_id'       => 'tenant-a',
+            'url'             => 'https://shared-url.com/',
+            'url_hash'        => hash('sha256', 'https://shared-url.com/'),
+            'metric_date'     => $date,
+            'gsc_clicks'      => 50,
+            'gsc_impressions' => 500,
         ]);
 
-        // Query directly as the widget does.
+        SeoMetric::factory()->gsc()->create([
+            'tenant_id'       => 'tenant-b',
+            'url'             => 'https://shared-url.com/',
+            'url_hash'        => hash('sha256', 'https://shared-url.com/'),
+            'metric_date'     => $date,
+            'gsc_clicks'      => 999, // must NOT appear in tenant-a queries
+            'gsc_impressions' => 9999,
+        ]);
+
         $from = now()->subDays(27)->toDateString();
         $to   = now()->toDateString();
 
@@ -118,52 +105,37 @@ class SeoDashboardTest extends TestCase
             ->whereBetween('metric_date', [$from, $to])
             ->sum('gsc_clicks');
 
-        // Each tenant sees only its own data.
         $this->assertSame(50, (int) $tenantAClicks);
         $this->assertSame(999, (int) $tenantBClicks);
     }
 
     public function test_kpi_deltas_compute_correctly_against_56_day_dataset(): void
     {
-        // Seed current 28 days: 100 clicks/day
+        // Current 28 days: 100 clicks/day
         for ($i = 0; $i < 28; $i++) {
-            $date = Carbon::now()->subDays($i)->toDateString();
-            \Illuminate\Support\Facades\DB::table('seo_metrics')->insert([
-                'tenant_id'      => 'tenant-a',
-                'source'         => 'gsc',
-                'url'            => 'https://tenant-a.com/',
-                'url_hash'       => hash('sha256', 'https://tenant-a.com/'),
-                'metric_date'    => $date,
-                'gsc_impressions' => 1000,
-                'gsc_clicks'     => 100,
-                'gsc_ctr'        => 0.1,
-                'gsc_position'   => 5.0,
-                'created_at'     => now(),
-                'updated_at'     => now(),
+            SeoMetric::factory()->gsc()->create([
+                'tenant_id'   => 'tenant-a',
+                'url'         => 'https://tenant-a.com/',
+                'url_hash'    => hash('sha256', 'https://tenant-a.com/current-'.$i),
+                'metric_date' => Carbon::now()->subDays($i)->toDateString(),
+                'gsc_clicks'  => 100,
             ]);
         }
 
-        // Seed prior 28 days: 50 clicks/day (half)
+        // Prior 28 days: 50 clicks/day (half)
         for ($i = 28; $i < 56; $i++) {
-            $date = Carbon::now()->subDays($i)->toDateString();
-            \Illuminate\Support\Facades\DB::table('seo_metrics')->insert([
-                'tenant_id'      => 'tenant-a',
-                'source'         => 'gsc',
-                'url'            => 'https://tenant-a.com/',
-                'url_hash'       => hash('sha256', 'https://tenant-a.com/'),
-                'metric_date'    => $date,
-                'gsc_impressions' => 500,
-                'gsc_clicks'     => 50,
-                'gsc_ctr'        => 0.1,
-                'gsc_position'   => 8.0,
-                'created_at'     => now(),
-                'updated_at'     => now(),
+            SeoMetric::factory()->gsc()->create([
+                'tenant_id'   => 'tenant-a',
+                'url'         => 'https://tenant-a.com/',
+                'url_hash'    => hash('sha256', 'https://tenant-a.com/prior-'.$i),
+                'metric_date' => Carbon::now()->subDays($i)->toDateString(),
+                'gsc_clicks'  => 50,
             ]);
         }
 
-        $now       = now()->toDateString();
-        $current28 = now()->subDays(27)->toDateString();
-        $prior28   = now()->subDays(55)->toDateString();
+        $now        = now()->toDateString();
+        $current28  = now()->subDays(27)->toDateString();
+        $prior28    = now()->subDays(55)->toDateString();
         $prior28End = now()->subDays(28)->toDateString();
 
         $currentClicks = (int) \Illuminate\Support\Facades\DB::table('seo_metrics')
@@ -178,9 +150,8 @@ class SeoDashboardTest extends TestCase
             ->whereBetween('metric_date', [$prior28, $prior28End])
             ->sum('gsc_clicks');
 
-        // Current: 28 × 100 = 2800; Prior: 28 × 50 = 1400; Delta = +100%
-        $this->assertSame(2800, $currentClicks);
-        $this->assertSame(1400, $priorClicks);
+        $this->assertSame(2800, $currentClicks); // 28 × 100
+        $this->assertSame(1400, $priorClicks);   // 28 × 50
 
         $delta = round(($currentClicks - $priorClicks) / $priorClicks * 100, 1);
         $this->assertSame(100.0, $delta);
@@ -192,22 +163,15 @@ class SeoDashboardTest extends TestCase
 
         // Both tenants have the same URL — metrics must not bleed.
         foreach (['tenant-a' => 111, 'tenant-b' => 222] as $tenantId => $impressions) {
-            \Illuminate\Support\Facades\DB::table('seo_metrics')->insert([
-                'tenant_id'      => $tenantId,
-                'source'         => 'gsc',
-                'url'            => 'https://overlap.com/compare/test',
-                'url_hash'       => hash('sha256', 'https://overlap.com/compare/test'),
-                'metric_date'    => $date,
+            SeoMetric::factory()->gsc()->create([
+                'tenant_id'       => $tenantId,
+                'url'             => 'https://overlap.com/compare/test',
+                'url_hash'        => hash('sha256', 'https://overlap.com/compare/test'),
+                'metric_date'     => $date,
                 'gsc_impressions' => $impressions,
-                'gsc_clicks'     => 10,
-                'gsc_ctr'        => 0.09,
-                'gsc_position'   => 4.0,
-                'created_at'     => now(),
-                'updated_at'     => now(),
             ]);
         }
 
-        // Widget-level query for tenant-a must only sum tenant-a impressions.
         $tenantAImpressions = \Illuminate\Support\Facades\DB::table('seo_metrics')
             ->where('tenant_id', 'tenant-a')
             ->where('source', 'gsc')
