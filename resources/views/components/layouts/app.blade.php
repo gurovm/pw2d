@@ -6,22 +6,20 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <meta name="csrf-token" content="{{ csrf_token() }}">
 
-        <title>{{ $metaTitle ?? 'pw2d - Power to Decide | AI Tech Recommendations' }}</title>
+        <title>{{ $metaTitle ?? tenant_seo('default_title') }}</title>
         <meta name="description"
-                content="{{ $metaDescription ?? 'Discover the best tech products tailored to your exact needs using our AI-powered recommendation engine.' }}">
+                content="{{ $metaDescription ?? tenant_seo('default_description') }}">
         <link rel="canonical" href="{{ $canonicalUrl ?? request()->url() }}">
 
         @php
-                $defaultTitle = $metaTitle ?? 'pw2d - Power to Decide | AI Tech Recommendations';
-                $defaultDescription =
-                    $metaDescription ??
-                    'Discover the best tech products tailored to your exact needs using our AI-powered recommendation engine.';
-                $defaultImage = $ogImage ?? asset('images/logo.webp');
+                $defaultTitle = $metaTitle ?? tenant_seo('default_title');
+                $defaultDescription = $metaDescription ?? tenant_seo('default_description');
+                $defaultImage = $ogImage ?? tenant_seo('default_image');
                 $defaultUrl = $canonicalUrl ?? request()->url();
         @endphp
 
         {{-- Open Graph --}}
-        <meta property="og:site_name" content="pw2d - Power to Decide">
+        <meta property="og:site_name" content="{{ tenant('brand_name') ?? 'Pw2D' }}">
         <meta property="og:type" id="og-type" content="{{ $ogType ?? 'website' }}">
         <meta property="og:title" id="og-title" content="{{ $defaultTitle }}" data-default="{{ $defaultTitle }}">
         <meta property="og:description" id="og-description" content="{{ $defaultDescription }}"

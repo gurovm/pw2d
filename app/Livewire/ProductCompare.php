@@ -224,20 +224,16 @@ class ProductCompare extends Component
 
         // Dispatch social/OG meta for client-side <head> update.
         // The computed property is freshly resolved here since $selectedProductSlug was just set.
+        // Reuse SeoSchema::forSelectedProduct() so the dispatched payload stays in
+        // sync with the SSR path and never bleeds the wrong tenant brand.
         if ($this->selectedProduct) {
-            $imageUrl = $this->selectedProduct->image_url;
-            $absImage = $imageUrl
-                ? (str_starts_with($imageUrl, 'http') ? $imageUrl : url($imageUrl))
-                : null;
+            $seo = SeoSchema::forSelectedProduct($this->selectedProduct);
 
             $this->dispatch('meta:product-opened',
-                title:       "{$this->selectedProduct->name} - AI Review & Match Score | pw2d",
-                description: \Illuminate\Support\Str::limit(
-                    strip_tags($this->selectedProduct->ai_summary ?? "Read the AI review for the {$this->selectedProduct->name}."),
-                    155
-                ),
-                image: $absImage ?? '',
-                url:   url('/product/' . $this->selectedProduct->slug),
+                title:       $seo['title'],
+                description: $seo['description'],
+                image:       $seo['ogImage'] ?? '',
+                url:         $seo['canonical'],
             );
         }
     }

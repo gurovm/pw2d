@@ -1,5 +1,0 @@
-User-agent: *
-Disallow: /admin/
-Disallow: /livewire/
-
-Sitemap: https://pw2d.com/sitemap.xml

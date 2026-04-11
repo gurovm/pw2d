@@ -78,6 +78,26 @@ Consolidated from 15 parallel agent audits (5 chunks x 3 agents). Deduplicated a
 
 ## Spec Tasks
 
+- [x] **Spec 015: SEO brand-bleed fix (Phase 1)** -- Threaded `tenant('brand_name')` + 4 new `seo_*` JSON keys through SeoSchema + layout. Added `SeoSchema::forHomepage()`. Wired `Home.php` meta via `layoutData()`. Replaced static `public/robots.txt` with tenant-aware route emitting per-host Sitemap directive. Added static pages to sitemap. Cached sitemap XML for 10 min per tenant. Added SEO form section to TenantResource. Made `SeoSchema::forSelectedProduct()` public so `ProductCompare::openProduct()` reuses it (eliminated `| pw2d` brand bleed in JS dispatch event). `tenant_seo()` helper handles empty-string fallbacks via `filled()`. Renamed two `pw2d_*` JS namespace identifiers to `app_*` in `comparison-header.blade.php`. SeoDefaultsSeeder + 30 new Pest tests. See `docs/specs/015-seo-brand-bleed-fix.md` and `docs/seo/audit-2026-04-08.md`.
+
+- [ ] **Spec 014: SEO monitoring integration (Phase 2a)** -- Depends on spec 015 being deployed. Pulls GSC + GA4 nightly into `seo_metrics` table. Filament dashboard with KPI cards, top movers, URL coverage, query explorer. PostHog and alerting deferred to Phase 2b/2c. See `docs/specs/014-seo-monitoring-integration.md`.
+
+### Reviewer follow-ups from spec 015 (file as small tickets)
+
+- [ ] **F1: Sitemap cache invalidation observer** -- `Cache::remember(tenant_cache_key('sitemap:xml'))` lives 10 min with no `Cache::forget()` on Product/Category save. Add a `ProductObserver` / `CategoryObserver` that forgets the key on save/delete so editors don't see stale URLs after publishing. *[Models, Cache]*
+
+- [ ] **F2: Sitemap chunking / sitemap-index for large tenants** -- Current `Product::cursor() → ::get()` change loads all products into memory before render. Fine for ~1k–5k URLs. For tenants growing past 5k, split into `sitemap-categories.xml` / `sitemap-products.xml` / `sitemap-presets.xml` under a `sitemap.xml` index file (Google standard). *[Perf-Frontend]*
+
+- [ ] **F3: Extract `SitemapBuilder` service** -- `SitemapController::buildSitemapXml()` is now ~25 lines of query+map+filter inside the controller, borderline-violating standards.md "no business logic in controllers". Move to `app/Services/Seo/SitemapBuilder.php` for unit testability and separation of concerns. *[Review-API]*
+
+- [ ] **F4: `Tests\Concerns\InitializesTestTenant` trait** -- The 4-line `Tenant::create() → find()` workaround appears verbatim in 4 SEO test files. DRY into a trait or `tests/Pest.php` helper. The duplicated comment block is the smell. *[Test]*
+
+- [ ] **F5: Upstream stancl/tenancy bug report** -- `Tenant::create(['id' => 'string-pk'])` returns a model whose `id` is overwritten by sqlite rowid (e.g. `'1'`), even though the row is correctly stored with the string PK. Re-fetch via `find()` is required as a workaround. Reproduce on a clean Laravel + sqlite testbed and file an issue against `stancl/tenancy`. Link to `docs/lessons.md` once filed. *[Vendor]*
+
+- [ ] **F6: `route('home')` decoupling in `SeoSchema::forHomepage()`** -- Currently calls `route('home')` which depends on an active HTTP request context. If the method is ever called from a queue/console job (e.g., to pre-warm the sitemap cache), it'll crash. Pass the URL in as a parameter or use `url('/')`. Minor. *[Review-Support]*
+
+- [ ] **Investigate pw2d.com central-vs-tenant resolution mismatch** -- Prod returns 200 for `pw2d.com/sitemap.xml` despite `SitemapController` aborting on central domains and `tenancy.php` listing `pw2d.com` as central. Either `APP_CENTRAL_DOMAIN` env differs or vhost setup differs. Small investigation ticket, not urgent. *[Config]*
+
 - [x] **Spec 011: Problem Products store link & rescan action** -- Added Store badge column, changed product name to edit-page link, added Rescan Price row action. Extracted `scrapeOfferPrice()` as public static on SyncOfferPrices. Removed amazon_rating column.
 
 - [x] **Spec 012: Fix AI matching brand dedup** -- Added `AiService::normalizeBrandForComparison()` (public static). Fixed heuristic query in `matchProduct()` to fuzzy-match brands via SQL REPLACE chain. Fixed `ProcessPendingProduct` to reuse existing brand by fuzzy match instead of `firstOrCreate`. Fixed negative cache invalidation to cover all brand spelling variants. Tightened brand normalization prompt. 14 new tests in `BrandNormalizationTest`.

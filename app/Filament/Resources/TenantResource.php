@@ -92,6 +92,29 @@ class TenantResource extends Resource
                             ->helperText('Main headings and body typography'),
                     ])->columns(2),
 
+                Forms\Components\Section::make('SEO')
+                    ->description('Overrides for search-engine and social-media metadata. Leave blank to use brand_name-based defaults.')
+                    ->schema([
+                        Forms\Components\TextInput::make('seo_title_suffix')
+                            ->label('Title suffix')
+                            ->helperText('Appended to category page titles, e.g. " | Coffee2Decide". Defaults to brand name.')
+                            ->maxLength(60),
+                        Forms\Components\TextInput::make('seo_default_title')
+                            ->label('Homepage title')
+                            ->helperText('Full <title> tag for the homepage.')
+                            ->maxLength(70),
+                        Forms\Components\Textarea::make('seo_default_description')
+                            ->label('Default description')
+                            ->helperText('Used on homepage + as fallback. Keep under 160 characters.')
+                            ->rows(3)
+                            ->maxLength(200),
+                        Forms\Components\TextInput::make('seo_default_image')
+                            ->label('Default social image URL')
+                            ->helperText('Fallback og:image for pages with no product image. 1200×630 recommended.')
+                            ->url(),
+                    ])
+                    ->columns(1),
+
                 Forms\Components\Section::make('Hero Content')
                     ->description('Custom headline and subheadline for the landing page hero section.')
                     ->schema([
