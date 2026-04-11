@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat database/migrations/*create_tenants*)",
+      "Bash(php -r ':*)",
+      "Bash(composer install:*)",
+      "Bash(php -r 'require \"vendor/autoload.php\"; $ref = new ReflectionClass\\(\"App\\\\\\\\Support\\\\\\\\SeoSchema\"\\); echo \"File: \" . $ref->getFileName\\(\\) . \"\\\\n\"; echo \"Has forHomepage: \" . \\($ref->hasMethod\\(\"forHomepage\"\\) ? \"yes\" : \"no\"\\) . \"\\\\n\";')"
+    ]
+  }
+}
