@@ -92,7 +92,7 @@ Consolidated from 15 parallel agent audits (5 chunks x 3 agents). Deduplicated a
 
 - [ ] **F4: `Tests\Concerns\InitializesTestTenant` trait** -- The 4-line `Tenant::create() → find()` workaround appears verbatim in 4 SEO test files. DRY into a trait or `tests/Pest.php` helper. The duplicated comment block is the smell. *[Test]*
 
-- [ ] **F5: Upstream stancl/tenancy bug report** -- `Tenant::create(['id' => 'string-pk'])` returns a model whose `id` is overwritten by sqlite rowid (e.g. `'1'`), even though the row is correctly stored with the string PK. Re-fetch via `find()` is required as a workaround. Reproduce on a clean Laravel + sqlite testbed and file an issue against `stancl/tenancy`. Link to `docs/lessons.md` once filed. *[Vendor]*
+- [~] **F5: Upstream stancl/tenancy bug report** -- Root cause isolated: `Stancl\Tenancy\Database\Concerns\GeneratesIds::getIncrementing()` unconditionally overrides the subclass `$incrementing` property, returning `!app()->bound(UniqueIdentifierGenerator::class)` — which is `true` when `config('tenancy.id_generator') === null`. Filing-ready bug report at `docs/bug-reports/stancl-tenancy-pk-leak.md` with minimal reproduction. Lesson documented in `docs/lessons.md`. **TODO:** Michael to file at https://github.com/archtechx/tenancy/issues/new and update `docs/lessons.md` with the issue URL. *[Vendor]*
 
 - [ ] **F6: `route('home')` decoupling in `SeoSchema::forHomepage()`** -- Currently calls `route('home')` which depends on an active HTTP request context. If the method is ever called from a queue/console job (e.g., to pre-warm the sitemap cache), it'll crash. Pass the URL in as a parameter or use `url('/')`. Minor. *[Review-Support]*
 
