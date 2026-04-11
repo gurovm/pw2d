@@ -1,0 +1,54 @@
+{
+  "rows": [
+    {
+      "dimensions": ["/"],
+      "metrics": {
+        "sessions": 310,
+        "users": 280,
+        "engaged_sessions": 195,
+        "conversions": 12,
+        "bounce_rate": 0.371
+      }
+    },
+    {
+      "dimensions": ["/compare/espresso-machines"],
+      "metrics": {
+        "sessions": 540,
+        "users": 498,
+        "engaged_sessions": 420,
+        "conversions": 23,
+        "bounce_rate": 0.222
+      }
+    },
+    {
+      "dimensions": ["/compare/espresso-machines"],
+      "metrics": {
+        "sessions": 88,
+        "users": 80,
+        "engaged_sessions": 62,
+        "conversions": 4,
+        "bounce_rate": 0.295
+      }
+    },
+    {
+      "dimensions": ["/product/delonghi-dedica"],
+      "metrics": {
+        "sessions": 175,
+        "users": 160,
+        "engaged_sessions": 140,
+        "conversions": 8,
+        "bounce_rate": 0.2
+      }
+    },
+    {
+      "dimensions": ["/about"],
+      "metrics": {
+        "sessions": 22,
+        "users": 21,
+        "engaged_sessions": 14,
+        "conversions": 0,
+        "bounce_rate": 0.636
+      }
+    }
+  ]
+}

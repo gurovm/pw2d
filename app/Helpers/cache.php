@@ -12,6 +12,38 @@ if (!function_exists('tenant_cache_key')) {
     }
 }
 
+if (!function_exists('tenant_seo_enabled')) {
+    /**
+     * Return the effective bool value of the tenant's seo_enabled data key.
+     *
+     * Filament's Toggle component may write the value as bool true/false, string
+     * "true"/"false", or int 1/0 depending on the underlying tenant data storage.
+     * This helper normalises all representations to a real PHP bool.
+     *
+     * Returns false when no tenant is active (central context) — the scheduler
+     * should never pull in that state.
+     */
+    function tenant_seo_enabled(): bool
+    {
+        $raw = tenant('seo_enabled');
+
+        if ($raw === null) {
+            return false;
+        }
+
+        if (is_bool($raw)) {
+            return $raw;
+        }
+
+        if (is_int($raw)) {
+            return $raw !== 0;
+        }
+
+        // String normalisation — covers "true", "1", "false", "0"
+        return filter_var($raw, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? false;
+    }
+}
+
 if (!function_exists('tenant_seo')) {
     /**
      * Read a tenant SEO key with a computed fallback.

@@ -112,6 +112,19 @@ class TenantResource extends Resource
                             ->label('Default social image URL')
                             ->helperText('Fallback og:image for pages with no product image. 1200×630 recommended.')
                             ->url(),
+
+                        Forms\Components\TextInput::make('gsc_site_url')
+                            ->label('GSC Site URL')
+                            ->helperText('e.g. `sc-domain:pw2d.com` (domain property) or `https://pw2d.com/` (URL prefix property, trailing slash required)'),
+
+                        Forms\Components\TextInput::make('ga4_property_id')
+                            ->label('GA4 Property ID')
+                            ->helperText('Format: `properties/123456789`. Find in GA4 Admin → Property Settings.'),
+
+                        Forms\Components\Toggle::make('seo_enabled')
+                            ->label('Enable nightly SEO pull')
+                            ->helperText('When on, the nightly `pw2d:seo:pull` command includes this tenant.')
+                            ->default(false),
                     ])
                     ->columns(1),
 
