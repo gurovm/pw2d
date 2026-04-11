@@ -1,0 +1,39 @@
+{
+  "rows": [
+    {
+      "keys": ["https://pw2d.com/"],
+      "clicks": 42,
+      "impressions": 1200,
+      "ctr": 0.035,
+      "position": 4.2
+    },
+    {
+      "keys": ["https://pw2d.com/compare/espresso-machines"],
+      "clicks": 89,
+      "impressions": 3400,
+      "ctr": 0.026,
+      "position": 6.8
+    },
+    {
+      "keys": ["https://pw2d.com/compare/espresso-machines?preset=home-barista"],
+      "clicks": 15,
+      "impressions": 620,
+      "ctr": 0.024,
+      "position": 9.1
+    },
+    {
+      "keys": ["https://pw2d.com/product/delonghi-dedica"],
+      "clicks": 31,
+      "impressions": 880,
+      "ctr": 0.0352,
+      "position": 5.3
+    },
+    {
+      "keys": ["https://pw2d.com/about"],
+      "clicks": 3,
+      "impressions": 95,
+      "ctr": 0.0316,
+      "position": 12.4
+    }
+  ]
+}
