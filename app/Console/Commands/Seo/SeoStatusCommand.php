@@ -65,11 +65,11 @@ class SeoStatusCommand extends Command
         }
 
         // ── Pre-fetch all metric aggregates in one query (no N+1) ───────────
-        // Produces: tenant_id, source, max_date, row_count
-        $tenantIds = $tenants->pluck('id')->all();
+        // Produces: tenant_id, source, max_date, rows_in_window
+        $tenantIds   = $tenants->pluck('id')->all();
         $windowStart = CarbonImmutable::today('UTC')->subDays($days)->format('Y-m-d');
 
-        $aggregates = $this->fetchAggregates($tenantIds, $windowStart);
+        $aggregates = $this->fetchAggregates($tenantIds, $windowStart, $tenantArg);
 
         // ── Per-tenant output ─────────────────────────────────────────────────
         $summaryCounts = [
@@ -201,38 +201,79 @@ class SeoStatusCommand extends Command
     }
 
     /**
-     * Fetch metric aggregates for all tenant IDs in a single grouped query.
+     * Fetch metric aggregates for the given tenants in two subquery-joined queries.
      *
      * Returns a Collection keyed by tenant_id, where each value is a Collection
-     * of stdClass objects with fields: source, max_date, row_count.
+     * of stdClass objects with fields: tenant_id, source, max_date, rows_in_window.
      *
-     * The `row_count` here is for the full history — we also fetch the windowed
-     * count in a second query grouped the same way to avoid per-tenant SELECTs.
+     * F24a: The tenant_id IN clause is only applied when a specific tenant was
+     * requested ($tenantArg !== null). For the all-tenants case, MySQL can do a
+     * clean full-index scan over idx_tenant_source_date without IN-list overhead.
      *
-     * @param  array<int, string>         $tenantIds
+     * F24b: The windowed count is computed in a separate right-side subquery and
+     * LEFT JOINed to the max-date subquery. This avoids the CASE-based conditional
+     * SUM and keeps the two concerns (latest date vs. windowed count) cleanly separated.
+     *
+     * Result column names: tenant_id, source, max_date, rows_in_window.
+     * The consumer (handle()) reads $agg->max_date and $agg->windowed_count —
+     * rows_in_window is aliased as windowed_count to preserve that interface.
+     *
+     * @param  array<int, string> $tenantIds  IDs of tenants to include (used only when $tenantArg is set).
+     * @param  string             $windowStart 'Y-m-d' lower bound for the windowed count.
+     * @param  string|null        $tenantArg   The raw tenant CLI argument — null means "all tenants".
      * @return \Illuminate\Support\Collection<string, \Illuminate\Support\Collection>
      */
-    private function fetchAggregates(array $tenantIds, string $windowStart): \Illuminate\Support\Collection
-    {
+    private function fetchAggregates(
+        array $tenantIds,
+        string $windowStart,
+        ?string $tenantArg,
+    ): \Illuminate\Support\Collection {
         if (empty($tenantIds)) {
             return collect();
         }
 
-        // Single query: per (tenant_id, source) → latest date + windowed row count.
-        // Using a subquery for max_date + a CASE-based conditional count avoids
-        // a second round-trip and keeps the N+1 guarantee.
-        $rows = DB::table('seo_metrics')
-            ->selectRaw('
-                tenant_id,
-                source,
-                MAX(metric_date) AS max_date,
-                SUM(CASE WHEN metric_date >= ? THEN 1 ELSE 0 END) AS windowed_count
-            ', [$windowStart])
-            ->whereIn('tenant_id', $tenantIds)
-            ->groupBy('tenant_id', 'source')
+        // ── Left subquery: per (tenant_id, source) → latest metric_date ──────
+        $leftSub = DB::table('seo_metrics')
+            ->select('tenant_id', 'source')
+            ->selectRaw('MAX(metric_date) AS max_date')
+            ->groupBy('tenant_id', 'source');
+
+        // F24a: only add the IN clause when we are scoped to specific tenants.
+        if ($tenantArg !== null) {
+            $leftSub->whereIn('tenant_id', $tenantIds);
+        }
+
+        // ── Right subquery: per (tenant_id, source) → windowed row count ─────
+        $rightSub = DB::table('seo_metrics')
+            ->select('tenant_id', 'source')
+            ->selectRaw('COUNT(*) AS windowed_count')
+            ->where('metric_date', '>=', $windowStart)
+            ->groupBy('tenant_id', 'source');
+
+        if ($tenantArg !== null) {
+            $rightSub->whereIn('tenant_id', $tenantIds);
+        }
+
+        // ── Outer query: LEFT JOIN the two subqueries ─────────────────────────
+        // COALESCE handles tenants that have data but none within the window.
+        $rows = DB::query()
+            ->fromSub($leftSub, 'a')
+            ->select([
+                'a.tenant_id',
+                'a.source',
+                'a.max_date',
+            ])
+            ->selectRaw('COALESCE(b.windowed_count, 0) AS windowed_count')
+            ->leftJoinSub(
+                $rightSub,
+                'b',
+                fn ($join) => $join
+                    ->on('a.tenant_id', '=', 'b.tenant_id')
+                    ->on('a.source', '=', 'b.source'),
+            )
             ->get();
 
-        // Group by tenant_id for O(1) lookup in the loop.
+        // Group by tenant_id for O(1) lookup in the per-tenant loop.
         return $rows->groupBy('tenant_id');
     }
 

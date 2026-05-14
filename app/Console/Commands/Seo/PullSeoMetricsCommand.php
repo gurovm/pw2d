@@ -52,16 +52,16 @@ class PullSeoMetricsCommand extends Command
             return self::FAILURE;
         }
 
-        $action       = new PullSeoMetrics;
-        $anySucceeded = false;
+        $action    = new PullSeoMetrics;
+        $anyErrors = false;
 
         foreach ($tenants as $tenant) {
             $this->line("Processing tenant: <info>{$tenant->getTenantKey()}</info>");
 
             $result = $action->execute($tenant, $gscDates, $ga4Dates);
 
-            if ($result->totalUpserted() > 0 && ! $result->hasErrors()) {
-                $anySucceeded = true;
+            if ($result->hasErrors()) {
+                $anyErrors = true;
             }
 
             // Per-source summary table.
@@ -96,7 +96,9 @@ class PullSeoMetricsCommand extends Command
             }
         }
 
-        return $anySucceeded ? self::SUCCESS : self::FAILURE;
+        // SUCCESS when no errors occurred — zero upserts on a quiet day is normal.
+        // FAILURE only when at least one tenant reported an error.
+        return $anyErrors ? self::FAILURE : self::SUCCESS;
     }
 
     /**

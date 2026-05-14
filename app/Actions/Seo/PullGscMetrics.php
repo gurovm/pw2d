@@ -10,27 +10,39 @@ use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Pulls Google Search Console per-URL metrics for a single tenant and date,
- * then upserts them into seo_metrics.
+ * Pulls Google Search Console per-URL metrics for a single tenant over a date
+ * window, then upserts them into seo_metrics.
  *
  * Designed to run inside tenancy context (tenancy()->initialize() must have been
  * called before execute()). The service class can be swapped in tests by binding
  * a fake into the container:
  *
  *   app()->bind(GoogleSearchConsoleService::class, fn () => new FakeGscService());
+ *
+ * IMPORTANT — atomicity trade-off (F23):
+ * The entire date window is fetched in a single GSC API call. This means a single
+ * API failure causes ALL requested dates to fail — there is no per-date isolation.
+ * The upside is a 4× reduction in API calls for the default 4-day window.
+ * GA4 retains per-date isolation because it uses a separate action with its own loop.
  */
 final class PullGscMetrics
 {
     /**
-     * Execute the GSC pull for a single tenant + date.
+     * Execute the GSC pull for a single tenant over a window of dates.
      *
-     * Returns a PullResult carrying the count of upserted rows and any errors.
+     * Sorts $dates ascending, derives startDate/endDate for a single ranged
+     * GSC API call, then upserts each date's rows individually. Per-date upsert
+     * counts are available in PullResult::$dailyCounts for the orchestrator to
+     * surface in verbose output.
+     *
+     * Returns a PullResult carrying the total upserted row count, any errors,
+     * and a per-date breakdown in dailyCounts.
      * Never throws — all exceptions are caught and surfaced in PullResult::$errors.
      *
-     * @param Tenant          $tenant The tenant to pull data for.
-     * @param CarbonImmutable $date   The calendar day to pull.
+     * @param Tenant                      $tenant The tenant to pull data for.
+     * @param array<int, CarbonImmutable> $dates  One or more calendar days to pull.
      */
-    public function execute(Tenant $tenant, CarbonImmutable $date): PullResult
+    public function execute(Tenant $tenant, array $dates): PullResult
     {
         // Read config from the tenant's JSON data bag.
         // tenancy() must already be initialized for tenant('key') to work.
@@ -43,60 +55,82 @@ final class PullGscMetrics
             );
         }
 
+        if (empty($dates)) {
+            return new PullResult(upserted: 0, errors: []);
+        }
+
         $serviceAccountPath = config('seo.google.service_account_path');
-        $upserted = 0;
+
+        /** @var array<string, int> $dailyCounts */
+        $dailyCounts = [];
+        $upserted    = 0;
 
         try {
+            // Derive the contiguous range from the supplied dates.
+            $sorted    = collect($dates)->sort(fn (CarbonImmutable $a, CarbonImmutable $b) => $a->timestamp <=> $b->timestamp)->values();
+            $startDate = $sorted->first();
+            $endDate   = $sorted->last();
+
             // Resolve through the container so tests can swap in a fake.
             $service = app(GoogleSearchConsoleService::class, [
                 'siteUrl'            => $siteUrl,
                 'serviceAccountPath' => $serviceAccountPath,
             ]);
 
-            $rows = $service->fetchUrlMetrics($date);
+            // Single ranged API call for the full window.
+            $buckets = $service->fetchUrlMetricsForRange($startDate, $endDate);
 
-            // Build the batch for a single upsert call — far cheaper than
-            // N individual updateOrCreate() calls for large URL sets.
-            $batch = $rows->map(fn (array $row) => [
-                'tenant_id'       => $tenant->getTenantKey(),
-                'source'          => 'gsc',
-                'url'             => $row['url'],
-                'url_hash'        => hash('sha256', $row['url']),
-                'metric_date'     => $date->format('Y-m-d'),
-                'gsc_impressions' => $row['impressions'],
-                'gsc_clicks'      => $row['clicks'],
-                'gsc_ctr'         => $row['ctr'],
-                'gsc_position'    => $row['position'],
-                'gsc_top_query'   => $row['top_query'],
-                'updated_at'      => now(),
-                'created_at'      => now(),
-            ])->all();
+            // Upsert each requested date individually so the unique constraint
+            // (tenant_id, source, url_hash, metric_date) remains idempotent.
+            foreach ($sorted as $date) {
+                $dateKey = $date->format('Y-m-d');
+                $rows    = $buckets->get($dateKey, collect());
 
-            if (empty($batch)) {
-                return new PullResult(upserted: 0, errors: []);
+                if ($rows->isEmpty()) {
+                    // GSC had no data for this date — skip noisy zero-row upsert.
+                    $dailyCounts[$dateKey] = 0;
+                    continue;
+                }
+
+                $batch = $rows->map(fn (array $row) => [
+                    'tenant_id'       => $tenant->getTenantKey(),
+                    'source'          => 'gsc',
+                    'url'             => $row['url'],
+                    'url_hash'        => hash('sha256', $row['url']),
+                    'metric_date'     => $dateKey,
+                    'gsc_impressions' => $row['impressions'],
+                    'gsc_clicks'      => $row['clicks'],
+                    'gsc_ctr'         => $row['ctr'],
+                    'gsc_position'    => $row['position'],
+                    'gsc_top_query'   => $row['top_query'],
+                    'updated_at'      => now(),
+                    'created_at'      => now(),
+                ])->all();
+
+                // The unique constraint (tenant_id, source, url_hash, metric_date)
+                // ensures re-running the same day is idempotent.
+                DB::table('seo_metrics')->upsert(
+                    $batch,
+                    ['tenant_id', 'source', 'url_hash', 'metric_date'],  // unique keys
+                    [   // columns to update on conflict
+                        'url',
+                        'gsc_impressions',
+                        'gsc_clicks',
+                        'gsc_ctr',
+                        'gsc_position',
+                        'gsc_top_query',
+                        'updated_at',
+                    ],
+                );
+
+                $dateCount             = count($batch);
+                $dailyCounts[$dateKey] = $dateCount;
+                $upserted             += $dateCount;
             }
-
-            // The unique constraint (tenant_id, source, url_hash, metric_date)
-            // ensures re-running the same day is idempotent.
-            DB::table('seo_metrics')->upsert(
-                $batch,
-                ['tenant_id', 'source', 'url_hash', 'metric_date'],  // unique keys
-                [   // columns to update on conflict
-                    'url',
-                    'gsc_impressions',
-                    'gsc_clicks',
-                    'gsc_ctr',
-                    'gsc_position',
-                    'gsc_top_query',
-                    'updated_at',
-                ],
-            );
-
-            $upserted = count($batch);
         } catch (\Throwable $e) {
-            return PullResult::fromThrowable($e, $upserted);
+            return PullResult::fromThrowable($e, $upserted, $dailyCounts);
         }
 
-        return new PullResult(upserted: $upserted, errors: []);
+        return new PullResult(upserted: $upserted, errors: [], dailyCounts: $dailyCounts);
     }
 }

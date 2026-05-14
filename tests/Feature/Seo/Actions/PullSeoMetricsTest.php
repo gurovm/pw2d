@@ -18,6 +18,15 @@ use Tests\TestCase;
  *
  * Child actions are faked via container bindings so the test stays offline.
  * Since Spec 016 the execute() signature takes date arrays, not a single date.
+ *
+ * F23 changes:
+ * - GSC fakes must implement fetchUrlMetricsForRange() (date-keyed Collection)
+ *   instead of the deprecated fetchUrlMetrics().
+ * - PullGscMetrics::execute() is now called ONCE per tenant for the full window,
+ *   not once per date. Assertions on call counts updated accordingly.
+ * - GSC failure is now ATOMIC: a single API error fails all requested dates.
+ *   The "d2 throws → d1 and d3 still succeed" semantic is gone for GSC (GA4
+ *   retains per-date isolation).
  */
 class PullSeoMetricsTest extends TestCase
 {
@@ -47,7 +56,9 @@ class PullSeoMetricsTest extends TestCase
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /**
-     * Bind a fake GSC service that returns the given rows for ANY date.
+     * Bind a fake GSC service implementing fetchUrlMetricsForRange() (F23 shape).
+     *
+     * Returns $rows for every date in the requested range, keyed by 'Y-m-d'.
      */
     private function bindFakeGsc(array $rows = []): void
     {
@@ -58,9 +69,13 @@ class PullSeoMetricsTest extends TestCase
                     parent::__construct('sc-domain:tenant-a.com', '/fake/path.json');
                 }
 
-                public function fetchUrlMetrics(CarbonImmutable $date): Collection
+                public function fetchUrlMetricsForRange(CarbonImmutable $startDate, CarbonImmutable $endDate): Collection
                 {
-                    return collect($this->fakeRows);
+                    $buckets = collect();
+                    for ($d = $startDate; ! $d->greaterThan($endDate); $d = $d->addDay()) {
+                        $buckets->put($d->format('Y-m-d'), collect($this->fakeRows));
+                    }
+                    return $buckets;
                 }
             };
         });
@@ -87,35 +102,27 @@ class PullSeoMetricsTest extends TestCase
     }
 
     /**
-     * Bind a fake GSC service that throws for the given Y-m-d date strings
-     * and returns $rows for all other dates.
-     *
-     * @param array<string> $throwOnDates Y-m-d strings on which to throw.
+     * Bind a fake GSC service that throws unconditionally when fetchUrlMetricsForRange
+     * is called (simulates a full window API failure, per F23 atomicity).
      */
-    private function bindFakeGscThrowingOnDates(array $throwOnDates, array $rows = []): void
+    private function bindFakeGscThrowing(): void
     {
-        app()->bind(GoogleSearchConsoleService::class, function () use ($throwOnDates, $rows) {
-            return new class($throwOnDates, $rows) extends GoogleSearchConsoleService {
-                public function __construct(
-                    private array $throwOnDates,
-                    private array $fakeRows,
-                ) {
+        app()->bind(GoogleSearchConsoleService::class, function () {
+            return new class extends GoogleSearchConsoleService {
+                public function __construct()
+                {
                     parent::__construct('sc-domain:tenant-a.com', '/fake/path.json');
                 }
 
-                public function fetchUrlMetrics(CarbonImmutable $date): Collection
+                public function fetchUrlMetricsForRange(CarbonImmutable $startDate, CarbonImmutable $endDate): Collection
                 {
-                    if (in_array($date->format('Y-m-d'), $this->throwOnDates, true)) {
-                        throw new \RuntimeException("Simulated GSC API error for {$date->format('Y-m-d')}");
-                    }
-
-                    return collect($this->fakeRows);
+                    throw new \RuntimeException('Simulated GSC API window failure');
                 }
             };
         });
     }
 
-    // ── Migrated baseline tests (single-date → one-element arrays) ────────────
+    // ── Migrated baseline tests ───────────────────────────────────────────────
 
     public function test_tenancy_is_initialized_and_ended(): void
     {
@@ -201,38 +208,43 @@ class PullSeoMetricsTest extends TestCase
         $this->assertSame(100, (int) $tenantARow->gsc_impressions);
     }
 
-    // ── New Spec 016 §4.3 tests ───────────────────────────────────────────────
+    // ── F23 updated orchestration tests ──────────────────────────────────────
 
     /**
-     * When a multi-date GSC window is supplied, each date is pulled independently.
-     * The total upserted count aggregates all dates and errors stay empty.
+     * After F23, PullSeoMetrics calls PullGscMetrics ONCE for the full window
+     * (not once per date). The GSC service's fetchUrlMetricsForRange() is invoked
+     * a single time regardless of how many dates are in the window.
+     *
+     * Total upserted count still aggregates rows across all dates.
+     * GA4 is still called once per date (per-date isolation retained for GA4).
      */
-    public function test_pulls_each_date_in_the_gsc_window_and_aggregates_counts(): void
+    public function test_gsc_service_is_called_once_for_the_full_window(): void
     {
-        // \stdClass is used deliberately: the anonymous class receives the counter
-        // via its constructor, which doesn't support `use (&$ref)`. An object
-        // reference is the only way to share mutable state between the binding
-        // closure and the anonymous class instance without PHP reference gymnastics.
-        $gscCalls = new \stdClass();
-        $gscCalls->count = 0;
+        $gscRangeCalls = new \stdClass();
+        $gscRangeCalls->count = 0;
 
         $ga4Calls = new \stdClass();
         $ga4Calls->count = 0;
 
-        app()->bind(GoogleSearchConsoleService::class, function () use ($gscCalls) {
-            return new class($gscCalls) extends GoogleSearchConsoleService {
+        app()->bind(GoogleSearchConsoleService::class, function () use ($gscRangeCalls) {
+            return new class($gscRangeCalls) extends GoogleSearchConsoleService {
                 public function __construct(private \stdClass $counter)
                 {
                     parent::__construct('sc-domain:tenant-a.com', '/fake/path.json');
                 }
 
-                public function fetchUrlMetrics(CarbonImmutable $date): Collection
+                public function fetchUrlMetricsForRange(CarbonImmutable $startDate, CarbonImmutable $endDate): Collection
                 {
                     $this->counter->count++;
-                    // Unique URL per date so each invocation writes its own row.
-                    return collect([
-                        ['url' => "https://tenant-a.com/{$date->format('Y-m-d')}", 'impressions' => 10, 'clicks' => 1, 'ctr' => 0.1, 'position' => 5.0, 'top_query' => null],
-                    ]);
+                    // Return one unique URL per date so each date produces a distinct row.
+                    $buckets = collect();
+                    for ($d = $startDate; ! $d->greaterThan($endDate); $d = $d->addDay()) {
+                        $dateKey = $d->format('Y-m-d');
+                        $buckets->put($dateKey, collect([
+                            ['url' => "https://tenant-a.com/{$dateKey}", 'impressions' => 10, 'clicks' => 1, 'ctr' => 0.1, 'position' => 5.0, 'top_query' => null],
+                        ]));
+                    }
+                    return $buckets;
                 }
             };
         });
@@ -260,12 +272,13 @@ class PullSeoMetricsTest extends TestCase
 
         $result = (new PullSeoMetrics)->execute(
             $this->tenantA,
-            [$d1, $d2, $d3],  // 3 GSC dates
+            [$d1, $d2, $d3],  // 3 GSC dates → ONE ranged call
             [$d1],             // 1 GA4 date
         );
 
-        $this->assertSame(3, $gscCalls->count, 'PullGscMetrics should be called once per GSC date');
-        $this->assertSame(1, $ga4Calls->count, 'PullGa4Metrics should be called once per GA4 date');
+        // F23: fetchUrlMetricsForRange is called ONCE for the full window, not 3×.
+        $this->assertSame(1, $gscRangeCalls->count, 'GSC fetchUrlMetricsForRange must be called exactly once for the whole window');
+        $this->assertSame(1, $ga4Calls->count, 'GA4 fetchLandingPageMetrics must still be called once per date');
 
         $this->assertSame(3, $result->gscRowsUpserted, '1 row per date × 3 dates = 3 total');
         $this->assertSame(1, $result->ga4RowsUpserted);
@@ -274,10 +287,12 @@ class PullSeoMetricsTest extends TestCase
 
     /**
      * gscDailyCounts must be keyed by Y-m-d and hold per-date upsert counts.
+     * PullGscMetrics now returns these in PullResult::$dailyCounts; the orchestrator
+     * plumbs them through to PullSeoMetricsResult::$gscDailyCounts.
      */
     public function test_gsc_daily_counts_populates_per_date_upsert_counts(): void
     {
-        // d1 → 2 rows, d2 → 1 row.
+        // d1 → 2 rows, d2 → 1 row — via a date-keyed fetchUrlMetricsForRange response.
         app()->bind(GoogleSearchConsoleService::class, function () {
             return new class extends GoogleSearchConsoleService {
                 public function __construct()
@@ -285,17 +300,16 @@ class PullSeoMetricsTest extends TestCase
                     parent::__construct('sc-domain:tenant-a.com', '/fake/path.json');
                 }
 
-                public function fetchUrlMetrics(CarbonImmutable $date): Collection
+                public function fetchUrlMetricsForRange(CarbonImmutable $startDate, CarbonImmutable $endDate): Collection
                 {
-                    if ($date->format('Y-m-d') === '2026-04-10') {
-                        return collect([
+                    return collect([
+                        '2026-04-10' => collect([
                             ['url' => 'https://tenant-a.com/a', 'impressions' => 100, 'clicks' => 5, 'ctr' => 0.05, 'position' => 3.0, 'top_query' => null],
                             ['url' => 'https://tenant-a.com/b', 'impressions' => 200, 'clicks' => 8, 'ctr' => 0.04, 'position' => 4.0, 'top_query' => null],
-                        ]);
-                    }
-
-                    return collect([
-                        ['url' => 'https://tenant-a.com/a', 'impressions' => 90, 'clicks' => 4, 'ctr' => 0.04, 'position' => 3.5, 'top_query' => null],
+                        ]),
+                        '2026-04-09' => collect([
+                            ['url' => 'https://tenant-a.com/a', 'impressions' => 90, 'clicks' => 4, 'ctr' => 0.04, 'position' => 3.5, 'top_query' => null],
+                        ]),
                     ]);
                 }
             };
@@ -320,23 +334,23 @@ class PullSeoMetricsTest extends TestCase
     }
 
     /**
-     * When GSC throws for d2, the remaining dates (d1, d3) must still upsert
-     * and the errors array must contain exactly one entry mentioning d2's date.
+     * F23 atomicity: when the GSC window fails (fetchUrlMetricsForRange throws),
+     * ALL requested GSC dates fail together — there is no per-date isolation.
+     *
+     * UPDATED from Spec 016: the old test asserted d1 and d3 still upsert when
+     * d2 throws. That per-date isolation is gone for GSC. Now the whole window
+     * fails. GA4 is unaffected (it runs separately with its own loop).
      */
-    public function test_gsc_failure_for_one_date_does_not_block_other_dates(): void
+    public function test_gsc_window_failure_is_atomic_all_dates_fail_together(): void
     {
         $d1 = CarbonImmutable::parse('2026-04-10');
-        $d2 = CarbonImmutable::parse('2026-04-09'); // will throw
+        $d2 = CarbonImmutable::parse('2026-04-09');
         $d3 = CarbonImmutable::parse('2026-04-08');
 
-        $this->bindFakeGscThrowingOnDates(
-            throwOnDates: ['2026-04-09'],
-            rows: [
-                ['url' => 'https://tenant-a.com/', 'impressions' => 100, 'clicks' => 5, 'ctr' => 0.05, 'position' => 3.0, 'top_query' => null],
-            ],
-        );
+        // The entire window throws — simulates an API auth or quota failure.
+        $this->bindFakeGscThrowing();
 
-        $this->bindFakeGa4([]);
+        $this->bindFakeGa4([['url' => '/', 'sessions' => 50, 'users' => 40, 'engaged_sessions' => 35, 'conversions' => 2, 'bounce_rate' => 0.3]]);
 
         $result = (new PullSeoMetrics)->execute(
             $this->tenantA,
@@ -344,21 +358,23 @@ class PullSeoMetricsTest extends TestCase
             [$d1],
         );
 
-        // d1 and d3 each write 1 row; d2 fails.
-        $this->assertSame(2, $result->gscRowsUpserted, 'd1 and d3 should each produce 1 upserted row');
-        $this->assertCount(1, $result->errors, 'Exactly one error entry for d2');
-        $this->assertStringContainsString('2026-04-09', $result->errors[0]);
+        // All GSC dates fail together — zero GSC rows upserted.
+        $this->assertSame(0, $result->gscRowsUpserted, 'Atomic GSC failure: zero rows must be upserted for any date');
+        $this->assertNotEmpty($result->errors, 'An error entry must be recorded for the window failure');
 
-        // Confirm the DB rows for d1 and d3 exist.
-        foreach (['2026-04-10', '2026-04-08'] as $dateStr) {
-            $this->assertTrue(
-                \Illuminate\Support\Facades\DB::table('seo_metrics')
-                    ->where('tenant_id', 'tenant-a')
-                    ->where('source', 'gsc')
-                    ->where('metric_date', $dateStr)
-                    ->exists(),
-                "Expected seo_metrics row for {$dateStr}",
-            );
-        }
+        // No GSC rows at all in the DB for any of the three dates.
+        $gscCount = \Illuminate\Support\Facades\DB::table('seo_metrics')
+            ->where('tenant_id', 'tenant-a')
+            ->where('source', 'gsc')
+            ->count();
+        $this->assertSame(0, $gscCount, 'No GSC rows should be written when the window fails');
+
+        // GA4 is unaffected — its own loop runs separately (GSC failure ≠ GA4 block).
+        $this->assertSame(1, $result->ga4RowsUpserted, 'GA4 must still succeed despite GSC window failure');
+        $ga4Count = \Illuminate\Support\Facades\DB::table('seo_metrics')
+            ->where('tenant_id', 'tenant-a')
+            ->where('source', 'ga4')
+            ->count();
+        $this->assertSame(1, $ga4Count);
     }
 }
