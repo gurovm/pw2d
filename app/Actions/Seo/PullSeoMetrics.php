@@ -11,14 +11,17 @@ use Illuminate\Support\Facades\Log;
 /**
  * Orchestrates a full per-tenant SEO data pull (GSC + GA4).
  *
- * Initializes tenancy for the given tenant, iterates the supplied date windows
- * for each source, then ends tenancy in a finally block so errors in one source
- * never leave the scheduler in tenant context.
+ * Initializes tenancy for the given tenant, issues the API calls for each
+ * source over the supplied date windows, then ends tenancy in a finally block
+ * so errors in one source never leave the scheduler in tenant context.
  *
- * Error isolation:
- * - If GSC fails for one date, the remaining GSC dates still run.
- * - If GSC fails entirely, GA4 still runs.
- * - Partial failures are aggregated in the returned PullSeoMetricsResult.
+ * Error isolation model (post-F23):
+ * - GSC: the entire window is fetched in ONE API call (F23). A failure means
+ *   ALL requested GSC dates fail — there is no per-date isolation for GSC.
+ *   This is an intentional trade-off: the win is 4× fewer API calls per tenant.
+ * - GA4: retains per-date isolation — each date is fetched/upserted individually,
+ *   so a failure on one date does not block the others.
+ * - If GSC fails entirely, GA4 still runs (outer try/catch boundaries are separate).
  *
  * Idempotency: child actions use DB::upsert(), so re-running for the same date
  * is safe and cheap.
@@ -28,9 +31,9 @@ final class PullSeoMetrics
     /**
      * Execute a full SEO pull for a single tenant over rolling date windows.
      *
-     * @param Tenant                   $tenant    The tenant to pull data for.
-     * @param array<int, CarbonImmutable> $gscDates Dates to pull for GSC — each date is upserted individually.
-     * @param array<int, CarbonImmutable> $ga4Dates Dates to pull for GA4 — each date is upserted individually.
+     * @param Tenant                      $tenant    The tenant to pull data for.
+     * @param array<int, CarbonImmutable> $gscDates  Dates to pull for GSC — fetched in a single ranged API call.
+     * @param array<int, CarbonImmutable> $ga4Dates  Dates to pull for GA4 — each date is upserted individually.
      */
     public function execute(Tenant $tenant, array $gscDates, array $ga4Dates): PullSeoMetricsResult
     {
@@ -44,29 +47,28 @@ final class PullSeoMetrics
         $errors = [];
 
         try {
-            // ── GSC window ───────────────────────────────────────────────────
-            foreach ($gscDates as $date) {
-                try {
-                    $result = (new PullGscMetrics)->execute($tenant, $date);
-                    $dateKey = $date->format('Y-m-d');
-                    $gscDailyCounts[$dateKey] = $result->upserted;
-                    array_push($errors, ...$result->errors);
-                } catch (\Throwable $e) {
-                    $dateKey = $date->format('Y-m-d');
-                    $gscDailyCounts[$dateKey] = 0;
-                    $errors[] = "GSC [{$dateKey}]: " . $e->getMessage();
-                    Log::warning('PullSeoMetrics: GSC date failed — continuing', [
-                        'tenant_id' => $tenant->getTenantKey(),
-                        'date'      => $dateKey,
-                        'error'     => $e->getMessage(),
-                    ]);
+            // ── GSC window — single ranged API call for the full window (F23) ──
+            try {
+                $gscResult      = (new PullGscMetrics)->execute($tenant, $gscDates);
+                $gscDailyCounts = $gscResult->dailyCounts;
+                array_push($errors, ...$gscResult->errors);
+            } catch (\Throwable $e) {
+                // Populate dailyCounts with zeros for all requested dates so
+                // downstream consumers never see a missing key.
+                foreach ($gscDates as $date) {
+                    $gscDailyCounts[$date->format('Y-m-d')] = 0;
                 }
+                $errors[] = 'GSC: ' . $e->getMessage();
+                Log::warning('PullSeoMetrics: GSC window failed', [
+                    'tenant_id' => $tenant->getTenantKey(),
+                    'error'     => $e->getMessage(),
+                ]);
             }
 
-            // ── GA4 window ───────────────────────────────────────────────────
+            // ── GA4 window — per-date isolation retained ─────────────────────
             foreach ($ga4Dates as $date) {
                 try {
-                    $result = (new PullGa4Metrics)->execute($tenant, $date);
+                    $result  = (new PullGa4Metrics)->execute($tenant, $date);
                     $dateKey = $date->format('Y-m-d');
                     $ga4DailyCounts[$dateKey] = $result->upserted;
                     array_push($errors, ...$result->errors);
@@ -86,7 +88,7 @@ final class PullSeoMetrics
         }
 
         // Compute the latest date across both windows for backward-compat callers.
-        $allDates = [...$gscDates, ...$ga4Dates];
+        $allDates   = [...$gscDates, ...$ga4Dates];
         $latestDate = array_reduce(
             $allDates,
             fn (?CarbonImmutable $carry, CarbonImmutable $d) => $carry === null || $d->greaterThan($carry) ? $d : $carry,

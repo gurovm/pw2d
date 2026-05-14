@@ -41,6 +41,9 @@ class GoogleSearchConsoleService
      * extra API call per URL (up to 500 × the chunk size), which would risk rate
      * limiting. This is tracked as F7 follow-up.
      *
+     * @deprecated Use fetchUrlMetricsForRange() for new callers. This method is
+     *             preserved for back-compat and delegates to the range variant.
+     *
      * @param  CarbonImmutable $date The calendar day to pull (UTC).
      * @return Collection<int, array{url: string, impressions: int, clicks: int, ctr: float, position: float, top_query: string|null}>
      *
@@ -49,51 +52,98 @@ class GoogleSearchConsoleService
      */
     public function fetchUrlMetrics(CarbonImmutable $date): Collection
     {
-        $client  = $this->makeClient();
-        $service = new Google_Service_Webmasters($client);
-
+        // Thin wrapper — delegate to the range variant and unwrap the single-date bucket.
         $dateStr = $date->format('Y-m-d');
 
-        $request = new Google_Service_Webmasters_SearchAnalyticsQueryRequest();
-        $request->setStartDate($dateStr);
-        $request->setEndDate($dateStr);
-        $request->setDimensions(['page']);
-        $request->setRowLimit((int) config('seo.pull.chunk_size', 500));
+        return $this->fetchUrlMetricsForRange($date, $date)->get($dateStr) ?? collect();
+    }
 
-        $response = $service->searchanalytics->query($this->siteUrl, $request);
+    /**
+     * Fetch per-(date, URL) GSC metrics for a date range in a single API call.
+     *
+     * Adds the 'date' dimension to the query so the response contains per-day
+     * rows. Buckets the result into a date-keyed collection. Paginates
+     * automatically using the `seo.pull.chunk_size` config value (default 500)
+     * as the page size — required for wider windows (e.g. the 35-day backfill)
+     * where the total row count exceeds one page.
+     *
+     * Response row shape when dimensions = ['date', 'page']:
+     *   keys[0] = date string ('Y-m-d'), keys[1] = page URL
+     *
+     * @param  CarbonImmutable $startDate First day of the range (inclusive, UTC).
+     * @param  CarbonImmutable $endDate   Last day of the range (inclusive, UTC).
+     * @return Collection<string, Collection<int, array{url: string, impressions: int, clicks: int, ctr: float, position: float, top_query: string|null}>>
+     *         Outer collection keyed by 'Y-m-d'; inner collection is the flat per-URL list for that date.
+     *
+     * @throws \Google_Service_Exception  On API-level errors (quota, auth).
+     * @throws \Google_Exception          On client setup failures.
+     */
+    public function fetchUrlMetricsForRange(CarbonImmutable $startDate, CarbonImmutable $endDate): Collection
+    {
+        $client      = $this->makeClient();
+        $service     = new Google_Service_Webmasters($client);
+        $chunkSize   = (int) config('seo.pull.chunk_size', 500);
+        $startDateStr = $startDate->format('Y-m-d');
+        $endDateStr   = $endDate->format('Y-m-d');
 
-        $rows = collect($response->getRows() ?? []);
+        $allRows = collect();
+        $offset  = 0;
 
-        return $rows->map(function (mixed $row) {
-            // The GSC response shape: keys[0] = page URL, plus aggregate metrics.
-            $url = data_get($row, 'keys.0') ?? data_get($row, 'keys[0]') ?? '';
+        // Paginate: keep fetching until a page returns fewer rows than chunkSize.
+        do {
+            $request = new Google_Service_Webmasters_SearchAnalyticsQueryRequest();
+            $request->setStartDate($startDateStr);
+            $request->setEndDate($endDateStr);
+            $request->setDimensions(['date', 'page']);
+            $request->setRowLimit($chunkSize);
+            $request->setStartRow($offset);
 
-            // Google_Service_Webmasters_ApiDataRow objects expose getters.
+            $response  = $service->searchanalytics->query($this->siteUrl, $request);
+            $pageRows  = collect($response->getRows() ?? []);
+            $pageCount = $pageRows->count();
+
+            $allRows = $allRows->concat($pageRows);
+            $offset += $pageCount;
+        } while ($pageCount >= $chunkSize);
+
+        // Parse each row and bucket by date string.
+        /** @var Collection<string, Collection<int, array{url: string, impressions: int, clicks: int, ctr: float, position: float, top_query: string|null}>> $buckets */
+        $buckets = collect();
+
+        foreach ($allRows as $row) {
             if (is_object($row) && method_exists($row, 'getKeys')) {
-                $keys      = $row->getKeys();
-                $url       = $keys[0] ?? '';
-                $clicks    = (int) $row->getClicks();
+                $keys        = $row->getKeys();
+                $dateKey     = $keys[0] ?? '';
+                $url         = $keys[1] ?? '';
+                $clicks      = (int) $row->getClicks();
                 $impressions = (int) $row->getImpressions();
-                $ctr       = (float) $row->getCtr();
-                $position  = (float) $row->getPosition();
+                $ctr         = (float) $row->getCtr();
+                $position    = (float) $row->getPosition();
             } else {
                 // Array fallback (used by fake clients in tests)
-                $url         = data_get($row, 'keys.0', '');
+                $dateKey     = data_get($row, 'keys.0', '');
+                $url         = data_get($row, 'keys.1', '');
                 $clicks      = (int) data_get($row, 'clicks', 0);
                 $impressions = (int) data_get($row, 'impressions', 0);
                 $ctr         = (float) data_get($row, 'ctr', 0.0);
                 $position    = (float) data_get($row, 'position', 0.0);
             }
 
-            return [
+            if (! $buckets->has($dateKey)) {
+                $buckets->put($dateKey, collect());
+            }
+
+            $buckets->get($dateKey)->push([
                 'url'         => $url,
                 'impressions' => $impressions,
                 'clicks'      => $clicks,
                 'ctr'         => $ctr,
                 'position'    => $position,
                 'top_query'   => null, // F7: per-URL top-query requires a second dimension pass
-            ];
-        })->values();
+            ]);
+        }
+
+        return $buckets;
     }
 
     /**

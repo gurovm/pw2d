@@ -23,3 +23,9 @@ This affects any test that calls `tenancy()->initialize($tenant)` after `Tenant:
 **Workaround used in tests:** Use `app()->instance(TenantContract::class, $mock)` with a mock tenant object (same technique as `TenantCacheKeyTest`) instead of calling `tenancy()->initialize()` directly.
 
 **Note:** This does not affect production (MySQL uses string PKs without auto-increment interference) or existing HTTP-level tests (where tenant ID lookup goes through the DB, not through the in-memory model).
+
+---
+
+## Resolved: SeoStatusCommand::fetchAggregates binding order (Spec 017 F24)
+
+Fixed 2026-05-14 by switching from `DB::table(DB::raw(...))->mergeBindings()` to `DB::query()->fromSub($leftSub, 'a')`, which prepends subquery bindings in the correct order before subsequent `leftJoinSub` bindings. All 86 SEO tests passing.

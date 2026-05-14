@@ -10,5 +10,9 @@ When invoked, you must execute the following deployment steps exactly in this or
 6. Build frontend assets: `npm run build`
 7. Clear caches: `php artisan optimize:clear`
 8. Restart PHP-FPM to clear OPcache: `systemctl restart php8.3-fpm`
+9. Verify Laravel scheduler cron hook is installed (idempotent read-only check):
+   `sudo -u www-data crontab -l 2>/dev/null | grep -q "schedule:run" || echo "WARNING: Laravel scheduler cron hook NOT installed. Run: echo '* * * * * cd /var/www/pw2d && php artisan schedule:run >> /dev/null 2>&1' | sudo -u www-data crontab -"`
 
-Confirm with the user once the deployment sequence is fully completed.
+   If the check fails (WARNING is printed), surface the warning to the user EXPLICITLY at the end of the deployment summary. Do NOT auto-install; this is a one-time per-server setup that needs human confirmation.
+
+Confirm with the user once the deployment sequence is fully completed. If step 9 printed a WARNING, include it prominently in the confirmation message.

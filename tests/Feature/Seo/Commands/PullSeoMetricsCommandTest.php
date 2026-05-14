@@ -15,9 +15,19 @@ use Tests\TestCase;
 /**
  * Feature tests for PullSeoMetricsCommand (pw2d:seo:pull).
  *
- * Child services are faked via container bindings. New Spec 016 tests verify
+ * Child services are faked via container bindings. Spec 016 tests verify
  * the date-window logic (4-day GSC default, 1-day GA4 default, explicit-date
  * backward-compat, and --gsc-window-days override).
+ *
+ * F23 changes:
+ * - GSC fakes now implement fetchUrlMetricsForRange() instead of fetchUrlMetrics().
+ * - Date-window tests now verify the startDate/endDate range passed to
+ *   fetchUrlMetricsForRange(), rather than counting per-date calls.
+ *
+ * F25 changes:
+ * - Zero upserts with no errors → SUCCESS (was FAILURE under old semantic).
+ * - Errors during processing → FAILURE.
+ * - No tenants matched → FAILURE (preserved).
  */
 class PullSeoMetricsCommandTest extends TestCase
 {
@@ -27,7 +37,8 @@ class PullSeoMetricsCommandTest extends TestCase
     {
         parent::setUp();
 
-        // Bind fakes so no live API calls happen.
+        // Default fake GSC: implements fetchUrlMetricsForRange (F23 shape).
+        // Returns 1 row for every date in the requested range.
         app()->bind(GoogleSearchConsoleService::class, function () {
             return new class extends GoogleSearchConsoleService {
                 public function __construct()
@@ -35,11 +46,16 @@ class PullSeoMetricsCommandTest extends TestCase
                     parent::__construct('sc-domain:test.com', '/fake/path.json');
                 }
 
-                public function fetchUrlMetrics(CarbonImmutable $date): Collection
+                public function fetchUrlMetricsForRange(CarbonImmutable $startDate, CarbonImmutable $endDate): Collection
                 {
-                    return collect([
-                        ['url' => 'https://test.com/', 'impressions' => 100, 'clicks' => 5, 'ctr' => 0.05, 'position' => 3.0, 'top_query' => null],
-                    ]);
+                    $buckets = collect();
+                    for ($d = $startDate; ! $d->greaterThan($endDate); $d = $d->addDay()) {
+                        $dateKey = $d->format('Y-m-d');
+                        $buckets->put($dateKey, collect([
+                            ['url' => "https://test.com/{$dateKey}", 'impressions' => 100, 'clicks' => 5, 'ctr' => 0.05, 'position' => 3.0, 'top_query' => null],
+                        ]));
+                    }
+                    return $buckets;
                 }
             };
         });
@@ -169,37 +185,48 @@ class PullSeoMetricsCommandTest extends TestCase
         $this->assertGreaterThan(0, $count);
     }
 
-    // ── New Spec 016 §4.3 window tests ───────────────────────────────────────
+    // ── F23 date-window tests (updated) ──────────────────────────────────────
 
     /**
-     * --date=yesterday (keyword) must trigger the 4-day GSC default window
-     * and the 1-day GA4 default window.
+     * --date=yesterday (keyword) triggers a 4-day GSC window.
      *
-     * We verify this by inspecting the distinct metric_dates written to
-     * seo_metrics: GSC should have 4, GA4 should have 1.
+     * After F23, GSC is fetched in a SINGLE ranged call. We verify the window
+     * size by inspecting the startDate/endDate passed to fetchUrlMetricsForRange:
+     * endDate must be yesterday, startDate must be yesterday-3d (4-day window).
+     * GA4 is still called once per date via its own loop — unchanged.
      */
     public function test_date_yesterday_triggers_4_day_gsc_window_and_1_day_ga4_window(): void
     {
         $this->createEnabledTenant('acme');
 
-        // Capture which dates the GSC fake is called with.
-        $gscDatesReceived = new \stdClass();
-        $gscDatesReceived->dates = [];
+        // Capture the range passed to fetchUrlMetricsForRange.
+        $gscRange = new \stdClass();
+        $gscRange->startDate = null;
+        $gscRange->endDate   = null;
+        $gscRange->calls     = 0;
 
-        app()->bind(GoogleSearchConsoleService::class, function () use ($gscDatesReceived) {
-            return new class($gscDatesReceived) extends GoogleSearchConsoleService {
+        app()->bind(GoogleSearchConsoleService::class, function () use ($gscRange) {
+            return new class($gscRange) extends GoogleSearchConsoleService {
                 public function __construct(private \stdClass $tracker)
                 {
                     parent::__construct('sc-domain:acme.com', '/fake/path.json');
                 }
 
-                public function fetchUrlMetrics(CarbonImmutable $date): Collection
+                public function fetchUrlMetricsForRange(CarbonImmutable $startDate, CarbonImmutable $endDate): Collection
                 {
-                    $this->tracker->dates[] = $date->format('Y-m-d');
-                    // Return a URL unique per date so each call produces a distinct row.
-                    return collect([
-                        ['url' => "https://acme.com/{$date->format('Y-m-d')}", 'impressions' => 10, 'clicks' => 1, 'ctr' => 0.1, 'position' => 5.0, 'top_query' => null],
-                    ]);
+                    $this->tracker->calls++;
+                    $this->tracker->startDate = $startDate->format('Y-m-d');
+                    $this->tracker->endDate   = $endDate->format('Y-m-d');
+
+                    // Return one unique URL per date so rows land in DB.
+                    $buckets = collect();
+                    for ($d = $startDate; ! $d->greaterThan($endDate); $d = $d->addDay()) {
+                        $dateKey = $d->format('Y-m-d');
+                        $buckets->put($dateKey, collect([
+                            ['url' => "https://acme.com/{$dateKey}", 'impressions' => 10, 'clicks' => 1, 'ctr' => 0.1, 'position' => 5.0, 'top_query' => null],
+                        ]));
+                    }
+                    return $buckets;
                 }
             };
         });
@@ -227,40 +254,49 @@ class PullSeoMetricsCommandTest extends TestCase
         $this->artisan('pw2d:seo:pull', ['tenant' => 'acme', '--date' => 'yesterday'])
             ->assertSuccessful();
 
-        $this->assertCount(4, $gscDatesReceived->dates, '--date=yesterday should trigger 4 GSC date pulls');
+        // F23: fetchUrlMetricsForRange called exactly once for the full window.
+        $this->assertSame(1, $gscRange->calls, 'fetchUrlMetricsForRange must be called exactly once');
+
+        // The range covers 4 days: yesterday-3d through yesterday.
+        $yesterday  = CarbonImmutable::yesterday('UTC')->format('Y-m-d');
+        $windowStart = CarbonImmutable::yesterday('UTC')->subDays(3)->format('Y-m-d');
+        $this->assertSame($yesterday, $gscRange->endDate, 'GSC endDate must be yesterday');
+        $this->assertSame($windowStart, $gscRange->startDate, 'GSC startDate must be 3 days before yesterday (4-day window)');
+
+        // GA4: still called once (1-day default window), and the date is yesterday.
         $this->assertCount(1, $ga4DatesReceived->dates, '--date=yesterday should trigger 1 GA4 date pull');
-
-        // The first GSC date must be yesterday.
-        $yesterday = CarbonImmutable::yesterday('UTC')->format('Y-m-d');
-        $this->assertSame($yesterday, $gscDatesReceived->dates[0]);
-
-        // The GA4 date must also be yesterday.
         $this->assertSame($yesterday, $ga4DatesReceived->dates[0]);
     }
 
     /**
-     * An explicit YYYY-MM-DD anchor with no window flags must force both
-     * windows to 1 (backward-compat single-date backfill).
+     * An explicit YYYY-MM-DD anchor with no window flags forces both windows to 1.
+     *
+     * After F23, the single-date GSC call still issues one fetchUrlMetricsForRange
+     * call, but with startDate == endDate == the explicit date.
      */
     public function test_explicit_date_defaults_both_windows_to_1(): void
     {
         $this->createEnabledTenant('acme');
 
-        $gscDatesReceived = new \stdClass();
-        $gscDatesReceived->dates = [];
+        $gscRange = new \stdClass();
+        $gscRange->startDate = null;
+        $gscRange->endDate   = null;
 
-        app()->bind(GoogleSearchConsoleService::class, function () use ($gscDatesReceived) {
-            return new class($gscDatesReceived) extends GoogleSearchConsoleService {
+        app()->bind(GoogleSearchConsoleService::class, function () use ($gscRange) {
+            return new class($gscRange) extends GoogleSearchConsoleService {
                 public function __construct(private \stdClass $tracker)
                 {
                     parent::__construct('sc-domain:acme.com', '/fake/path.json');
                 }
 
-                public function fetchUrlMetrics(CarbonImmutable $date): Collection
+                public function fetchUrlMetricsForRange(CarbonImmutable $startDate, CarbonImmutable $endDate): Collection
                 {
-                    $this->tracker->dates[] = $date->format('Y-m-d');
+                    $this->tracker->startDate = $startDate->format('Y-m-d');
+                    $this->tracker->endDate   = $endDate->format('Y-m-d');
                     return collect([
-                        ['url' => 'https://acme.com/', 'impressions' => 10, 'clicks' => 1, 'ctr' => 0.1, 'position' => 5.0, 'top_query' => null],
+                        '2026-04-01' => collect([
+                            ['url' => 'https://acme.com/', 'impressions' => 10, 'clicks' => 1, 'ctr' => 0.1, 'position' => 5.0, 'top_query' => null],
+                        ]),
                     ]);
                 }
             };
@@ -289,46 +325,166 @@ class PullSeoMetricsCommandTest extends TestCase
         $this->artisan('pw2d:seo:pull', ['tenant' => 'acme', '--date' => '2026-04-01'])
             ->assertSuccessful();
 
-        $this->assertCount(1, $gscDatesReceived->dates, 'Explicit YYYY-MM-DD → GSC window should be 1');
+        // Single-date: GSC window = 1, so startDate == endDate == the explicit date.
+        $this->assertSame('2026-04-01', $gscRange->startDate);
+        $this->assertSame('2026-04-01', $gscRange->endDate);
+
+        // GA4 also gets exactly one date.
         $this->assertCount(1, $ga4DatesReceived->dates, 'Explicit YYYY-MM-DD → GA4 window should be 1');
-        $this->assertSame('2026-04-01', $gscDatesReceived->dates[0]);
         $this->assertSame('2026-04-01', $ga4DatesReceived->dates[0]);
     }
 
     /**
-     * --gsc-window-days=2 must override the 4-day default, even when combined
-     * with --date=yesterday.
+     * --gsc-window-days=2 overrides the 4-day default.
+     * The GSC range should span exactly 2 days (startDate = yesterday-1d, endDate = yesterday).
      */
     public function test_gsc_window_days_overrides_default(): void
     {
         $this->createEnabledTenant('acme');
 
-        $gscDatesReceived = new \stdClass();
-        $gscDatesReceived->dates = [];
+        $gscRange = new \stdClass();
+        $gscRange->startDate = null;
+        $gscRange->endDate   = null;
 
-        app()->bind(GoogleSearchConsoleService::class, function () use ($gscDatesReceived) {
-            return new class($gscDatesReceived) extends GoogleSearchConsoleService {
+        app()->bind(GoogleSearchConsoleService::class, function () use ($gscRange) {
+            return new class($gscRange) extends GoogleSearchConsoleService {
                 public function __construct(private \stdClass $tracker)
                 {
                     parent::__construct('sc-domain:acme.com', '/fake/path.json');
                 }
 
-                public function fetchUrlMetrics(CarbonImmutable $date): Collection
+                public function fetchUrlMetricsForRange(CarbonImmutable $startDate, CarbonImmutable $endDate): Collection
                 {
-                    $this->tracker->dates[] = $date->format('Y-m-d');
-                    return collect([
-                        ['url' => "https://acme.com/{$date->format('Y-m-d')}", 'impressions' => 10, 'clicks' => 1, 'ctr' => 0.1, 'position' => 5.0, 'top_query' => null],
-                    ]);
+                    $this->tracker->startDate = $startDate->format('Y-m-d');
+                    $this->tracker->endDate   = $endDate->format('Y-m-d');
+
+                    $buckets = collect();
+                    for ($d = $startDate; ! $d->greaterThan($endDate); $d = $d->addDay()) {
+                        $dateKey = $d->format('Y-m-d');
+                        $buckets->put($dateKey, collect([
+                            ['url' => "https://acme.com/{$dateKey}", 'impressions' => 10, 'clicks' => 1, 'ctr' => 0.1, 'position' => 5.0, 'top_query' => null],
+                        ]));
+                    }
+                    return $buckets;
                 }
             };
         });
 
         $this->artisan('pw2d:seo:pull', [
-            'tenant'              => 'acme',
-            '--date'              => 'yesterday',
-            '--gsc-window-days'   => '2',
+            'tenant'            => 'acme',
+            '--date'            => 'yesterday',
+            '--gsc-window-days' => '2',
         ])->assertSuccessful();
 
-        $this->assertCount(2, $gscDatesReceived->dates, '--gsc-window-days=2 should produce exactly 2 GSC date pulls');
+        $yesterday   = CarbonImmutable::yesterday('UTC')->format('Y-m-d');
+        $dayBefore   = CarbonImmutable::yesterday('UTC')->subDay()->format('Y-m-d');
+
+        $this->assertSame($yesterday, $gscRange->endDate, 'GSC endDate must be yesterday');
+        $this->assertSame($dayBefore, $gscRange->startDate, '--gsc-window-days=2 → startDate must be yesterday-1d');
+    }
+
+    // ── F25 exit code tests ───────────────────────────────────────────────────
+
+    /**
+     * F25: Zero upserts with no errors must exit SUCCESS.
+     *
+     * Prior to F25, the command returned FAILURE when no rows were upserted.
+     * A fresh install where GSC has 3-day lag would trigger this every night.
+     * New contract: SUCCESS unless an actual error occurs.
+     */
+    public function test_zero_rows_no_errors_exits_success(): void
+    {
+        $this->createEnabledTenant('acme');
+
+        // Bind a GSC fake that returns empty collections (0 rows, no errors).
+        app()->bind(GoogleSearchConsoleService::class, function () {
+            return new class extends GoogleSearchConsoleService {
+                public function __construct()
+                {
+                    parent::__construct('sc-domain:acme.com', '/fake/path.json');
+                }
+
+                public function fetchUrlMetricsForRange(CarbonImmutable $startDate, CarbonImmutable $endDate): Collection
+                {
+                    // Empty buckets — GSC has no data for this range yet.
+                    return collect();
+                }
+            };
+        });
+
+        // GA4 also returns 0 rows.
+        app()->bind(GoogleAnalyticsService::class, function () {
+            return new class extends GoogleAnalyticsService {
+                public function __construct()
+                {
+                    parent::__construct('properties/123', '/fake/path.json');
+                }
+
+                public function fetchLandingPageMetrics(CarbonImmutable $date): Collection
+                {
+                    return collect(); // no rows
+                }
+            };
+        });
+
+        // F25: 0 upserts + 0 errors = SUCCESS (not FAILURE as before).
+        $this->artisan('pw2d:seo:pull', ['tenant' => 'acme', '--date' => '2026-04-01'])
+            ->assertExitCode(0);
+    }
+
+    /**
+     * F25: Errors during processing must exit FAILURE.
+     *
+     * If the GSC service throws, PullGscMetrics catches it and returns a
+     * PullResult with errors. The command must surface that as FAILURE.
+     */
+    public function test_errors_during_processing_exit_failure(): void
+    {
+        $this->createEnabledTenant('acme');
+
+        // GSC throws — simulates an auth or quota error.
+        app()->bind(GoogleSearchConsoleService::class, function () {
+            return new class extends GoogleSearchConsoleService {
+                public function __construct()
+                {
+                    parent::__construct('sc-domain:acme.com', '/fake/path.json');
+                }
+
+                public function fetchUrlMetricsForRange(CarbonImmutable $startDate, CarbonImmutable $endDate): Collection
+                {
+                    throw new \RuntimeException('GSC API quota exceeded');
+                }
+            };
+        });
+
+        // GA4 succeeds — errors in GSC alone must be enough to flip the exit code.
+        app()->bind(GoogleAnalyticsService::class, function () {
+            return new class extends GoogleAnalyticsService {
+                public function __construct()
+                {
+                    parent::__construct('properties/123', '/fake/path.json');
+                }
+
+                public function fetchLandingPageMetrics(CarbonImmutable $date): Collection
+                {
+                    return collect([
+                        ['url' => '/', 'sessions' => 50, 'users' => 40, 'engaged_sessions' => 35, 'conversions' => 2, 'bounce_rate' => 0.3],
+                    ]);
+                }
+            };
+        });
+
+        $this->artisan('pw2d:seo:pull', ['tenant' => 'acme', '--date' => '2026-04-01'])
+            ->assertExitCode(1);
+    }
+
+    /**
+     * F25 (preserved): No tenants matched → FAILURE regardless of error state.
+     */
+    public function test_no_tenants_matched_exits_failure(): void
+    {
+        // No seo_enabled tenants in DB → command warns and fails.
+        $this->artisan('pw2d:seo:pull')
+            ->assertExitCode(1);
     }
 }

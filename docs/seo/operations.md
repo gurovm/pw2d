@@ -283,8 +283,11 @@ Then check `pw2d:seo:status {tenant_id}` to confirm both sources show HEALTHY or
 
 ## 7. Common Failure Modes
 
+Note: `php artisan schedule:list` proves that the scheduler is **registered** with the application — it does not prove that the scheduler is **firing**. Firing requires a separate system cron entry that calls `php artisan schedule:run` every minute. The `Cron config` section below documents the required entry.
+
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
+| `pw2d:seo:status` shows **STALE** on every source for every tenant; latest date never advances; manual `pw2d:seo:pull` succeeds | **Laravel scheduler not hooked into system cron** — `php artisan schedule:list` shows the schedule registered correctly, but nothing fires it every minute. | Run `sudo -u www-data crontab -l` and verify the line `* * * * * cd /var/www/pw2d && php artisan schedule:run >> /dev/null 2>&1` is present. If missing, install with: `echo '* * * * * cd /var/www/pw2d && php artisan schedule:run >> /dev/null 2>&1' \| sudo -u www-data crontab -` |
 | `pw2d:seo:status` shows **UNCONFIGURED** for a tenant | `seo_enabled = false`, or `gsc_site_url` / `ga4_property_id` is blank | Fill in the fields in Filament → Niche Sites → Edit → SEO section, toggle Enable on |
 | `pw2d:seo:status` shows **STALE for GSC only** | Service account not granted GSC access, or `gsc_site_url` does not match the property exactly | Confirm the service account email is listed in GSC → Settings → Users and permissions; check for `sc-domain:` vs `https://` mismatch; verify `--gsc-window-days=4` (default) covers Google's 2–3 day lag |
 | `pw2d:seo:status` shows **STALE for GA4 only** | Service account not granted GA4 Viewer access, or wrong `ga4_property_id` | Add the service account in GA4 Admin → Property Access Management; double-check the property ID (numbers only, no `properties/` prefix) |
@@ -343,6 +346,22 @@ sudo crontab -l -u www-data
 ```
 
 If Supervisor manages queue workers, note that the **scheduler is not a queue worker** — it runs as a cron-invoked PHP process, not a long-running daemon.
+
+### System cron hook (required)
+
+Laravel's scheduler only fires when a system cron entry invokes `schedule:run` every minute. This is a one-time per-server setup. Install as `www-data` (the user that owns `/var/www/pw2d`):
+
+```bash
+echo '* * * * * cd /var/www/pw2d && php artisan schedule:run >> /dev/null 2>&1' | sudo -u www-data crontab -
+```
+
+Verify:
+
+```bash
+sudo -u www-data crontab -l
+```
+
+If this hook is missing, EVERY scheduled task silently never runs — including the nightly SEO pull. Discovered missing on prod on 2026-05-14 after 34 days of zero SEO data; see [Spec 017](../specs/017-seo-hardening.md) for the full backstory.
 
 ---
 

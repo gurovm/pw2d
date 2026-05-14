@@ -8,6 +8,7 @@ use App\Models\SeoMetric;
 use App\Models\Tenant;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
@@ -339,6 +340,117 @@ class SeoStatusCommandTest extends TestCase
             $posHealthy,
             $posUnconfigured,
             'GSC (row 1) must be UNCONFIGURED and appear before GA4 (row 2) HEALTHY',
+        );
+    }
+
+    // ── F24 SQL-shape tests ───────────────────────────────────────────────────
+
+    /**
+     * Test 12 (F24a): When no tenant argument is supplied, the aggregate query
+     * must NOT contain an IN clause.
+     *
+     * F24a removed the unconditional WHERE tenant_id IN (...) from fetchAggregates
+     * so MySQL can use a clean full-index scan when fetching all tenants.
+     *
+     * We capture the raw SQL via DB::listen and assert the absence of " IN (".
+     */
+    public function test_f24a_no_tenant_arg_query_does_not_contain_in_clause(): void
+    {
+        // Seed two tenants so there is something to query.
+        $this->createEnabledTenant('alpha');
+        $this->createEnabledTenant('beta');
+
+        $capturedSql = '';
+
+        DB::listen(function ($query) use (&$capturedSql) {
+            // Collect any query that touches seo_metrics and has a subquery pattern.
+            if (str_contains($query->sql, 'seo_metrics') && str_contains($query->sql, 'windowed_count')) {
+                $capturedSql .= ' ' . $query->sql;
+            }
+        });
+
+        // No tenant argument → all-tenant scan.
+        Artisan::call('pw2d:seo:status');
+
+        // When no tenant filter is applied, neither the left nor the right subquery
+        // should have a tenant_id IN (...) predicate.
+        $this->assertNotEmpty($capturedSql, 'Expected the fetchAggregates query to execute');
+        $this->assertStringNotContainsStringIgnoringCase(
+            ' in (',
+            $capturedSql,
+            'F24a: no-tenant-arg path must not generate an IN clause in the aggregate query',
+        );
+    }
+
+    /**
+     * Test 13 (F24a): When a tenant argument IS supplied, the aggregate query
+     * MUST contain IN clauses to scope the subqueries to that tenant's rows.
+     *
+     * Both subqueries (left: max_date; right: windowed_count) must include the
+     * tenant filter so indices can be used efficiently.
+     */
+    public function test_f24a_with_tenant_arg_query_contains_in_clauses(): void
+    {
+        $this->createEnabledTenant('acme');
+
+        $capturedSql = '';
+
+        DB::listen(function ($query) use (&$capturedSql) {
+            if (str_contains($query->sql, 'seo_metrics') && str_contains($query->sql, 'windowed_count')) {
+                $capturedSql .= ' ' . $query->sql;
+            }
+        });
+
+        Artisan::call('pw2d:seo:status', ['tenant' => 'acme']);
+
+        $this->assertNotEmpty($capturedSql, 'Expected the fetchAggregates query to execute');
+
+        // Both the left and right subqueries must have a tenant_id IN (...) predicate.
+        // The combined SQL should contain "in (" at least twice (one per subquery).
+        $occurrences = substr_count(strtolower($capturedSql), ' in (');
+        $this->assertGreaterThanOrEqual(
+            2,
+            $occurrences,
+            'F24a: with tenant arg, both subqueries must include a tenant_id IN clause',
+        );
+    }
+
+    /**
+     * Test 14 (F24b): The windowed-count subquery must use a separate LEFT JOIN
+     * pattern rather than a CASE-based conditional SUM.
+     *
+     * We assert that "windowed_count" appears in the SQL (the alias used by the
+     * right subquery), which confirms the two-subquery shape is in place.
+     * The absence of "CASE WHEN" confirms the old pattern was removed.
+     */
+    public function test_f24b_aggregate_query_uses_left_join_not_case_sum(): void
+    {
+        $this->createEnabledTenant('acme');
+
+        $capturedSql = '';
+
+        DB::listen(function ($query) use (&$capturedSql) {
+            if (str_contains($query->sql, 'seo_metrics') && str_contains($query->sql, 'windowed_count')) {
+                $capturedSql .= ' ' . $query->sql;
+            }
+        });
+
+        Artisan::call('pw2d:seo:status', ['tenant' => 'acme']);
+
+        $this->assertNotEmpty($capturedSql, 'Expected the fetchAggregates query to execute');
+
+        // The two-subquery pattern uses "windowed_count" as an alias.
+        $this->assertStringContainsStringIgnoringCase(
+            'windowed_count',
+            $capturedSql,
+            'F24b: the aggregate query must use windowed_count (two-subquery LEFT JOIN shape)',
+        );
+
+        // The old CASE-based SUM must NOT be present.
+        $this->assertStringNotContainsStringIgnoringCase(
+            'CASE WHEN',
+            $capturedSql,
+            'F24b: CASE WHEN pattern must not be present — should use two-subquery LEFT JOIN',
         );
     }
 }
