@@ -240,9 +240,11 @@ class SeoSchemaTest extends TestCase
 
     /**
      * @test
-     * §5.4 — best_price > 0 → schema must contain a valid Offer block.
+     * §5.4 — product with an offer → schema contains an Offer block, but never a
+     * `price` or `priceCurrency` field (Amazon Associates ToS — see
+     * docs/specs/019-seo-schema-no-price.md).
      */
-    public function test_for_selected_product_emits_offer_when_best_price_is_positive(): void
+    public function test_for_selected_product_emits_offer_without_price_keys(): void
     {
         $store   = $this->makeStore();
         $product = Product::factory()->create(['slug' => 'product-with-offer']);
@@ -252,10 +254,22 @@ class SeoSchemaTest extends TestCase
         $seo    = SeoSchema::forSelectedProduct($product);
         $schema = $seo['schemas'][0];
 
-        $this->assertArrayHasKey('offers', $schema, 'schema must include "offers" when best_price > 0');
+        $this->assertArrayHasKey('offers', $schema, 'schema must include "offers" when an offer exists');
         $this->assertSame('Offer', $schema['offers']['@type']);
-        $this->assertSame('99.99', $schema['offers']['price'], 'price must be formatted as a 2-decimal string');
-        $this->assertSame('USD', $schema['offers']['priceCurrency']);
+        $this->assertArrayHasKey('availability', $schema['offers']);
+        $this->assertArrayHasKey('url', $schema['offers']);
+        $this->assertArrayHasKey('seller', $schema['offers']);
+
+        $this->assertArrayNotHasKey(
+            'price',
+            $schema['offers'],
+            'Offer.price must NOT be emitted from scraped data (Amazon Associates ToS)'
+        );
+        $this->assertArrayNotHasKey(
+            'priceCurrency',
+            $schema['offers'],
+            'Offer.priceCurrency must NOT be emitted when price is omitted'
+        );
     }
 
     /**
@@ -275,13 +289,14 @@ class SeoSchemaTest extends TestCase
 
     /**
      * @test
-     * §5.4 — all offers have null price → schema must not contain "offers" key.
+     * All offers have null scraped_price → best_offer accessor filters them
+     * out → schema has no Offer block. Unrelated to the price-disclosure
+     * policy; this is pre-existing Product::best_offer behavior.
      */
-    public function test_for_selected_product_omits_offer_when_best_price_is_null(): void
+    public function test_for_selected_product_omits_offer_when_all_scraped_prices_are_null(): void
     {
         $store   = $this->makeStore();
         $product = Product::factory()->create(['slug' => 'product-null-price']);
-        // Offer with null price simulates unscraped/missing price
         ProductOffer::create([
             'product_id'    => $product->id,
             'store_id'      => $store->id,
@@ -296,7 +311,7 @@ class SeoSchemaTest extends TestCase
         $seo    = SeoSchema::forSelectedProduct($product);
         $schema = $seo['schemas'][0];
 
-        $this->assertArrayNotHasKey('offers', $schema, 'schema must not emit "offers" when all scraped_prices are null');
+        $this->assertArrayNotHasKey('offers', $schema);
     }
 
     /**
