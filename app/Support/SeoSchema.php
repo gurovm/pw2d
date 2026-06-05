@@ -98,7 +98,10 @@ class SeoSchema
      */
     public static function forSelectedProduct(Product $product): array
     {
-        $title = "{$product->name} - AI Review & Match Score";
+        $category = $product->category;
+        $title = $category
+            ? "{$product->name} {$category->name} — AI Review & Match Score"
+            : "{$product->name} — AI Review & Match Score";
 
         $description = $product->ai_summary
             ? Str::limit(strip_tags($product->ai_summary), 150)
@@ -159,13 +162,37 @@ class SeoSchema
             ? (str_starts_with($imageUrl, 'http') ? $imageUrl : url($imageUrl))
             : null;
 
+        $breadcrumbItems = [
+            ['name' => 'Home', 'url' => url('/')],
+        ];
+
+        if ($category) {
+            if ($category->parent) {
+                $breadcrumbItems[] = [
+                    'name' => $category->parent->name,
+                    'url'  => route('category.show', ['slug' => $category->parent->slug]),
+                ];
+            }
+            $breadcrumbItems[] = [
+                'name' => $category->name,
+                'url'  => route('category.show', ['slug' => $category->slug]),
+            ];
+        }
+
+        $breadcrumbItems[] = [
+            'name' => $product->name,
+            'url'  => route('product.show', ['product' => $product->slug]),
+        ];
+
+        $breadcrumbSchema = self::buildBreadcrumbList($breadcrumbItems);
+
         return [
             'title'        => $title,
             'description'  => $description,
             'canonical'    => $canonical,
             'ogType'       => 'product',
             'ogImage'      => $ogImage,
-            'schemas'      => [$schema],
+            'schemas'      => [$schema, $breadcrumbSchema],
             'activePreset' => null,
         ];
     }
@@ -266,13 +293,31 @@ class SeoSchema
         $ogImage = $visibleProducts->first()?->offers?->first()?->image_url
             ?? tenant_seo('default_image');
 
+        $breadcrumbItems = [
+            ['name' => 'Home', 'url' => url('/')],
+        ];
+
+        if ($category->parent) {
+            $breadcrumbItems[] = [
+                'name' => $category->parent->name,
+                'url'  => route('category.show', ['slug' => $category->parent->slug]),
+            ];
+        }
+
+        $breadcrumbItems[] = [
+            'name' => $category->name,
+            'url'  => route('category.show', ['slug' => $category->slug]),
+        ];
+
+        $breadcrumbSchema = self::buildBreadcrumbList($breadcrumbItems);
+
         return [
             'title'        => $title,
             'description'  => $description,
             'canonical'    => $canonical,
             'ogType'       => 'website',
             'ogImage'      => $ogImage,
-            'schemas'      => [$schema],
+            'schemas'      => [$schema, $breadcrumbSchema],
             'activePreset' => $activePreset,
         ];
     }
@@ -342,5 +387,29 @@ class SeoSchema
         }
 
         return $schema;
+    }
+
+    /**
+     * Build a BreadcrumbList schema from an ordered list of [name, url] pairs.
+     *
+     * @param array<int, array{name: string, url: string}> $items
+     * @return array<string, mixed>
+     */
+    private static function buildBreadcrumbList(array $items): array
+    {
+        return [
+            '@context' => 'https://schema.org/',
+            '@type'    => 'BreadcrumbList',
+            'itemListElement' => array_map(
+                fn (array $item, int $i) => [
+                    '@type'    => 'ListItem',
+                    'position' => $i + 1,
+                    'name'     => $item['name'],
+                    'item'     => $item['url'],
+                ],
+                $items,
+                array_keys($items),
+            ),
+        ];
     }
 }
