@@ -117,7 +117,8 @@ class SeoSchema
         ];
 
         if ($product->image_path) {
-            $schema['image'] = Storage::url($product->image_path);
+            $relative = Storage::url($product->image_path);
+            $schema['image'] = str_starts_with($relative, 'http') ? $relative : url($relative);
         }
 
         if ($product->amazon_reviews_count > 0 && $product->amazon_rating) {
@@ -125,6 +126,29 @@ class SeoSchema
                 '@type'       => 'AggregateRating',
                 'ratingValue' => $product->amazon_rating,
                 'reviewCount' => $product->amazon_reviews_count,
+            ];
+        }
+
+        $bestOffer = $product->best_offer;
+        $bestPrice = $product->best_price;
+
+        if ($bestOffer && $bestPrice > 0) {
+            $availability = match ($bestOffer->stock_status) {
+                'in_stock'     => 'https://schema.org/InStock',
+                'out_of_stock' => 'https://schema.org/OutOfStock',
+                default        => 'https://schema.org/InStock',
+            };
+
+            $schema['offers'] = [
+                '@type'         => 'Offer',
+                'price'         => number_format((float) $bestPrice, 2, '.', ''),
+                'priceCurrency' => 'USD',
+                'availability'  => $availability,
+                'url'           => $product->affiliate_url,
+                'seller'        => [
+                    '@type' => 'Organization',
+                    'name'  => $bestOffer->store?->name ?? 'Multiple retailers',
+                ],
             ];
         }
 
@@ -199,15 +223,25 @@ class SeoSchema
         $title       = "{$category->name} - Compare Best Models in {$currentYear} | " . tenant_seo('title_suffix');
         $canonical   = route('category.show', ['slug' => $category->slug]);
 
-        // Extract plain-text description from the buying guide for meta + schema.
+        // Extract plain-text buying-guide for schema use only (NOT for meta description).
         $descriptionText = '';
         if (is_array($category->buying_guide) && !empty($category->buying_guide['how_to_decide'])) {
             $descriptionText = strip_tags($category->buying_guide['how_to_decide']);
         }
 
-        $description = !empty($descriptionText)
-            ? Str::limit($descriptionText, 150)
-            : "Compare the absolute best {$category->name} on the market. Use our AI-driven sliders to find the perfect match for your exact needs.";
+        // Templated SEO description (replaces the buying-guide dump).
+        $topFeatures = $category->features->take(3)->pluck('name')->all();
+        $featuresClause = match (count($topFeatures)) {
+            0       => '',
+            1       => " AI-ranks them by {$topFeatures[0]}.",
+            2       => " AI-ranks them by {$topFeatures[0]} and {$topFeatures[1]}.",
+            default => " AI-ranks them by {$topFeatures[0]}, {$topFeatures[1]}, and {$topFeatures[2]}.",
+        };
+
+        $productCount = $visibleProducts->count();
+        $description = $productCount > 0
+            ? "Compare {$productCount} top {$category->name}.{$featuresClause} Find your perfect match in seconds."
+            : "Compare the absolute best {$category->name} on the market. AI-ranks by the features that matter most for your needs.";
 
         // Preset override — look up by slug-derived name match.
         $activePreset = null;

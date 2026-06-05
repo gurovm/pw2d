@@ -140,7 +140,23 @@ Consolidated from 15 parallel agent audits (5 chunks x 3 agents). Deduplicated a
 
 - [x] **F25: `pw2d:seo:pull` exit code rule** -- Shipped in Spec 017 (2026-05-14). Exit code now reflects errors only: any `result->hasErrors()` → FAILURE, otherwise SUCCESS regardless of upsert counts. Empty `tenants` collection still returns FAILURE (config problem).
 
-- [x] **F26: Document the system cron hook requirement in deployment + runbook** -- Shipped in Spec 017 (2026-05-14). (a) `.claude/commands/deploy.md` now has step 9 verifying `crontab -l | grep schedule:run` and prints a WARNING if missing. (b) `docs/seo/operations.md` has a new "System cron hook (required)" subsection and a new failure-mode row distinguishing scheduler registration from firing. (c) 34-day backfill (April 10 → May 13) completed manually via `pw2d:seo:pull pw2d --gsc-window-days=35 --ga4-window-days=35` — 107 GSC + 1,272 GA4 rows recovered.
+- [x] **F26: Document the system cron hook requirement in deployment + runbook** -- Shipped in Spec 017 (2026-05-14).
+
+### Follow-ups from spec 018 (SEO content audit on 2026-06-05)
+
+After 3 weeks of cron data: 1,226 products in DB → only 85 (7%) had GSC impressions. 276 impressions / 28d / 0 clicks across the whole site. Spec 018 addresses 3 P0 schema bugs (relative product image URL, missing Offer block, compare-page meta = buying-guide dump). These remain open:
+
+- [ ] **F27: BreadcrumbList schema on product + compare pages** -- Required for breadcrumb rich snippets ("pw2d.com › Mics › Shure SM58" in SERP). Should chain home → category → product. Add to `forSelectedProduct` and `forLeafCategory` in `app/Support/SeoSchema.php`. *[Seo]*
+
+- [ ] **F28: Better product page title pattern** -- Current "{name} - AI Review & Match Score" is generic. Should include category for topical relevance: "{name} {category} — AI Review & Match Score | Pw2D". Pull from `product->category->name`. Fallback to current title if category is null. *[Seo]*
+
+- [ ] **F29: Duplicate product variant cleanup** -- ItemList on `/compare/podcast-studio-mics` shows Shure SM58, SM58-LC, SM58 (2-Pack), SM58S, multiple SM58-LC ASINs — all separate Product rows that Google likely treats as near-duplicates. The AI Bouncer (Spec 012) was supposed to match these via fuzzy brand+name; clearly missed. Action: (a) run `pw2d:merge-duplicates --category=podcast-studio-mics --dry-run` to enumerate; (b) tighten `AiService::matchProduct()` prompt to merge size-variant + pack-variant SKUs more aggressively; (c) maybe surface a Filament "review duplicates" page. *[Seo, AI]*
+
+- [ ] **F30: F7 follow-up — implement per-URL top_query** -- `gsc_top_query` is null across the entire `seo_metrics` table because `GoogleSearchConsoleService::fetchUrlMetrics()` doesn't run the second grouped-by-query pass. Without it we can't see what users actually search for, can't measure title/description-to-query match, and the dashboard's QueryExplorer widget shows nothing useful. Could batch via the existing F23 range-call refactor: add `'query'` as a third dimension on a side-call, post-process per-page to pick the highest-impression query. *[Seo]*
+
+- [ ] **F31: Compare-page weight (167 KB) — Core Web Vitals** -- Initial render embeds the full product list inline. Defer below-fold products via Livewire lazy-load. Helps INP/LCP, both Google ranking signals. *[Frontend, Perf]*
+
+- [ ] **F32: Compare-page `seo_description` field** -- Spec 018 fixes the meta description via a template. Per-category override would be cleaner long-term: add a `seo_description` column to `categories`, expose in Filament CategoryResource, use as the first fallback in `forLeafCategory` ahead of the template. *[Models, Filament, Seo]* (a) `.claude/commands/deploy.md` now has step 9 verifying `crontab -l | grep schedule:run` and prints a WARNING if missing. (b) `docs/seo/operations.md` has a new "System cron hook (required)" subsection and a new failure-mode row distinguishing scheduler registration from firing. (c) 34-day backfill (April 10 → May 13) completed manually via `pw2d:seo:pull pw2d --gsc-window-days=35 --ga4-window-days=35` — 107 GSC + 1,272 GA4 rows recovered.
 
 - [ ] **Investigate pw2d.com central-vs-tenant resolution mismatch** -- Prod returns 200 for `pw2d.com/sitemap.xml` despite `SitemapController` aborting on central domains and `tenancy.php` listing `pw2d.com` as central. Either `APP_CENTRAL_DOMAIN` env differs or vhost setup differs. Small investigation ticket, not urgent. *[Config]*
 
