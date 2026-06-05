@@ -613,4 +613,133 @@ PROMPT;
             'maxOutputTokens' => 4000,
         ], config('services.gemini.admin_model'));
     }
+
+    /**
+     * Generate compare-page content for a leaf category: intro, methodology, and FAQs.
+     *
+     * Produces authoritative buying-guide depth in the style of Wirecutter / RTINGS.
+     * The returned array is merged directly into `category.buying_guide`.
+     *
+     * @param  Category $category  Must have `features` and `products` (≤5, ordered by
+     *                             amazon_reviews_count desc) already eager-loaded.
+     * @return array{intro: string, methodology: string, faqs: list<array{question: string, answer: string}>}
+     * @throws \InvalidArgumentException When the model returns malformed or incomplete JSON.
+     * @throws \Exception               When the Gemini API call fails.
+     */
+    public function generateCompareContent(Category $category): array
+    {
+        // --- Build prompt context ---
+
+        $categoryName   = $category->name;
+        $categorySlug   = $category->slug;
+        $parentName     = $category->parent?->name ?? null;
+        $parentClause   = $parentName ? "Parent category: {$parentName}" : 'Top-level category (no parent)';
+
+        $featureNames = $category->features
+            ->take(10)
+            ->pluck('name')
+            ->implode(', ');
+        $featureClause = $featureNames
+            ? "Key evaluation features: {$featureNames}"
+            : 'No structured features defined yet.';
+
+        $existingGuide = is_array($category->buying_guide)
+            ? ($category->buying_guide['how_to_decide'] ?? '')
+            : '';
+        $guideClause = $existingGuide
+            ? "Existing buying guide context (use as background, do NOT copy verbatim):\n---\n" . strip_tags($existingGuide) . "\n---"
+            : 'No existing buying guide content.';
+
+        $topProducts = $category->products->take(5);
+        $productLines = $topProducts->map(function ($p) {
+            $summary = $p->ai_summary ? strip_tags($p->ai_summary) : '(no summary)';
+            return "  - {$p->name}: " . \Illuminate\Support\Str::limit($summary, 200);
+        })->implode("\n");
+        $productClause = $topProducts->isNotEmpty()
+            ? "Top products by Amazon review volume:\n{$productLines}"
+            : 'No products available yet.';
+
+        $prompt = <<<PROMPT
+You are a senior technology editor writing for a premium product-comparison website — think Wirecutter, RTINGS, or The Verge's buying guides. Your job is to produce authoritative, specific, genuinely useful compare-page content for one product category.
+
+Category: {$categoryName}
+Slug: {$categorySlug}
+{$parentClause}
+{$featureClause}
+
+{$productClause}
+
+{$guideClause}
+
+=== YOUR TASK ===
+
+Write three pieces of content for the "{$categoryName}" compare page. Be specific to THIS category and THESE products. Never use generic boilerplate that could apply to any product category. Write as a knowledgeable expert who has tested many products in this category.
+
+Return ONLY a valid JSON object with EXACTLY these three keys — no markdown fences, no preamble, no explanation:
+
+{
+  "intro": "<p>100-150 word paragraph introducing the category, who needs it, what separates good products from bad ones, and why our AI-ranked comparison is worth the reader's time. Use only <p> tags. Write at a 9th-grade reading level. Be direct — no fluff.</p>",
+  "methodology": "2-3 sentence plain-text explanation of how our AI ranks {$categoryName}. Name the most important 2-3 features by name. Mention that rankings are based on real Amazon review volume and a structured feature-scoring algorithm. Aim to build trust without sounding corporate.",
+  "faqs": [
+    {"question": "A specific, search-intent-driven question a buyer would type into Google", "answer": "A direct, specific 2-4 sentence answer that references real considerations for {$categoryName}. No hedging. No 'it depends' without explaining what it depends on."},
+    {"question": "...", "answer": "..."}
+  ]
+}
+
+RULES:
+- `intro`: exactly ONE <p> element. 100-150 words. HTML-safe. Mention the category name naturally. Hook the reader.
+- `methodology`: plain text (no HTML). 2-3 sentences. Reference the specific top features by name if available.
+- `faqs`: 4-6 entries. Each must have both "question" and "answer" as strings. Questions must be distinct — cover: best beginner pick, budget vs. premium trade-offs, a common misconception, a spec that sounds important but isn't, and one use-case-specific question. Answers: concrete, 40-100 words each.
+- Return ONLY the raw JSON. No ```json wrapper. No trailing text.
+PROMPT;
+
+        $raw = $this->gemini->generate($prompt, [
+            'maxOutputTokens' => 4000,
+            'timeout'         => 120,
+        ], config('services.gemini.admin_model'));
+
+        $content = $raw['content'] ?? '';
+
+        // Strip markdown code fences Gemini sometimes wraps around JSON responses.
+        $content = preg_replace('/^```(?:json)?\s*/i', '', trim($content));
+        $content = preg_replace('/\s*```\s*$/i', '', $content);
+        $content = trim($content);
+
+        $decoded = json_decode($content, true);
+
+        if (!is_array($decoded)) {
+            throw new \InvalidArgumentException(
+                'AI returned malformed JSON: ' . substr($content, 0, 300)
+            );
+        }
+
+        foreach (['intro', 'methodology', 'faqs'] as $key) {
+            if (!array_key_exists($key, $decoded)) {
+                throw new \InvalidArgumentException(
+                    "AI response missing key \"{$key}\". Got keys: " . implode(', ', array_keys($decoded))
+                );
+            }
+        }
+
+        if (!is_array($decoded['faqs']) || empty($decoded['faqs'])) {
+            throw new \InvalidArgumentException(
+                'AI response "faqs" must be a non-empty array.'
+            );
+        }
+
+        foreach ($decoded['faqs'] as $i => $faq) {
+            if (!is_array($faq) || !isset($faq['question'], $faq['answer'])
+                || !is_string($faq['question']) || !is_string($faq['answer'])) {
+                throw new \InvalidArgumentException(
+                    "AI response faqs[{$i}] must have string keys \"question\" and \"answer\"."
+                );
+            }
+        }
+
+        return [
+            'intro'       => (string) $decoded['intro'],
+            'methodology' => (string) $decoded['methodology'],
+            'faqs'        => $decoded['faqs'],
+        ];
+    }
 }

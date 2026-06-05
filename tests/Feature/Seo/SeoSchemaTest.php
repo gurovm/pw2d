@@ -903,4 +903,177 @@ class SeoSchemaTest extends TestCase
             );
         }
     }
+
+    // =========================================================================
+    // Spec 021 — FAQPage schema in forLeafCategory
+    // =========================================================================
+
+    /**
+     * @test
+     * §6.1 — forLeafCategory emits FAQPage as the third schemas entry when faqs is non-empty.
+     */
+    public function test_for_leaf_category_emits_faq_page_as_third_schemas_entry_when_faqs_is_non_empty(): void
+    {
+        $category = Category::factory()->create([
+            'name'         => 'Espresso Machines',
+            'slug'         => 'espresso-machines-faq',
+            'buying_guide' => [
+                'faqs' => [
+                    ['question' => 'What is the best espresso machine?', 'answer' => 'It depends on your budget.'],
+                    ['question' => 'How much should I spend?',           'answer' => 'Budget $200-400 for a solid machine.'],
+                ],
+            ],
+        ]);
+        $category->load('features');
+
+        $seo     = SeoSchema::forCategoryPage($category, collect(), null, null, null, collect());
+        $schemas = $seo['schemas'];
+
+        $this->assertCount(3, $schemas, 'forLeafCategory must emit exactly 3 schema entries when faqs is non-empty');
+        $this->assertSame('FAQPage', $schemas[2]['@type'], 'The third schema entry must be a FAQPage');
+    }
+
+    /**
+     * @test
+     * §6.1 — forLeafCategory omits FAQPage when the faqs key is missing from buying_guide.
+     */
+    public function test_for_leaf_category_omits_faq_page_when_faqs_is_missing(): void
+    {
+        $category = Category::factory()->create([
+            'name'         => 'Grinders',
+            'slug'         => 'grinders-no-faq',
+            'buying_guide' => [
+                'how_to_decide' => '<p>Some guide content.</p>',
+                // no 'faqs' key
+            ],
+        ]);
+        $category->load('features');
+
+        $seo     = SeoSchema::forCategoryPage($category, collect(), null, null, null, collect());
+        $schemas = $seo['schemas'];
+
+        $this->assertCount(2, $schemas, 'forLeafCategory must emit exactly 2 schema entries when faqs is absent');
+        $this->assertSame('ItemList',       $schemas[0]['@type']);
+        $this->assertSame('BreadcrumbList', $schemas[1]['@type']);
+
+        $schemaTypes = array_column($schemas, '@type');
+        $this->assertNotContains('FAQPage', $schemaTypes, 'FAQPage must not be emitted when faqs is missing');
+    }
+
+    /**
+     * @test
+     * §6.1 — forLeafCategory omits FAQPage when faqs is an empty array.
+     */
+    public function test_for_leaf_category_omits_faq_page_when_faqs_is_empty_array(): void
+    {
+        $category = Category::factory()->create([
+            'name'         => 'Webcams',
+            'slug'         => 'webcams-empty-faq',
+            'buying_guide' => [
+                'faqs' => [],  // explicitly empty
+            ],
+        ]);
+        $category->load('features');
+
+        $seo     = SeoSchema::forCategoryPage($category, collect(), null, null, null, collect());
+        $schemas = $seo['schemas'];
+
+        $this->assertCount(2, $schemas, 'forLeafCategory must emit exactly 2 schema entries when faqs is an empty array');
+
+        $schemaTypes = array_column($schemas, '@type');
+        $this->assertNotContains('FAQPage', $schemaTypes, 'FAQPage must not be emitted when faqs is an empty array');
+    }
+
+    /**
+     * @test
+     * §6.1 — FAQPage mainEntity has correct Question/Answer structure.
+     */
+    public function test_faq_page_main_entity_has_correct_question_answer_structure(): void
+    {
+        $category = Category::factory()->create([
+            'name'         => 'Studio Microphones',
+            'slug'         => 'studio-mics-faq-structure',
+            'buying_guide' => [
+                'faqs' => [
+                    ['question' => 'Which mic is best for vocals?',    'answer' => 'The Shure SM7B is a popular choice.'],
+                    ['question' => 'Do I need phantom power?',         'answer' => 'Most condenser mics require 48V phantom power.'],
+                ],
+            ],
+        ]);
+        $category->load('features');
+
+        $seo        = SeoSchema::forCategoryPage($category, collect(), null, null, null, collect());
+        $faqSchema  = $seo['schemas'][2];
+
+        $this->assertSame('https://schema.org/', $faqSchema['@context']);
+        $this->assertSame('FAQPage', $faqSchema['@type']);
+        $this->assertArrayHasKey('mainEntity', $faqSchema);
+        $this->assertCount(2, $faqSchema['mainEntity'], 'mainEntity must contain exactly 2 entries to match the seeded FAQs');
+
+        $firstEntry = $faqSchema['mainEntity'][0];
+        $this->assertSame('Question', $firstEntry['@type'], 'mainEntity[0] must have @type=Question');
+        $this->assertSame('Which mic is best for vocals?', $firstEntry['name'], 'mainEntity[0].name must equal the question text');
+        $this->assertArrayHasKey('acceptedAnswer', $firstEntry);
+        $this->assertSame('Answer', $firstEntry['acceptedAnswer']['@type'], 'acceptedAnswer must have @type=Answer');
+        $this->assertSame(
+            'The Shure SM7B is a popular choice.',
+            $firstEntry['acceptedAnswer']['text'],
+            'acceptedAnswer.text must equal the answer text'
+        );
+
+        // Spot-check second entry
+        $secondEntry = $faqSchema['mainEntity'][1];
+        $this->assertSame('Do I need phantom power?', $secondEntry['name']);
+        $this->assertSame('Most condenser mics require 48V phantom power.', $secondEntry['acceptedAnswer']['text']);
+    }
+
+    /**
+     * @test
+     * §6.1 — FAQPage schema contains the correct @context value.
+     */
+    public function test_faq_page_schema_has_correct_context(): void
+    {
+        $category = Category::factory()->create([
+            'name'         => 'Headphones',
+            'slug'         => 'headphones-faq-context',
+            'buying_guide' => [
+                'faqs' => [
+                    ['question' => 'Open or closed back?', 'answer' => 'Depends on your use case.'],
+                ],
+            ],
+        ]);
+        $category->load('features');
+
+        $seo       = SeoSchema::forCategoryPage($category, collect(), null, null, null, collect());
+        $faqSchema = $seo['schemas'][2];
+
+        $this->assertSame('https://schema.org/', $faqSchema['@context']);
+    }
+
+    /**
+     * @test
+     * §6.1 — ItemList and BreadcrumbList remain as first two schemas when FAQPage is present.
+     * Confirms the ordering guarantee: [ItemList, BreadcrumbList, FAQPage].
+     */
+    public function test_schema_ordering_is_item_list_breadcrumb_faq_page_when_all_present(): void
+    {
+        $category = Category::factory()->create([
+            'name'         => 'Keyboards',
+            'slug'         => 'keyboards-schema-order',
+            'buying_guide' => [
+                'faqs' => [
+                    ['question' => 'Mechanical or membrane?', 'answer' => 'Mechanical for tactile feedback.'],
+                ],
+            ],
+        ]);
+        $category->load('features');
+
+        $seo     = SeoSchema::forCategoryPage($category, collect(), null, null, null, collect());
+        $schemas = $seo['schemas'];
+
+        $this->assertCount(3, $schemas);
+        $this->assertSame('ItemList',       $schemas[0]['@type'], 'First schema must be ItemList');
+        $this->assertSame('BreadcrumbList', $schemas[1]['@type'], 'Second schema must be BreadcrumbList');
+        $this->assertSame('FAQPage',        $schemas[2]['@type'], 'Third schema must be FAQPage');
+    }
 }

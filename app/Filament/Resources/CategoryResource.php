@@ -72,6 +72,36 @@ class CategoryResource extends Resource
                                 Forms\Components\RichEditor::make('buying_guide.key_jargon')
                                     ->label('Key Jargon')
                                     ->toolbarButtons(['bold', 'italic', 'bulletList', 'link', 'redo', 'undo']),
+
+                                Forms\Components\Textarea::make('buying_guide.intro')
+                                    ->label('Intro (above tabs)')
+                                    ->rows(4)
+                                    ->helperText('Short 100-150 word hook. Renders above the buying guide tabs on the compare page.')
+                                    ->columnSpanFull(),
+
+                                Forms\Components\Textarea::make('buying_guide.methodology')
+                                    ->label('How We Rank (methodology)')
+                                    ->rows(3)
+                                    ->helperText('2-3 sentence trust signal explaining the AI ranking. Renders as \'How We Rank\' callout.')
+                                    ->columnSpanFull(),
+
+                                Forms\Components\Repeater::make('buying_guide.faqs')
+                                    ->label('FAQ')
+                                    ->helperText('4-6 entries. Renders below the product grid + emits FAQPage schema for rich SERP results.')
+                                    ->schema([
+                                        Forms\Components\TextInput::make('question')
+                                            ->label('Question')
+                                            ->required()
+                                            ->columnSpanFull(),
+                                        Forms\Components\Textarea::make('answer')
+                                            ->label('Answer')
+                                            ->required()
+                                            ->rows(3)
+                                            ->columnSpanFull(),
+                                    ])
+                                    ->collapsible()
+                                    ->defaultItems(0)
+                                    ->columnSpanFull(),
                             ])
                             ->collapsible()
                             ->columnSpanFull(),

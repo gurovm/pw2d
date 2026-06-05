@@ -89,6 +89,12 @@
                                                         <p class="text-gray-600 text-sm leading-relaxed mb-4">{{ $activePreset->seo_description }}</p>
                                                 @endif
 
+                                                @if (!empty($category->buying_guide['intro']))
+                                                    <div class="prose prose-sm max-w-none mb-4 text-gray-700 leading-relaxed">
+                                                        {!! $category->buying_guide['intro'] !!}
+                                                    </div>
+                                                @endif
+
                                                 @if ($category->buying_guide && is_array($category->buying_guide))
                                                         @php
                                                                 $sections = [
@@ -218,6 +224,22 @@
                                                                         scrollbar-width: none;
                                                                 }
                                                         </style>
+                                                @endif
+
+                                                @if (!empty($category->buying_guide['methodology']))
+                                                    <div class="bg-gradient-to-br from-amber-50 to-orange-50/50 border border-amber-100 rounded-2xl p-4 mt-4">
+                                                        <div class="flex items-start gap-3">
+                                                            <div class="shrink-0 w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center">
+                                                                <svg class="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                                            </div>
+                                                            <div>
+                                                                <h3 class="text-sm font-semibold text-gray-900 mb-1">How We Rank</h3>
+                                                                <div class="text-sm text-gray-700 leading-relaxed">
+                                                                    {!! $category->buying_guide['methodology'] !!}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
                                                 @endif
                                         </div>
                                 </div>
@@ -482,6 +504,8 @@
                                 <p class="text-gray-500">Try adjusting your filters or search criteria.</p>
                         </div>
                         @endif
+
+                        @include('livewire.partials.compare-faqs')
                 </div>
         </div>
 
