@@ -233,6 +233,73 @@ With `--verbose`, the command prints per-date upsert counts for each source in a
 
 ---
 
+## Compare-page content generation (Spec 021)
+
+> See [Spec 021](../specs/021-seo-compare-content-depth.md) for architecture details (§4.2 command, §11 rollout, §12 cost).
+
+The `pw2d:generate-compare-content` command uses AI to populate the compare-page intro paragraph, FAQ accordion, and methodology callout for each leaf category. These render on `/compare/{slug}` pages and emit `FAQPage` schema for SERP rich results.
+
+### When to run
+
+- **Initial population (post-deploy):** after Spec 021 ships, run once to populate all leaf categories for the tenant.
+- **New category:** after creating a category in Filament, run with `--category={slug}` to generate content for just that one.
+- **Refresh:** when category features or top products change significantly, run with `--regenerate` to overwrite existing content.
+
+### Commands
+
+| Scenario | Command |
+|---|---|
+| Dry-run for all categories (inspect output, nothing saved) | `php artisan pw2d:generate-compare-content pw2d --dry-run` |
+| Dry-run for a single category | `php artisan pw2d:generate-compare-content pw2d --category=podcast-studio-mics --dry-run` |
+| Populate all categories (skip those already populated) | `php artisan pw2d:generate-compare-content pw2d` |
+| Populate a single new category | `php artisan pw2d:generate-compare-content pw2d --category=espresso-machines` |
+| Regenerate all categories (overwrite existing) | `php artisan pw2d:generate-compare-content pw2d --regenerate` |
+| Regenerate one category only | `php artisan pw2d:generate-compare-content pw2d --regenerate --category=espresso-machines` |
+
+The tenant argument is required — the command never infers an implicit "all tenants" to avoid accidental mass generation.
+
+Default behavior (no `--regenerate`) skips any category where `buying_guide` already contains all three keys (`intro`, `faqs`, `methodology`). Safe to re-run.
+
+### Cost
+
+Each generation makes one `gemini-2.5-pro` call (the `admin_model`). Approximate cost per category: **$0.01–0.05**. Full catalog regenerate (5 active categories on prod): **~$0.05–0.25**. See [Spec 021 §12](../specs/021-seo-compare-content-depth.md) for the token breakdown.
+
+Re-generation is opt-in via `--regenerate`. If you only need to refresh one category, use `--regenerate --category={slug}` rather than regenerating the full catalog.
+
+### Reviewing AI output
+
+The `--dry-run` flag prints the generated JSON without saving anything. Use it to:
+
+1. Spot-check quality before committing: read the `intro`, `methodology`, and each FAQ for accuracy and tone.
+2. Compare output across categories to confirm variety — there should be no boilerplate repeated verbatim between categories.
+3. Catch schema errors early (malformed JSON, missing keys) without a wasted write.
+
+Once content is saved, it is editable in Filament: **Admin → Categories → Edit → Buying Guide section**. Three new fields appear: `Intro (above tabs)`, `How We Rank (methodology)`, and `FAQ` (repeater with `question` + `answer` per entry). Admin edits override AI content and are preserved across subsequent non-`--regenerate` runs.
+
+### Operational sequence after Spec 021 deploy
+
+Follow [Spec 021 §11](../specs/021-seo-compare-content-depth.md) rollout step 5:
+
+1. After `/deploy` completes, SSH to prod.
+2. Run a dry-run to inspect AI output quality:
+   ```bash
+   php artisan pw2d:generate-compare-content pw2d --dry-run
+   ```
+3. If output quality is good across all categories, run without `--dry-run` to save:
+   ```bash
+   php artisan pw2d:generate-compare-content pw2d
+   ```
+4. If quality is mixed, process categories individually and review each in Filament before saving:
+   ```bash
+   php artisan pw2d:generate-compare-content pw2d --category={slug} --dry-run
+   php artisan pw2d:generate-compare-content pw2d --category={slug}
+   ```
+5. Verify that intro, FAQ accordion, and methodology callout render on at least one `/compare/{slug}` page.
+6. Confirm `FAQPage` schema appears in the page HTML (view source or use Google's Rich Results Test).
+7. Wait 1–2 weeks, then check Search Console → Enhancements → FAQ for valid items.
+
+---
+
 ## 6. Tenant Onboarding
 
 ### Step-by-step in Filament
@@ -297,6 +364,7 @@ Note: `php artisan schedule:list` proves that the scheduler is **registered** wi
 | Cron not firing | Supervisor not running, or scheduler process crashed | SSH to server, run `php artisan schedule:list` to verify the cron is registered; check `sudo supervisorctl status`; ensure a system cron runs `php artisan schedule:run` every minute |
 | Filament dashboard shows no data but `seo_metrics` has rows | Wrong tenant selected in Filament header dropdown | Switch to the correct tenant using the dropdown in the Filament top bar |
 | Dashboard widgets blank or spinning indefinitely | F12: SQLite REGEXP issue (test environments only) | In production (MySQL) this should not occur. In test environments, the `ProblemProducts` navigation badge query uses `REGEXP` which SQLite does not support. See [F12](../tasks/todo.md). |
+| `pw2d:generate-compare-content` exits FAILURE for a category with a "malformed JSON" error | `gemini-2.5-pro` returned non-JSON or a JSON object missing required keys (`intro`, `faqs`, `methodology`). Rare with the admin model but possible under token pressure or transient API issues. | Re-run for the failing category: `php artisan pw2d:generate-compare-content {tenant} --regenerate --category={slug}`. If the error persists across retries, check Gemini API status at [status.cloud.google.com](https://status.cloud.google.com). If the model is healthy but the response is consistently truncated, consider raising `maxOutputTokens` in `AiService::generateCompareContent()`. |
 
 ---
 

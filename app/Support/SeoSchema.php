@@ -311,13 +311,37 @@ class SeoSchema
 
         $breadcrumbSchema = self::buildBreadcrumbList($breadcrumbItems);
 
+        $schemas = [$schema, $breadcrumbSchema];
+
+        // FAQPage schema — only emit when buying_guide.faqs is a non-empty array.
+        // Eligible for Google's FAQ rich result, which adds expandable Q&A rows
+        // directly in the SERP and materially improves CTR.
+        if (is_array($category->buying_guide['faqs'] ?? null) && !empty($category->buying_guide['faqs'])) {
+            $faqSchema = [
+                '@context'   => 'https://schema.org/',
+                '@type'      => 'FAQPage',
+                'mainEntity' => array_map(
+                    fn (array $faq) => [
+                        '@type'          => 'Question',
+                        'name'           => $faq['question'],
+                        'acceptedAnswer' => [
+                            '@type' => 'Answer',
+                            'text'  => $faq['answer'],
+                        ],
+                    ],
+                    $category->buying_guide['faqs'],
+                ),
+            ];
+            $schemas[] = $faqSchema;
+        }
+
         return [
             'title'        => $title,
             'description'  => $description,
             'canonical'    => $canonical,
             'ogType'       => 'website',
             'ogImage'      => $ogImage,
-            'schemas'      => [$schema, $breadcrumbSchema],
+            'schemas'      => $schemas,
             'activePreset' => $activePreset,
         ];
     }
