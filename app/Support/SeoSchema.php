@@ -129,10 +129,14 @@ class SeoSchema
             ];
         }
 
+        // Offer block intentionally omits `price` and `priceCurrency`.
+        // Amazon Associates ToS requires displayed prices come from PA-API
+        // and refresh within 24h; pw2d uses scraped prices and is deferring
+        // Associates connection until traffic exists (180-day-to-3-sales
+        // window). See docs/specs/019-seo-schema-no-price.md.
         $bestOffer = $product->best_offer;
-        $bestPrice = $product->best_price;
 
-        if ($bestOffer && $bestPrice > 0) {
+        if ($bestOffer) {
             $availability = match ($bestOffer->stock_status) {
                 'in_stock'     => 'https://schema.org/InStock',
                 'out_of_stock' => 'https://schema.org/OutOfStock',
@@ -140,12 +144,10 @@ class SeoSchema
             };
 
             $schema['offers'] = [
-                '@type'         => 'Offer',
-                'price'         => number_format((float) $bestPrice, 2, '.', ''),
-                'priceCurrency' => 'USD',
-                'availability'  => $availability,
-                'url'           => $product->affiliate_url,
-                'seller'        => [
+                '@type'        => 'Offer',
+                'availability' => $availability,
+                'url'          => $product->affiliate_url,
+                'seller'       => [
                     '@type' => 'Organization',
                     'name'  => $bestOffer->store?->name ?? 'Multiple retailers',
                 ],
