@@ -146,9 +146,8 @@ Consolidated from 15 parallel agent audits (5 chunks x 3 agents). Deduplicated a
 
 After 3 weeks of cron data: 1,226 products in DB → only 85 (7%) had GSC impressions. 276 impressions / 28d / 0 clicks across the whole site. Spec 018 addresses 3 P0 schema bugs (relative product image URL, missing Offer block, compare-page meta = buying-guide dump). These remain open:
 
-- [ ] **F27: BreadcrumbList schema on product + compare pages** -- Required for breadcrumb rich snippets ("pw2d.com › Mics › Shure SM58" in SERP). Should chain home → category → product. Add to `forSelectedProduct` and `forLeafCategory` in `app/Support/SeoSchema.php`. *[Seo]*
-
-- [ ] **F28: Better product page title pattern** -- Current "{name} - AI Review & Match Score" is generic. Should include category for topical relevance: "{name} {category} — AI Review & Match Score | Pw2D". Pull from `product->category->name`. Fallback to current title if category is null. *[Seo]*
+- [x] **F27: BreadcrumbList schema on product + compare pages** -- Shipped in Spec 020 (2026-06-05). New `SeoSchema::buildBreadcrumbList()` helper emits Home → (Parent) → Category → (Product) chain on both `forSelectedProduct` and `forLeafCategory`. Uses `url('/')` for home (not `route('home')`).
+- [x] **F28: Better product page title pattern** -- Shipped in Spec 020 (2026-06-05). `forSelectedProduct` title now `"{name} {category} — AI Review & Match Score"` with em-dash separator; falls back to `"{name} — AI Review & Match Score"` when category is null. No tenant_suffix appended (length budget).
 
 - [ ] **F29: Duplicate product variant cleanup** -- ItemList on `/compare/podcast-studio-mics` shows Shure SM58, SM58-LC, SM58 (2-Pack), SM58S, multiple SM58-LC ASINs — all separate Product rows that Google likely treats as near-duplicates. The AI Bouncer (Spec 012) was supposed to match these via fuzzy brand+name; clearly missed. Action: (a) run `pw2d:merge-duplicates --category=podcast-studio-mics --dry-run` to enumerate; (b) tighten `AiService::matchProduct()` prompt to merge size-variant + pack-variant SKUs more aggressively; (c) maybe surface a Filament "review duplicates" page. *[Seo, AI]*
 

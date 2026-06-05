@@ -636,4 +636,271 @@ class SeoSchemaTest extends TestCase
         $this->assertStringNotContainsString('Choosing the right microphone', $seo['description']);
         $this->assertStringContainsString('Compare 2 top Podcast Gear.', $seo['description']);
     }
+
+    // =========================================================================
+    // Spec 020 — Item A (§4.5): forSelectedProduct title pattern
+    // =========================================================================
+
+    /**
+     * @test
+     * §4.5 — product title includes category name when category is set.
+     */
+    public function test_for_selected_product_title_includes_category_name_when_category_is_set(): void
+    {
+        $category = Category::factory()->create(['name' => 'Mechanical Gaming Keyboards', 'slug' => 'mechanical-gaming-keyboards']);
+        $product  = Product::factory()->create([
+            'category_id' => $category->id,
+            'slug'        => 'redragon-k668',
+        ]);
+        $product->load('category', 'offers.store', 'brand');
+
+        $seo = SeoSchema::forSelectedProduct($product);
+
+        $this->assertStringContainsString(
+            'Mechanical Gaming Keyboards',
+            $seo['title'],
+            'Title must include the category name when category is set'
+        );
+    }
+
+    /**
+     * @test
+     * §4.5 — product title falls back to no-category form when category is null.
+     */
+    public function test_for_selected_product_title_falls_back_when_category_is_null(): void
+    {
+        $product = Product::factory()->create([
+            'category_id' => null,
+            'slug'        => 'orphan-product',
+            'name'        => 'Widget Pro',
+        ]);
+        $product->load('category', 'offers.store', 'brand');
+
+        $seo = SeoSchema::forSelectedProduct($product);
+
+        $this->assertSame(
+            'Widget Pro — AI Review & Match Score',
+            $seo['title'],
+            'Title must use the no-category fallback form when category_id is null'
+        );
+    }
+
+    /**
+     * @test
+     * §4.5 — product title uses em-dash separator (not a hyphen).
+     */
+    public function test_for_selected_product_title_uses_em_dash_separator(): void
+    {
+        $product = Product::factory()->create([
+            'slug' => 'em-dash-test-product',
+        ]);
+        $product->load('category', 'offers.store', 'brand');
+
+        $seo = SeoSchema::forSelectedProduct($product);
+
+        $this->assertStringContainsString(
+            ' — ',
+            $seo['title'],
+            'Title must use an em-dash ( — ) not a hyphen ( - ) as separator'
+        );
+        $this->assertStringNotContainsString(
+            ' - ',
+            $seo['title'],
+            'Title must not use a plain hyphen as separator'
+        );
+    }
+
+    // =========================================================================
+    // Spec 020 — Item B + C (§5.6): BreadcrumbList schema
+    // =========================================================================
+
+    /**
+     * @test
+     * §5.6 — forSelectedProduct emits BreadcrumbList as the second schemas entry.
+     */
+    public function test_for_selected_product_emits_breadcrumb_list_as_second_schemas_entry(): void
+    {
+        $category = Category::factory()->create(['slug' => 'studio-mics']);
+        $product  = Product::factory()->create([
+            'category_id' => $category->id,
+            'slug'        => 'shure-sm7b',
+        ]);
+        $product->load('category.parent', 'offers.store', 'brand');
+
+        $seo = SeoSchema::forSelectedProduct($product);
+
+        $this->assertCount(2, $seo['schemas'], 'forSelectedProduct must emit exactly 2 schema entries');
+        $this->assertSame(
+            'BreadcrumbList',
+            $seo['schemas'][1]['@type'],
+            'The second schema entry must be a BreadcrumbList'
+        );
+    }
+
+    /**
+     * @test
+     * §5.6 — BreadcrumbList chain for product with top-level category: [Home, Category, Product].
+     */
+    public function test_breadcrumb_list_chain_for_product_with_top_level_category(): void
+    {
+        $category = Category::factory()->create(['name' => 'Studio Microphones', 'slug' => 'studio-microphones']);
+        $product  = Product::factory()->create([
+            'category_id' => $category->id,
+            'name'        => 'Shure SM7B',
+            'slug'        => 'shure-sm7b-top-level',
+        ]);
+        $product->load('category.parent', 'offers.store', 'brand');
+
+        $seo   = SeoSchema::forSelectedProduct($product);
+        $items = $seo['schemas'][1]['itemListElement'];
+        $names = array_column($items, 'name');
+
+        $this->assertSame(['Home', 'Studio Microphones', 'Shure SM7B'], $names);
+    }
+
+    /**
+     * @test
+     * §5.6 — BreadcrumbList chain for product with parent-child category:
+     * [Home, Parent, Child, Product].
+     */
+    public function test_breadcrumb_list_chain_for_product_with_parent_child_category(): void
+    {
+        $parent  = Category::factory()->create(['name' => 'Audio', 'slug' => 'audio']);
+        $child   = Category::factory()->create(['name' => 'Microphones', 'slug' => 'microphones', 'parent_id' => $parent->id]);
+        $product = Product::factory()->create([
+            'category_id' => $child->id,
+            'name'        => 'Shure SM58',
+            'slug'        => 'shure-sm58',
+        ]);
+        $product->load('category.parent', 'offers.store', 'brand');
+
+        $seo   = SeoSchema::forSelectedProduct($product);
+        $items = $seo['schemas'][1]['itemListElement'];
+        $names = array_column($items, 'name');
+
+        $this->assertSame(['Home', 'Audio', 'Microphones', 'Shure SM58'], $names);
+    }
+
+    /**
+     * @test
+     * §5.6 — BreadcrumbList chain for product with null category: [Home, Product].
+     */
+    public function test_breadcrumb_list_chain_for_product_with_null_category(): void
+    {
+        $product = Product::factory()->create([
+            'category_id' => null,
+            'name'        => 'Orphan Gadget',
+            'slug'        => 'orphan-gadget',
+        ]);
+        $product->load('category.parent', 'offers.store', 'brand');
+
+        $seo   = SeoSchema::forSelectedProduct($product);
+        $items = $seo['schemas'][1]['itemListElement'];
+        $names = array_column($items, 'name');
+
+        $this->assertSame(['Home', 'Orphan Gadget'], $names);
+    }
+
+    /**
+     * @test
+     * §5.6 — forLeafCategory emits BreadcrumbList as the second schemas entry.
+     */
+    public function test_for_leaf_category_emits_breadcrumb_list_as_second_schemas_entry(): void
+    {
+        $category = Category::factory()->create(['name' => 'Espresso Machines', 'slug' => 'espresso-machines']);
+
+        $seo = SeoSchema::forCategoryPage($category, collect(), null, null, null, collect());
+
+        $this->assertCount(2, $seo['schemas'], 'forLeafCategory must emit exactly 2 schema entries');
+        $this->assertSame(
+            'BreadcrumbList',
+            $seo['schemas'][1]['@type'],
+            'The second schema entry from forLeafCategory must be a BreadcrumbList'
+        );
+    }
+
+    /**
+     * @test
+     * §5.6 — BreadcrumbList for top-level category: [Home, Category].
+     */
+    public function test_breadcrumb_list_for_top_level_category(): void
+    {
+        $category = Category::factory()->create(['name' => 'Grinders', 'slug' => 'grinders']);
+
+        $seo   = SeoSchema::forCategoryPage($category, collect(), null, null, null, collect());
+        $items = $seo['schemas'][1]['itemListElement'];
+        $names = array_column($items, 'name');
+
+        $this->assertSame(['Home', 'Grinders'], $names);
+    }
+
+    /**
+     * @test
+     * §5.6 — BreadcrumbList for child category: [Home, Parent, Category].
+     */
+    public function test_breadcrumb_list_for_child_category(): void
+    {
+        $parent   = Category::factory()->create(['name' => 'Coffee Makers', 'slug' => 'coffee-makers']);
+        $category = Category::factory()->create([
+            'name'      => 'Espresso',
+            'slug'      => 'espresso',
+            'parent_id' => $parent->id,
+        ]);
+        $category->load('parent');
+
+        $seo   = SeoSchema::forCategoryPage($category, collect(), null, null, null, collect());
+        $items = $seo['schemas'][1]['itemListElement'];
+        $names = array_column($items, 'name');
+
+        $this->assertSame(['Home', 'Coffee Makers', 'Espresso'], $names);
+    }
+
+    /**
+     * @test
+     * §5.6 — BreadcrumbList position values are 1-indexed and sequential.
+     * Uses the 4-item chain (Home → Parent → Child → Product) as the explicit case.
+     */
+    public function test_breadcrumb_list_position_values_are_one_indexed_and_sequential(): void
+    {
+        $parent  = Category::factory()->create(['name' => 'Audio', 'slug' => 'audio-pos-test']);
+        $child   = Category::factory()->create(['name' => 'Microphones', 'slug' => 'microphones-pos-test', 'parent_id' => $parent->id]);
+        $product = Product::factory()->create([
+            'category_id' => $child->id,
+            'name'        => 'AKG C414',
+            'slug'        => 'akg-c414-pos-test',
+        ]);
+        $product->load('category.parent', 'offers.store', 'brand');
+
+        $seo      = SeoSchema::forSelectedProduct($product);
+        $items    = $seo['schemas'][1]['itemListElement'];
+        $positions = array_column($items, 'position');
+
+        $this->assertSame([1, 2, 3, 4], $positions, 'Positions must be exactly [1, 2, 3, 4] for a 4-item breadcrumb chain');
+    }
+
+    /**
+     * @test
+     * §5.6 — BreadcrumbList item URLs are absolute (start with 'http').
+     * Verified against the 4-item product chain for completeness.
+     */
+    public function test_breadcrumb_list_item_urls_are_absolute(): void
+    {
+        $parent  = Category::factory()->create(['name' => 'Audio', 'slug' => 'audio-url-test']);
+        $child   = Category::factory()->create(['name' => 'Microphones', 'slug' => 'microphones-url-test', 'parent_id' => $parent->id]);
+        $product = Product::factory()->create([
+            'category_id' => $child->id,
+            'slug'        => 'shure-sm7b-url-test',
+        ]);
+        $product->load('category.parent', 'offers.store', 'brand');
+
+        $seo   = SeoSchema::forSelectedProduct($product);
+        $items = $seo['schemas'][1]['itemListElement'];
+
+        foreach ($items as $item) {
+            $this->assertTrue(
+                str_starts_with($item['item'], 'http'),
+                "BreadcrumbList item URL must be absolute, got: {$item['item']}"
+            );
+        }
+    }
 }
