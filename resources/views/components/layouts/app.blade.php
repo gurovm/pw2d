@@ -38,7 +38,12 @@
         <meta name="twitter:image" id="twitter-image" content="{{ $defaultImage }}"
                 data-default="{{ $defaultImage }}">
 
-        @if (isset($schemaJson))
+        @if (isset($schemasJson) && is_array($schemasJson))
+                @foreach ($schemasJson as $schemaJson)
+                        <script type="application/ld+json">{!! $schemaJson !!}</script>
+                @endforeach
+        @elseif (isset($schemaJson))
+                {{-- Back-compat: any view still passing a single schemaJson string --}}
                 <script type="application/ld+json">{!! $schemaJson !!}</script>
         @endif
 
