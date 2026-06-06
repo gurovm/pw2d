@@ -147,6 +147,99 @@ class GoogleSearchConsoleService
     }
 
     /**
+     * Fetch the top query per (date, URL) across the given date range.
+     *
+     * Uses dimensions = ['date', 'page', 'query'] so each GSC response row
+     * represents a (date, page, query) triple. After paginating all rows, the
+     * method groups by date → page and picks the query with the highest
+     * impression count for that (date, page) bucket.
+     *
+     * Two API calls per nightly run (this + fetchUrlMetricsForRange) is a
+     * deliberate trade-off — see spec 022 §4.1 / §9 for rationale.
+     *
+     * @param  CarbonImmutable $startDate First day of the range (inclusive, UTC).
+     * @param  CarbonImmutable $endDate   Last day of the range (inclusive, UTC).
+     * @return Collection<string, Collection<int, array{url: string, top_query: string, top_query_impressions: int}>>
+     *         Outer collection keyed by 'Y-m-d'; inner collection has one entry per URL
+     *         (the query with max impressions for that date+URL).
+     *
+     * @throws \Google_Service_Exception On API-level errors (quota, auth).
+     * @throws \Google_Exception         On client setup failures.
+     */
+    public function fetchTopQueriesForRange(CarbonImmutable $startDate, CarbonImmutable $endDate): Collection
+    {
+        $client       = $this->makeClient();
+        $service      = new Google_Service_Webmasters($client);
+        $chunkSize    = (int) config('seo.pull.chunk_size', 500);
+        $startDateStr = $startDate->format('Y-m-d');
+        $endDateStr   = $endDate->format('Y-m-d');
+
+        $allRows = collect();
+        $offset  = 0;
+
+        // Paginate: keep fetching until a page returns fewer rows than chunkSize.
+        // Per-query rows multiply the result set ~5-10× vs. the page-only call.
+        do {
+            $request = new Google_Service_Webmasters_SearchAnalyticsQueryRequest();
+            $request->setStartDate($startDateStr);
+            $request->setEndDate($endDateStr);
+            $request->setDimensions(['date', 'page', 'query']);
+            $request->setRowLimit($chunkSize);
+            $request->setStartRow($offset);
+
+            $response  = $service->searchanalytics->query($this->siteUrl, $request);
+            $pageRows  = collect($response->getRows() ?? []);
+            $pageCount = $pageRows->count();
+
+            $allRows = $allRows->concat($pageRows);
+            $offset += $pageCount;
+        } while ($pageCount >= $chunkSize);
+
+        // Parse all rows into a flat collection of [date, url, query, impressions] tuples.
+        $parsed = collect();
+
+        foreach ($allRows as $row) {
+            if (is_object($row) && method_exists($row, 'getKeys')) {
+                $keys        = $row->getKeys();
+                $dateKey     = $keys[0] ?? '';
+                $url         = $keys[1] ?? '';
+                $query       = $keys[2] ?? '';
+                $impressions = (int) $row->getImpressions();
+            } else {
+                // Array fallback (used by fake clients in tests).
+                $dateKey     = data_get($row, 'keys.0', '');
+                $url         = data_get($row, 'keys.1', '');
+                $query       = data_get($row, 'keys.2', '');
+                $impressions = (int) data_get($row, 'impressions', 0);
+            }
+
+            $parsed->push(compact('dateKey', 'url', 'query', 'impressions'));
+        }
+
+        // Group by date → by url → pick the row with max impressions per (date, url).
+        /** @var Collection<string, Collection<int, array{url: string, top_query: string, top_query_impressions: int}>> $buckets */
+        $buckets = collect();
+
+        $parsed
+            ->groupBy('dateKey')
+            ->each(function (Collection $dateRows, string $dateKey) use ($buckets): void {
+                $perUrl = $dateRows
+                    ->groupBy('url')
+                    ->map(fn (Collection $urlRows, string $url) => $urlRows->sortByDesc('impressions')->first())
+                    ->map(fn (array $best, string $url) => [
+                        'url'                  => $url,
+                        'top_query'            => $best['query'],
+                        'top_query_impressions' => $best['impressions'],
+                    ])
+                    ->values();
+
+                $buckets->put($dateKey, $perUrl);
+            });
+
+        return $buckets;
+    }
+
+    /**
      * Build and configure the authenticated Google API client.
      *
      * Protected so tests can override and return a fake/mock client without

@@ -273,4 +273,192 @@ class PullGscMetricsTest extends TestCase
         $this->assertSame(0, $result->upserted);
         $this->assertEmpty($result->errors);
     }
+
+    // =========================================================================
+    // Spec 022 — F30: top_query merging in PullGscMetrics
+    // =========================================================================
+
+    /**
+     * Helper: bind a fake GoogleSearchConsoleService that implements both
+     * fetchUrlMetricsForRange() and fetchTopQueriesForRange(), returning the
+     * supplied canned data without touching any real API.
+     *
+     * @param  Collection  $urlMetricsBuckets   Date-keyed buckets for the page-level call.
+     * @param  Collection  $topQueryBuckets     Date-keyed buckets for the top-query call.
+     */
+    private function bindDualFakeService(Collection $urlMetricsBuckets, Collection $topQueryBuckets): void
+    {
+        app()->bind(GoogleSearchConsoleService::class, function () use ($urlMetricsBuckets, $topQueryBuckets) {
+            return new class($urlMetricsBuckets, $topQueryBuckets) extends GoogleSearchConsoleService {
+                public function __construct(
+                    private readonly Collection $urlMetricsBuckets,
+                    private readonly Collection $topQueryBuckets,
+                ) {
+                    parent::__construct('sc-domain:acme.com', '/fake/path.json');
+                }
+
+                public function fetchUrlMetricsForRange(CarbonImmutable $startDate, CarbonImmutable $endDate): Collection
+                {
+                    return $this->urlMetricsBuckets;
+                }
+
+                public function fetchTopQueriesForRange(CarbonImmutable $startDate, CarbonImmutable $endDate): Collection
+                {
+                    return $this->topQueryBuckets;
+                }
+            };
+        });
+    }
+
+    /**
+     * F30 (§4.5) — top_query from fetchTopQueriesForRange is merged into each
+     * upsert row using the (date, url) lookup map.
+     *
+     * Two URLs per date; each has a known top_query. Assert that the stored rows
+     * in seo_metrics carry the correct gsc_top_query value.
+     */
+    public function test_top_query_is_merged_from_second_api_call_into_upsert_rows(): void
+    {
+        $date = CarbonImmutable::parse('2026-04-10');
+
+        $urlMetricsBuckets = collect([
+            '2026-04-10' => collect([
+                ['url' => 'https://acme.com/a', 'impressions' => 1000, 'clicks' => 40, 'ctr' => 0.04, 'position' => 3.0, 'top_query' => null],
+                ['url' => 'https://acme.com/b', 'impressions' => 500,  'clicks' => 20, 'ctr' => 0.04, 'position' => 5.0, 'top_query' => null],
+            ]),
+        ]);
+
+        $topQueryBuckets = collect([
+            '2026-04-10' => collect([
+                ['url' => 'https://acme.com/a', 'top_query' => 'best espresso machine', 'top_query_impressions' => 800],
+                ['url' => 'https://acme.com/b', 'top_query' => 'affordable grinder',    'top_query_impressions' => 300],
+            ]),
+        ]);
+
+        $this->bindDualFakeService($urlMetricsBuckets, $topQueryBuckets);
+
+        $result = (new PullGscMetrics)->execute($this->tenant, [$date]);
+
+        $this->assertSame(2, $result->upserted);
+        $this->assertEmpty($result->errors);
+
+        // Verify gsc_top_query is stored correctly for each URL.
+        $rowA = \Illuminate\Support\Facades\DB::table('seo_metrics')
+            ->where('tenant_id', 'acme')
+            ->where('url', 'https://acme.com/a')
+            ->where('metric_date', '2026-04-10')
+            ->first();
+
+        $this->assertNotNull($rowA);
+        $this->assertSame('best espresso machine', $rowA->gsc_top_query);
+
+        $rowB = \Illuminate\Support\Facades\DB::table('seo_metrics')
+            ->where('tenant_id', 'acme')
+            ->where('url', 'https://acme.com/b')
+            ->where('metric_date', '2026-04-10')
+            ->first();
+
+        $this->assertNotNull($rowB);
+        $this->assertSame('affordable grinder', $rowB->gsc_top_query);
+    }
+
+    /**
+     * F30 (§4.5) — when fetchTopQueriesForRange throws, the main pull must still
+     * complete (fetchUrlMetricsForRange data upserted), with gsc_top_query = NULL
+     * for all rows, and no exception propagated from execute().
+     */
+    public function test_top_query_failure_does_not_block_the_main_pull(): void
+    {
+        $date = CarbonImmutable::parse('2026-04-10');
+
+        // Bind a fake that succeeds on the URL-metrics call but throws on the top-query call.
+        app()->bind(GoogleSearchConsoleService::class, function () {
+            return new class extends GoogleSearchConsoleService {
+                public function __construct()
+                {
+                    parent::__construct('sc-domain:acme.com', '/fake/path.json');
+                }
+
+                public function fetchUrlMetricsForRange(CarbonImmutable $startDate, CarbonImmutable $endDate): Collection
+                {
+                    return collect([
+                        '2026-04-10' => collect([
+                            ['url' => 'https://acme.com/a', 'impressions' => 1000, 'clicks' => 30, 'ctr' => 0.03, 'position' => 4.0, 'top_query' => null],
+                            ['url' => 'https://acme.com/b', 'impressions' => 600,  'clicks' => 15, 'ctr' => 0.025, 'position' => 6.0, 'top_query' => null],
+                        ]),
+                    ]);
+                }
+
+                public function fetchTopQueriesForRange(CarbonImmutable $startDate, CarbonImmutable $endDate): Collection
+                {
+                    throw new \RuntimeException('top query API error');
+                }
+            };
+        });
+
+        // execute() must NOT throw even though top-query call fails.
+        $result = (new PullGscMetrics)->execute($this->tenant, [$date]);
+
+        // (a) Main upsert succeeded — rows exist.
+        $this->assertSame(2, $result->upserted, 'Main upsert must still complete when top-query call fails');
+        $this->assertEmpty($result->errors, 'No errors should propagate to PullResult when top-query fails gracefully');
+
+        // (b) gsc_top_query is NULL for all rows.
+        $rows = \Illuminate\Support\Facades\DB::table('seo_metrics')
+            ->where('tenant_id', 'acme')
+            ->where('metric_date', '2026-04-10')
+            ->get();
+
+        $this->assertCount(2, $rows, 'Two rows must have been upserted despite top-query failure');
+
+        foreach ($rows as $row) {
+            $this->assertNull(
+                $row->gsc_top_query,
+                "gsc_top_query must be NULL when top-query call fails; got '{$row->gsc_top_query}' for {$row->url}"
+            );
+        }
+
+        // (c) No exception propagated — verified by the test reaching this line.
+    }
+
+    /**
+     * F30 (§4.5) — when the top-query lookup map contains no entry for a URL,
+     * that URL's seo_metrics row must have gsc_top_query = NULL.
+     *
+     * Scenario: fetchUrlMetricsForRange returns a row for URL X, but
+     * fetchTopQueriesForRange only returns data for URL Y (different).
+     */
+    public function test_top_query_is_null_when_no_match_found_in_lookup_map(): void
+    {
+        $date = CarbonImmutable::parse('2026-04-10');
+
+        $urlMetricsBuckets = collect([
+            '2026-04-10' => collect([
+                ['url' => 'https://acme.com/x', 'impressions' => 700, 'clicks' => 25, 'ctr' => 0.036, 'position' => 4.5, 'top_query' => null],
+            ]),
+        ]);
+
+        // Top-query data is keyed to a DIFFERENT URL ('y', not 'x').
+        $topQueryBuckets = collect([
+            '2026-04-10' => collect([
+                ['url' => 'https://acme.com/y', 'top_query' => 'some query for y', 'top_query_impressions' => 500],
+            ]),
+        ]);
+
+        $this->bindDualFakeService($urlMetricsBuckets, $topQueryBuckets);
+
+        (new PullGscMetrics)->execute($this->tenant, [$date]);
+
+        $row = \Illuminate\Support\Facades\DB::table('seo_metrics')
+            ->where('tenant_id', 'acme')
+            ->where('url', 'https://acme.com/x')
+            ->where('metric_date', '2026-04-10')
+            ->first();
+
+        $this->assertNotNull($row, 'Row for URL X must exist in seo_metrics');
+        $this->assertNull(
+            $row->gsc_top_query,
+            'gsc_top_query must be NULL when the top-query map has no entry for that URL'
+        );
+    }
 }

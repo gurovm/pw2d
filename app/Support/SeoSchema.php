@@ -132,6 +132,21 @@ class SeoSchema
             ];
         }
 
+        // Editorial review sourced from the AI-generated summary.
+        // reviewRating is deliberately omitted — we don't publish a 1-5 Pw2D score
+        // (see spec 022 §5.2). The review is still valid markup Google can use for
+        // snippet enhancement, just not Critic Review rich results.
+        if (!empty($product->ai_summary)) {
+            $schema['review'] = [
+                '@type'      => 'Review',
+                'reviewBody' => Str::limit(strip_tags($product->ai_summary), 1000),
+                'author'     => [
+                    '@type' => 'Organization',
+                    'name'  => tenant('brand_name') ?: 'Pw2D',
+                ],
+            ];
+        }
+
         // Offer block intentionally omits `price` and `priceCurrency`.
         // Amazon Associates ToS requires displayed prices come from PA-API
         // and refresh within 24h; pw2d uses scraped prices and is deferring

@@ -8,6 +8,7 @@ use App\Models\Tenant;
 use App\Services\Seo\GoogleSearchConsoleService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Pulls Google Search Console per-URL metrics for a single tenant over a date
@@ -77,8 +78,31 @@ final class PullGscMetrics
                 'serviceAccountPath' => $serviceAccountPath,
             ]);
 
-            // Single ranged API call for the full window.
+            // Call 1: single ranged API call for the full window (page-level totals).
             $buckets = $service->fetchUrlMetricsForRange($startDate, $endDate);
+
+            // Call 2: per-(date, URL) top query — isolated so its failure cannot
+            // block the main pull. If this throws, we log a warning and continue
+            // with gsc_top_query = null for all rows in this window.
+            $topQueriesByDateUrl = [];
+
+            try {
+                $topQueryBuckets = $service->fetchTopQueriesForRange($startDate, $endDate);
+
+                // Build a two-level lookup: $topQueriesByDateUrl[$dateStr][$url] = $query
+                $topQueryBuckets->each(function ($perUrlRows, string $dateStr) use (&$topQueriesByDateUrl): void {
+                    $topQueriesByDateUrl[$dateStr] = [];
+                    foreach ($perUrlRows as $entry) {
+                        $topQueriesByDateUrl[$dateStr][$entry['url']] = $entry['top_query'];
+                    }
+                });
+            } catch (\Throwable $e) {
+                Log::warning('PullGscMetrics: top queries failed — continuing without top_query', [
+                    'tenant'    => $tenant->getTenantKey(),
+                    'exception' => $e->getMessage(),
+                ]);
+                $topQueriesByDateUrl = [];
+            }
 
             // Upsert each requested date individually so the unique constraint
             // (tenant_id, source, url_hash, metric_date) remains idempotent.
@@ -102,7 +126,7 @@ final class PullGscMetrics
                     'gsc_clicks'      => $row['clicks'],
                     'gsc_ctr'         => $row['ctr'],
                     'gsc_position'    => $row['position'],
-                    'gsc_top_query'   => $row['top_query'],
+                    'gsc_top_query'   => $topQueriesByDateUrl[$dateKey][$row['url']] ?? null,
                     'updated_at'      => now(),
                     'created_at'      => now(),
                 ])->all();

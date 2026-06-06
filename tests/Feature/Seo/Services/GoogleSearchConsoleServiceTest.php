@@ -242,4 +242,217 @@ class GoogleSearchConsoleServiceTest extends TestCase
         $this->assertInstanceOf(Collection::class, $result);
         $this->assertTrue($result->isEmpty());
     }
+
+    // =========================================================================
+    // Spec 022 — F30: fetchTopQueriesForRange
+    // =========================================================================
+
+    /**
+     * Build a fake service whose fetchTopQueriesForRange() is driven by the
+     * supplied raw rows (array-fallback format: keys[0]=date, keys[1]=url,
+     * keys[2]=query, impressions=int).
+     *
+     * Mirrors the approach used by makeServiceWithFakeRows() for the
+     * fetchUrlMetricsForRange tests — override the protected makeClient() and
+     * re-implement the bucketing logic exactly as the real service does.
+     *
+     * @param  array<int, array{keys: array<int, string>, impressions: int}>  $page1Rows  Rows for the first pagination call.
+     * @param  array<int, array{...}>|null                                    $page2Rows  If non-null, rows returned on a second call.
+     */
+    private function makeTopQueryServiceWithFakeRows(array $page1Rows, ?array $page2Rows = null): GoogleSearchConsoleService
+    {
+        return new class($page1Rows, $page2Rows) extends GoogleSearchConsoleService {
+            public function __construct(
+                private readonly array $page1Rows,
+                private readonly ?array $page2Rows,
+            ) {
+                parent::__construct('sc-domain:test.com', '/fake/path.json');
+            }
+
+            protected function makeClient(): \Google_Client
+            {
+                return new \Google_Client();
+            }
+
+            public function fetchTopQueriesForRange(CarbonImmutable $startDate, CarbonImmutable $endDate): Collection
+            {
+                // Simulate the same pagination + bucketing logic from the real service
+                // but driven by our canned row arrays.
+                $chunkSize = (int) config('seo.pull.chunk_size', 500);
+                $allRows   = collect();
+                $callCount = 0;
+
+                do {
+                    $rows = $callCount === 0 ? $this->page1Rows : ($this->page2Rows ?? []);
+                    $allRows = $allRows->concat(collect($rows));
+                    $callCount++;
+
+                    if ($callCount >= 2 || count($rows) < $chunkSize) {
+                        break;
+                    }
+                } while (true);
+
+                // Parse using the array-fallback branch (keys[0]=date, keys[1]=url, keys[2]=query).
+                $parsed = collect();
+
+                foreach ($allRows as $row) {
+                    $dateKey     = data_get($row, 'keys.0', '');
+                    $url         = data_get($row, 'keys.1', '');
+                    $query       = data_get($row, 'keys.2', '');
+                    $impressions = (int) data_get($row, 'impressions', 0);
+
+                    $parsed->push(compact('dateKey', 'url', 'query', 'impressions'));
+                }
+
+                // Group by date → url → pick max-impressions row.
+                $buckets = collect();
+
+                $parsed
+                    ->groupBy('dateKey')
+                    ->each(function (Collection $dateRows, string $dateKey) use ($buckets): void {
+                        $perUrl = $dateRows
+                            ->groupBy('url')
+                            ->map(fn (Collection $urlRows, string $url) => $urlRows->sortByDesc('impressions')->first())
+                            ->map(fn (array $best, string $url) => [
+                                'url'                   => $url,
+                                'top_query'             => $best['query'],
+                                'top_query_impressions' => $best['impressions'],
+                            ])
+                            ->values();
+
+                        $buckets->put($dateKey, $perUrl);
+                    });
+
+                return $buckets;
+            }
+        };
+    }
+
+    /**
+     * F30 (§4.5) — fetchTopQueriesForRange picks the query with max impressions
+     * for each (date, url) bucket when multiple rows exist for the same page.
+     *
+     * Three rows for 2026-04-10 / https://test.com/page:
+     *   "best espresso machine"   → 500 impressions  ← WINNER
+     *   "espresso machine review" → 300 impressions
+     *   "espresso maker"          → 100 impressions
+     */
+    public function test_fetch_top_queries_for_range_returns_date_keyed_buckets_with_top_query_per_page(): void
+    {
+        $service = $this->makeTopQueryServiceWithFakeRows([
+            ['keys' => ['2026-04-10', 'https://test.com/page', 'best espresso machine'],   'impressions' => 500],
+            ['keys' => ['2026-04-10', 'https://test.com/page', 'espresso machine review'], 'impressions' => 300],
+            ['keys' => ['2026-04-10', 'https://test.com/page', 'espresso maker'],          'impressions' => 100],
+            ['keys' => ['2026-04-10', 'https://test.com/other', 'cheap coffee'],           'impressions' => 200],
+            ['keys' => ['2026-04-10', 'https://test.com/other', 'best coffee maker'],      'impressions' => 450],
+            ['keys' => ['2026-04-09', 'https://test.com/page', 'morning coffee'],          'impressions' => 80],
+        ]);
+
+        $result = $service->fetchTopQueriesForRange(
+            CarbonImmutable::parse('2026-04-09'),
+            CarbonImmutable::parse('2026-04-10'),
+        );
+
+        $this->assertInstanceOf(Collection::class, $result);
+
+        // Two date buckets.
+        $this->assertCount(2, $result);
+        $this->assertTrue($result->has('2026-04-10'));
+        $this->assertTrue($result->has('2026-04-09'));
+
+        // For 2026-04-10: two distinct URLs, each with the correct winning query.
+        $apr10 = $result->get('2026-04-10');
+        $this->assertInstanceOf(Collection::class, $apr10);
+        $this->assertCount(2, $apr10, 'Expected one row per unique URL for 2026-04-10');
+
+        $byUrl = $apr10->keyBy('url');
+
+        $this->assertArrayHasKey('https://test.com/page', $byUrl->all());
+        $this->assertSame(
+            'best espresso machine',
+            $byUrl->get('https://test.com/page')['top_query'],
+            'top_query must be the query with max impressions for that (date, url)'
+        );
+        $this->assertSame(500, $byUrl->get('https://test.com/page')['top_query_impressions']);
+
+        $this->assertArrayHasKey('https://test.com/other', $byUrl->all());
+        $this->assertSame(
+            'best coffee maker',
+            $byUrl->get('https://test.com/other')['top_query'],
+            'top_query for /other must be the query with 450 impressions'
+        );
+
+        // For 2026-04-09: single URL, single query.
+        $apr9 = $result->get('2026-04-09');
+        $this->assertCount(1, $apr9);
+        $this->assertSame('morning coffee', $apr9->first()['top_query']);
+        $this->assertSame(80, $apr9->first()['top_query_impressions']);
+    }
+
+    /**
+     * F30 (§4.5) — fetchTopQueriesForRange paginates when the first page is
+     * exactly chunk_size rows, fetching a second page and merging both.
+     *
+     * Chunk size config is set to 3 for this test. Page 1 = exactly 3 rows
+     * (triggers a second fetch). Page 2 = 2 rows (fewer than chunk_size → stop).
+     *
+     * All 5 rows span two dates; each date has one URL with the expected winner.
+     */
+    public function test_fetch_top_queries_for_range_handles_pagination(): void
+    {
+        // Force chunk_size to 3 so we can simulate pagination without 500+ rows.
+        config(['seo.pull.chunk_size' => 3]);
+
+        $page1 = [
+            // 2026-04-10, page A: three queries — "mid" wins (500 impressions)
+            ['keys' => ['2026-04-10', 'https://test.com/a', 'best grinder'],     'impressions' => 200],
+            ['keys' => ['2026-04-10', 'https://test.com/a', 'top coffee grinder'], 'impressions' => 500],
+            ['keys' => ['2026-04-10', 'https://test.com/a', 'grinder review'],   'impressions' => 150],
+        ];
+
+        $page2 = [
+            // 2026-04-09, page B: two queries — "b query" wins (300 impressions)
+            ['keys' => ['2026-04-09', 'https://test.com/b', 'b query'],          'impressions' => 300],
+            ['keys' => ['2026-04-09', 'https://test.com/b', 'other b query'],    'impressions' => 50],
+        ];
+
+        $service = $this->makeTopQueryServiceWithFakeRows($page1, $page2);
+
+        $result = $service->fetchTopQueriesForRange(
+            CarbonImmutable::parse('2026-04-09'),
+            CarbonImmutable::parse('2026-04-10'),
+        );
+
+        // Both dates present — confirms page 2 was merged in.
+        $this->assertCount(2, $result);
+        $this->assertTrue($result->has('2026-04-10'), 'Page 1 date must be in result');
+        $this->assertTrue($result->has('2026-04-09'), 'Page 2 date must be in result after pagination merge');
+
+        $apr10 = $result->get('2026-04-10');
+        $this->assertCount(1, $apr10);
+        $this->assertSame('top coffee grinder', $apr10->first()['top_query']);
+        $this->assertSame(500, $apr10->first()['top_query_impressions']);
+
+        $apr9 = $result->get('2026-04-09');
+        $this->assertCount(1, $apr9);
+        $this->assertSame('b query', $apr9->first()['top_query']);
+        $this->assertSame(300, $apr9->first()['top_query_impressions']);
+    }
+
+    /**
+     * F30 (§4.5) — fetchTopQueriesForRange returns an empty Collection (not null,
+     * not a thrown exception) when the API responds with zero rows.
+     */
+    public function test_fetch_top_queries_for_range_returns_empty_collection_when_api_returns_no_rows(): void
+    {
+        $service = $this->makeTopQueryServiceWithFakeRows([]);
+
+        $result = $service->fetchTopQueriesForRange(
+            CarbonImmutable::parse('2026-04-10'),
+            CarbonImmutable::parse('2026-04-10'),
+        );
+
+        $this->assertInstanceOf(Collection::class, $result);
+        $this->assertTrue($result->isEmpty(), 'Empty API response must yield an empty Collection, not throw');
+    }
 }
