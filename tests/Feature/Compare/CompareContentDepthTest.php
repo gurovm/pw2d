@@ -295,4 +295,66 @@ class CompareContentDepthTest extends TestCase
             ->assertDontSee('Frequently Asked Questions')
             ->assertDontSee('How We Rank');
     }
+
+    // =========================================================================
+    // Regression: full-page HTTP render must emit ALL schemas (ItemList +
+    // BreadcrumbList + FAQPage), not just the first. The layout previously
+    // only encoded schemas[0]; Specs 020/021 shipped but silently never
+    // rendered until the schemas-emission fix.
+    // =========================================================================
+
+    /** @test */
+    public function compare_page_emits_all_three_schemas_when_faqs_are_present(): void
+    {
+        $category = $this->makeCategory('regression-cat', [
+            'buying_guide' => [
+                'faqs' => [
+                    ['question' => 'Q1?', 'answer' => 'A1.'],
+                    ['question' => 'Q2?', 'answer' => 'A2.'],
+                ],
+            ],
+        ]);
+
+        $this->makeProduct($category, 'regression-prod');
+
+        tenancy()->end();
+
+        $html = $this->get('/compare/regression-cat')->getContent();
+
+        $scriptCount = substr_count($html, '<script type="application/ld+json">');
+        $this->assertSame(
+            3,
+            $scriptCount,
+            "Expected 3 JSON-LD blocks (ItemList + BreadcrumbList + FAQPage), got {$scriptCount}",
+        );
+
+        $this->assertStringContainsString('"@type":"ItemList"', $html);
+        $this->assertStringContainsString('"@type":"BreadcrumbList"', $html);
+        $this->assertStringContainsString('"@type":"FAQPage"', $html);
+    }
+
+    /** @test */
+    public function compare_page_emits_two_schemas_when_no_faqs(): void
+    {
+        $category = $this->makeCategory('two-schema-cat', [
+            'buying_guide' => null,
+        ]);
+
+        $this->makeProduct($category, 'two-schema-prod');
+
+        tenancy()->end();
+
+        $html = $this->get('/compare/two-schema-cat')->getContent();
+
+        $scriptCount = substr_count($html, '<script type="application/ld+json">');
+        $this->assertSame(
+            2,
+            $scriptCount,
+            "Expected 2 JSON-LD blocks (ItemList + BreadcrumbList) when no faqs, got {$scriptCount}",
+        );
+
+        $this->assertStringContainsString('"@type":"ItemList"', $html);
+        $this->assertStringContainsString('"@type":"BreadcrumbList"', $html);
+        $this->assertStringNotContainsString('"@type":"FAQPage"', $html);
+    }
 }

@@ -515,7 +515,10 @@ class ProductCompare extends Component
                 'canonicalUrl'    => $seo['canonical'],
                 'ogType'          => $seo['ogType'],
                 'ogImage'         => $seo['ogImage'],
-                'schemaJson'      => json_encode($seo['schemas'][0], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+                'schemasJson'     => array_map(
+                    fn (array $s) => json_encode($s, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+                    $seo['schemas'],
+                ),
             ]);
     }
 }
