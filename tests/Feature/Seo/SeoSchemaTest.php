@@ -1076,4 +1076,147 @@ class SeoSchemaTest extends TestCase
         $this->assertSame('BreadcrumbList', $schemas[1]['@type'], 'Second schema must be BreadcrumbList');
         $this->assertSame('FAQPage',        $schemas[2]['@type'], 'Third schema must be FAQPage');
     }
+
+    // =========================================================================
+    // Spec 022 — §5.4: Review schema embedded in Product schema
+    // =========================================================================
+
+    /**
+     * @test
+     * §5.4 — When ai_summary is non-empty, forSelectedProduct must embed a
+     * Review inside the Product schema with @type=Review, reviewBody equals
+     * the summary (HTML stripped), and author.@type=Organization.
+     *
+     * The product schema is $seo['schemas'][0]; the Review is a key on it,
+     * NOT a separate top-level schema entry — $seo['schemas'] stays [Product, BreadcrumbList].
+     */
+    public function test_product_schema_includes_review_when_ai_summary_is_set(): void
+    {
+        $product = Product::factory()->create([
+            'slug'       => 'review-with-summary',
+            'ai_summary' => '<p>This is the review summary.</p>',
+        ]);
+        $product->load('offers.store', 'brand', 'category');
+
+        $seo    = SeoSchema::forSelectedProduct($product);
+        $schema = $seo['schemas'][0];
+
+        $this->assertArrayHasKey('review', $schema, 'Product schema must contain a "review" key when ai_summary is set');
+        $review = $schema['review'];
+
+        $this->assertSame('Review', $review['@type'], 'review.@type must be "Review"');
+        $this->assertSame(
+            'This is the review summary.',
+            $review['reviewBody'],
+            'reviewBody must be the ai_summary with HTML stripped'
+        );
+        $this->assertArrayHasKey('author', $review, 'review must contain an "author" key');
+        $this->assertSame('Organization', $review['author']['@type'], 'author.@type must be "Organization"');
+        $this->assertNotEmpty($review['author']['name'], 'author.name must be non-empty');
+
+        // Schemas array shape must be unchanged: still [Product, BreadcrumbList].
+        $this->assertCount(2, $seo['schemas'], 'schemas array must remain [Product, BreadcrumbList] — review is embedded, not a third entry');
+        $this->assertSame('BreadcrumbList', $seo['schemas'][1]['@type']);
+    }
+
+    /**
+     * @test
+     * §5.4 — When ai_summary is null, the Product schema must NOT contain a
+     * "review" key at all.
+     */
+    public function test_product_schema_omits_review_when_ai_summary_is_null(): void
+    {
+        $product = Product::factory()->create([
+            'slug'       => 'review-null-summary',
+            'ai_summary' => null,
+        ]);
+        $product->load('offers.store', 'brand', 'category');
+
+        $seo    = SeoSchema::forSelectedProduct($product);
+        $schema = $seo['schemas'][0];
+
+        $this->assertArrayNotHasKey(
+            'review',
+            $schema,
+            'Product schema must NOT contain "review" when ai_summary is null'
+        );
+    }
+
+    /**
+     * @test
+     * §5.4 — When ai_summary is an empty string, the Product schema must NOT
+     * contain a "review" key (empty string is falsy — matches !empty() check).
+     */
+    public function test_product_schema_omits_review_when_ai_summary_is_empty_string(): void
+    {
+        $product = Product::factory()->create([
+            'slug'       => 'review-empty-summary',
+            'ai_summary' => '',
+        ]);
+        $product->load('offers.store', 'brand', 'category');
+
+        $seo    = SeoSchema::forSelectedProduct($product);
+        $schema = $seo['schemas'][0];
+
+        $this->assertArrayNotHasKey(
+            'review',
+            $schema,
+            'Product schema must NOT contain "review" when ai_summary is an empty string'
+        );
+    }
+
+    /**
+     * @test
+     * §5.4 — reviewBody must have all HTML tags stripped. Seeded with a mix of
+     * block and inline tags; the output must contain no "<" characters.
+     */
+    public function test_review_body_strips_html_tags(): void
+    {
+        $product = Product::factory()->create([
+            'slug'       => 'review-html-strip',
+            'ai_summary' => '<p>Plain</p><br><strong>bold</strong> text',
+        ]);
+        $product->load('offers.store', 'brand', 'category');
+
+        $seo        = SeoSchema::forSelectedProduct($product);
+        $reviewBody = $seo['schemas'][0]['review']['reviewBody'];
+
+        $this->assertStringNotContainsString(
+            '<',
+            $reviewBody,
+            'reviewBody must contain no HTML tags after strip_tags()'
+        );
+        $this->assertStringContainsString('Plain', $reviewBody, 'Plain text content must survive stripping');
+        $this->assertStringContainsString('bold', $reviewBody, 'Text inside <strong> must survive stripping');
+        $this->assertStringContainsString('text',  $reviewBody, 'Trailing plain text must survive stripping');
+    }
+
+    /**
+     * @test
+     * §5.4 — reviewBody must be limited to 1000 characters. Str::limit adds "..."
+     * (3 chars), so a 2000-char string must produce a reviewBody of at most 1003 chars.
+     */
+    public function test_review_body_is_limited_to_1000_chars(): void
+    {
+        $longSummary = str_repeat('A', 2000);
+        $product     = Product::factory()->create([
+            'slug'       => 'review-long-summary',
+            'ai_summary' => $longSummary,
+        ]);
+        $product->load('offers.store', 'brand', 'category');
+
+        $seo        = SeoSchema::forSelectedProduct($product);
+        $reviewBody = $seo['schemas'][0]['review']['reviewBody'];
+
+        $this->assertLessThanOrEqual(
+            1003,
+            strlen($reviewBody),
+            'reviewBody must be at most 1003 chars (1000 + "..." from Str::limit)'
+        );
+        $this->assertStringEndsWith(
+            '...',
+            $reviewBody,
+            'Str::limit must append "..." when truncation occurs'
+        );
+    }
 }
