@@ -708,7 +708,10 @@ RULES:
 PROMPT;
 
         $raw = $this->gemini->generate($prompt, [
-            'maxOutputTokens' => 2000,
+            // admin_model is a thinking model — reasoning tokens count against this
+            // budget. 2000 left too little headroom and truncated on MAX_TOKENS, so
+            // match the 8192 ceiling the other admin_model content calls use.
+            'maxOutputTokens' => 8192,
             'timeout'         => 120,
         ], config('services.gemini.admin_model'));
 
