@@ -177,6 +177,7 @@
                     @forelse($presets as $preset)
                         <button
                             wire:click="applyPreset('{{ $preset->id }}')"
+                            @click="if(typeof posthog !== 'undefined') posthog.capture('preset_applied', { category: '{{ addslashes($categoryName) }}', preset: '{{ addslashes($preset->name) }}' })"
                             class="px-3.5 py-1.5 rounded-full text-[13px] font-semibold border transition-all duration-200 cursor-pointer {{ $presetSlug === Str::slug($preset->name) ? 'bg-tenant-secondary border-tenant-primary text-tenant-primary' : 'bg-gray-100 border-transparent text-gray-600 hover:bg-gray-200' }}"
                         >✨ {{ $preset->name }}</button>
                     @empty
