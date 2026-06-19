@@ -1,20 +1,30 @@
-@php $categoryName = \App\Models\Category::find($categoryId)->name ?? 'Unknown Category'; @endphp
+@php
+    $headerCategory = \App\Models\Category::find($categoryId);
+    $categoryName = $headerCategory->name ?? 'Unknown Category';
+    $categorySlug = $headerCategory->slug ?? '';
+@endphp
 <div
-    x-data="{ showPreferences: false, teaser: false }"
-    x-init="
-        // per-session. To escalate: append ':' + the category slug for per-category, or remove the guard for every page.
-        const AUTO_OPEN_KEY = 'app_customize_autoopen';
-        if (!sessionStorage.getItem(AUTO_OPEN_KEY) && @js($autoOpen)) {
-            sessionStorage.setItem(AUTO_OPEN_KEY, '1');
-            setTimeout(() => {
-                window.dispatchEvent(new CustomEvent('app-open-sidebar'));
-                if (typeof posthog !== 'undefined') posthog.capture('customize_modal_autoopened', { category: '{{ addslashes($categoryName) }}' });
-            }, 1500);
-        } else {
-            teaser = true;
-            setTimeout(() => teaser = false, 3500);
+    x-data="{
+        showPreferences: false,
+        teaser: false,
+        initAutoOpen() {
+            // Per-category, per session. Key = the category slug, so the drawer auto-opens the
+            // first time the user lands on each category each session. To make it once-per-session
+            // globally, drop the slug; for every page, remove the sessionStorage guard.
+            let key = 'app_customize_autoopen:{{ $categorySlug }}';
+            if (!sessionStorage.getItem(key) && @js($autoOpen)) {
+                sessionStorage.setItem(key, '1');
+                setTimeout(() => {
+                    window.dispatchEvent(new CustomEvent('app-open-sidebar'));
+                    if (typeof posthog !== 'undefined') posthog.capture('customize_modal_autoopened', { category: '{{ addslashes($categoryName) }}' });
+                }, 1500);
+            } else {
+                this.teaser = true;
+                setTimeout(() => { this.teaser = false; }, 3500);
+            }
         }
-    "
+    }"
+    x-init="initAutoOpen()"
     x-on:app-open-sidebar.window="showPreferences = true"
     @keyup.escape.window="showPreferences = false"
 >
