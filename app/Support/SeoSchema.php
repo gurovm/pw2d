@@ -28,6 +28,8 @@ class SeoSchema
      * @param  Product|null    $selectedProduct     Resolved Product model (null when no product is open).
      * @param  string|null     $activePresetSlug    Active preset slug from URL parameter.
      * @param  Collection      $visibleProducts     Scored + paginated products used to build ItemList.
+     * @param  Preset|null     $activePreset        Already-resolved Preset model; when provided, skips
+     *                                              the internal DB lookup in forLeafCategory (S1 fix).
      * @return array{title: string, description: string, canonical: string, ogType: string, ogImage: string|null, schemas: array, activePreset: Preset|null}
      */
     public static function forCategoryPage(
@@ -37,6 +39,7 @@ class SeoSchema
         ?Product $selectedProduct,
         ?string $activePresetSlug,
         Collection $visibleProducts,
+        ?Preset $activePreset = null,
     ): array {
         if ($selectedProductSlug && $selectedProduct) {
             return self::forSelectedProduct($selectedProduct);
@@ -46,7 +49,7 @@ class SeoSchema
             return self::forParentCategory($category, $subcategories);
         }
 
-        return self::forLeafCategory($category, $activePresetSlug, $visibleProducts);
+        return self::forLeafCategory($category, $activePresetSlug, $visibleProducts, $activePreset);
     }
 
     /**
@@ -257,11 +260,17 @@ class SeoSchema
 
     /**
      * Meta + schema for a leaf category, with optional preset override.
+     *
+     * @param  Preset|null $activePreset  When supplied by the caller (e.g. ProductCompare::render),
+     *                                    the internal DB lookup is skipped entirely (S1 fix). When
+     *                                    null, falls back to the original slug-based resolution so
+     *                                    all other callers (tests, etc.) continue to work unchanged.
      */
     private static function forLeafCategory(
         Category $category,
         ?string $activePresetSlug,
         Collection $visibleProducts,
+        ?Preset $activePreset = null,
     ): array {
         $currentYear = date('Y');
         $title       = "{$category->name} - Compare Best Models in {$currentYear} | " . tenant_seo('title_suffix');
@@ -287,18 +296,28 @@ class SeoSchema
             ? "Compare {$productCount} top {$category->name}.{$featuresClause} Find your perfect match in seconds."
             : "Compare the absolute best {$category->name} on the market. AI-ranks by the features that matter most for your needs.";
 
-        // Preset override — look up by slug-derived name match.
-        $activePreset = null;
-        if (!empty($activePresetSlug)) {
+        // Preset override: use the caller-supplied model when available (avoids a second DB round-trip),
+        // otherwise fall back to slug-based resolution for callers that don't have the model in hand.
+        if ($activePreset === null && !empty($activePresetSlug)) {
             $activePreset = Preset::where('category_id', $category->id)
                 ->get()
                 ->first(fn(Preset $p) => Str::slug($p->name) === $activePresetSlug);
+        }
 
-            if ($activePreset) {
-                $title       = "Best {$category->name} for {$activePreset->name} | " . tenant_seo('title_suffix');
-                $description = $activePreset->seo_description
-                    ?? "Top-ranked {$category->name} for {$activePreset->name} users. Compare by the features that matter most for your specific use case.";
-                $canonical   = route('category.show', ['slug' => $category->slug]) . "?preset={$activePresetSlug}";
+        if ($activePreset !== null) {
+            $title     = "Best {$category->name} for {$activePreset->name} | " . tenant_seo('title_suffix');
+            $canonical = route('category.show', ['slug' => $category->slug]) . "?preset={$activePresetSlug}";
+
+            // Meta description preference chain (Spec 023 §6):
+            // 1. preset.seo_description (hand-written override)
+            // 2. preset.seo_content intro (stripped + truncated)
+            // 3. existing category fallback template
+            if ($activePreset->seo_description) {
+                $description = $activePreset->seo_description;
+            } elseif (!empty($activePreset->seo_content['intro'])) {
+                $description = Str::limit(strip_tags($activePreset->seo_content['intro']), 155);
+            } else {
+                $description = "Top-ranked {$category->name} for {$activePreset->name} users. Compare by the features that matter most for your specific use case.";
             }
         }
 
@@ -328,10 +347,31 @@ class SeoSchema
 
         $schemas = [$schema, $breadcrumbSchema];
 
-        // FAQPage schema — only emit when buying_guide.faqs is a non-empty array.
-        // Eligible for Google's FAQ rich result, which adds expandable Q&A rows
-        // directly in the SERP and materially improves CTR.
-        if (is_array($category->buying_guide['faqs'] ?? null) && !empty($category->buying_guide['faqs'])) {
+        // FAQPage schema — merge preset FAQs (preset-first) with category FAQs when a preset
+        // is active and has seo_content['faqs']. Deduplication is by question string.
+        // When no preset is active, falls back to category buying_guide.faqs only.
+        // Eligible for Google's FAQ rich result — expandable Q&A rows in the SERP.
+        $categoryFaqs = is_array($category->buying_guide['faqs'] ?? null)
+            ? $category->buying_guide['faqs']
+            : [];
+
+        $presetFaqs = ($activePreset !== null && is_array($activePreset->seo_content['faqs'] ?? null))
+            ? $activePreset->seo_content['faqs']
+            : [];
+
+        // Merge: preset first, then category entries not already covered.
+        // Dedup key: mb_strtolower(trim($question)) — case-insensitive + trimmed, matching the
+        // Blade partial (compare-faqs.blade.php) so visible FAQs and FAQPage JSON-LD are identical.
+        $mergedFaqs    = $presetFaqs;
+        $seenQuestions = array_map(fn (array $f) => mb_strtolower(trim($f['question'])), $mergedFaqs);
+        foreach ($categoryFaqs as $faq) {
+            if (!in_array(mb_strtolower(trim($faq['question'])), $seenQuestions, true)) {
+                $mergedFaqs[]    = $faq;
+                $seenQuestions[] = mb_strtolower(trim($faq['question']));
+            }
+        }
+
+        if (!empty($mergedFaqs)) {
             $faqSchema = [
                 '@context'   => 'https://schema.org/',
                 '@type'      => 'FAQPage',
@@ -344,7 +384,7 @@ class SeoSchema
                             'text'  => $faq['answer'],
                         ],
                     ],
-                    $category->buying_guide['faqs'],
+                    $mergedFaqs,
                 ),
             ];
             $schemas[] = $faqSchema;

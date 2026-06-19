@@ -4,17 +4,19 @@ namespace App\Livewire;
 
 use App\Models\Category;
 use App\Models\Feature;
+use App\Models\Preset;
 use App\Models\Product;
 use App\Models\ProductOffer;
 use App\Models\SearchLog;
+use App\Services\AiService;
 use App\Services\ProductScoringService;
 use App\Support\SamplePrompts;
 use App\Support\SeoSchema;
 use Illuminate\Support\Facades\Cache;
-use App\Services\AiService;
+use Illuminate\Support\Str;
+use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\On;
-use Livewire\Attributes\Computed;
 use Livewire\Attributes\Session;
 use Livewire\Attributes\Url;
 use Livewire\Component;
@@ -88,8 +90,35 @@ class ProductCompare extends Component
     public function selectedProduct()
     {
         return $this->selectedProductSlug
-            ? \App\Models\Product::with(['brand', 'featureValues.feature', 'offers.store'])->where('slug', $this->selectedProductSlug)->first()
+            ? Product::with(['brand', 'featureValues.feature', 'offers.store'])->where('slug', $this->selectedProductSlug)->first()
             : null;
+    }
+
+    /**
+     * Resolve the active Preset model from the URL slug.
+     *
+     * Matches Str::slug($preset->name) === $activePresetSlug within the category's presets.
+     * Eager-loads presets with presetFeatures to avoid N+1 in the view.
+     *
+     * IMPORTANT: uses the same Str::slug($preset->name) derivation as SeoSchema::forLeafCategory
+     * and pw2d:generate-preset-content — this consistency is load-bearing (Spec 023 §10).
+     *
+     * Exposes the Preset model (including seo_content) to the Blade view so the
+     * frontend agent can render preset-specific intro and FAQs.
+     */
+    #[Computed]
+    public function activePreset(): ?Preset
+    {
+        if (empty($this->activePresetSlug) || !$this->category) {
+            return null;
+        }
+
+        // Eager-load presets once; avoid N+1 when the view accesses seo_content or features.
+        return $this->category
+            ->presets()
+            ->with('presetFeatures.feature')
+            ->get()
+            ->first(fn (Preset $p) => Str::slug($p->name) === $this->activePresetSlug);
     }
 
     /**
@@ -497,6 +526,7 @@ class ProductCompare extends Component
             $this->selectedProduct,
             $this->activePresetSlug,
             $this->visibleProducts,
+            $this->activePreset, // already-resolved model — skips the internal DB lookup (S1 fix)
         );
 
         // Build sample_prompts for the parent-category hero search typewriter.
@@ -507,7 +537,7 @@ class ProductCompare extends Component
 
         return view('livewire.product-compare', [
             'samplePrompts' => $samplePrompts,
-            'activePreset'  => $seo['activePreset'],
+            'activePreset'  => $this->activePreset,
         ])
             ->layoutData([
                 'metaTitle'       => $seo['title'],

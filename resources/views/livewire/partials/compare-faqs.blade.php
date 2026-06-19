@@ -1,10 +1,33 @@
-@if (!empty($category->buying_guide['faqs']) && is_array($category->buying_guide['faqs']))
+@php
+    $presetFaqs   = !empty($activePreset?->seo_content['faqs']) && is_array($activePreset->seo_content['faqs'])
+                        ? $activePreset->seo_content['faqs']
+                        : [];
+    $categoryFaqs = !empty($category->buying_guide['faqs']) && is_array($category->buying_guide['faqs'])
+                        ? $category->buying_guide['faqs']
+                        : [];
+
+    // Collect preset question strings for deduplication (case-insensitive trim).
+    $presetQuestions = array_map(
+        fn($f) => mb_strtolower(trim($f['question'] ?? '')),
+        $presetFaqs,
+    );
+
+    // Keep only category FAQs whose question did not already appear in the preset set.
+    $remainingCategoryFaqs = array_filter(
+        $categoryFaqs,
+        fn($f) => !in_array(mb_strtolower(trim($f['question'] ?? '')), $presetQuestions, true),
+    );
+
+    $allFaqs = array_values(array_merge($presetFaqs, $remainingCategoryFaqs));
+@endphp
+
+@if (!empty($allFaqs))
     <section class="mt-8 mb-8" aria-labelledby="faq-heading">
         <h2 id="faq-heading" class="text-xl sm:text-2xl font-bold text-gray-900 mb-4">
             Frequently Asked Questions
         </h2>
         <div class="space-y-2" x-data="{ openIndex: null }">
-            @foreach ($category->buying_guide['faqs'] as $idx => $faq)
+            @foreach ($allFaqs as $idx => $faq)
                 <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
                     <button
                         @click="openIndex = (openIndex === {{ $idx }} ? null : {{ $idx }})"

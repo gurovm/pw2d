@@ -32,6 +32,42 @@ class PresetResource extends Resource
                 Forms\Components\TextInput::make('name')
                     ->required()
                     ->maxLength(255),
+                Forms\Components\Textarea::make('seo_description')
+                    ->label('SEO Description (override)')
+                    ->rows(2)
+                    ->helperText('Hand-written meta description for the ?preset= URL. Leave blank to auto-generate from AI intro.')
+                    ->columnSpanFull(),
+
+                Forms\Components\Section::make('SEO Content (AI-generated, hand-tunable)')
+                    ->description('Use-case-specific intro and FAQs rendered on the compare page when this preset is active. Generate via: php artisan pw2d:generate-preset-content {tenant} --preset=' . '...  --dry-run')
+                    ->schema([
+                        Forms\Components\Textarea::make('seo_content.intro')
+                            ->label('Intro (1-2 <p> elements, 180-280 words)')
+                            ->rows(6)
+                            ->helperText('AI-generated HTML. Use {!! !!} in Blade. Renders above the product grid when this preset is active.')
+                            ->columnSpanFull(),
+
+                        Forms\Components\Repeater::make('seo_content.faqs')
+                            ->label('FAQs (use-case phrased Q&A)')
+                            ->helperText('3-4 entries. Preset FAQs render first, then category FAQs. Emitted in FAQPage JSON-LD schema.')
+                            ->schema([
+                                Forms\Components\TextInput::make('question')
+                                    ->label('Question')
+                                    ->required()
+                                    ->columnSpanFull(),
+                                Forms\Components\Textarea::make('answer')
+                                    ->label('Answer')
+                                    ->required()
+                                    ->rows(3)
+                                    ->columnSpanFull(),
+                            ])
+                            ->collapsible()
+                            ->defaultItems(0)
+                            ->columnSpanFull(),
+                    ])
+                    ->collapsible()
+                    ->columnSpanFull(),
+
                 Forms\Components\Repeater::make('featurePresets')
                     ->relationship('presetFeatures')
                     ->schema([

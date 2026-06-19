@@ -13,6 +13,7 @@ namespace App\Services;
 
 use App\Models\AiMatchingDecision;
 use App\Models\Category;
+use App\Models\Preset;
 use App\Models\Product;
 use Illuminate\Support\Collection;
 
@@ -612,6 +613,149 @@ PROMPT;
         return $this->gemini->generate($prompt, [
             'maxOutputTokens' => 4000,
         ], config('services.gemini.admin_model'));
+    }
+
+    /**
+     * Generate use-case-specific content for a single preset: intro paragraph + FAQs.
+     *
+     * Produces content scoped to the preset's use-case (e.g. "Streamer", "Remote Worker"),
+     * referencing the preset's highest-weighted features and the top products under those weights.
+     * Output is stored in `preset.seo_content` as `{ intro: string, faqs: [...] }`.
+     *
+     * @param  Preset $preset  Must have `category` (with `features`), and `presetFeatures.feature`
+     *                         already eager-loaded. Products are resolved internally.
+     * @return array{intro: string, faqs: list<array{question: string, answer: string}>}
+     * @throws \InvalidArgumentException When the model returns malformed or incomplete JSON.
+     * @throws \Exception               When the Gemini API call fails.
+     */
+    public function generatePresetContent(Preset $preset): array
+    {
+        $category     = $preset->category;
+        $categoryName = $category->name;
+        $presetName   = $preset->name;
+
+        // --- Resolve the top 2-3 weighted features from the feature_preset pivot ---
+        // presetFeatures is a HasMany on FeaturePreset (pivot model with a weight column).
+        // Sort descending by weight, take up to 3, pull the feature name via relation.
+        $topFeatures = $preset->presetFeatures
+            ->sortByDesc('weight')
+            ->take(3)
+            ->filter(fn ($fp) => $fp->feature !== null)
+            ->map(fn ($fp) => $fp->feature->name)
+            ->values();
+
+        $featuresClause = $topFeatures->isNotEmpty()
+            ? 'Priority features for this use-case: ' . $topFeatures->implode(', ') . '.'
+            : 'No specific feature weights defined for this preset.';
+
+        // --- Resolve the top 5 products ranked under this preset's weights ---
+        // Build a weight map: feature_id => weight (from pivot), defaulting to 50.
+        $weightMap = $preset->presetFeatures
+            ->pluck('weight', 'feature_id')
+            ->toArray();
+
+        // Score products: sum of (feature_raw_value * weight) for features in this preset.
+        // We only need name for the prompt; load products with featureValues for scoring.
+        $products = Product::where('category_id', $category->id)
+            ->where('is_ignored', false)
+            ->whereNull('status')
+            ->with('featureValues:id,product_id,feature_id,raw_value')
+            ->get(['id', 'name']);
+
+        $scored = $products->map(function (Product $p) use ($weightMap) {
+            $score = $p->featureValues
+                ->filter(fn ($fv) => isset($weightMap[$fv->feature_id]))
+                ->sum(fn ($fv) => (float) $fv->raw_value * (float) $weightMap[$fv->feature_id]);
+            return ['name' => $p->name, 'score' => $score];
+        })
+        ->sortByDesc('score')
+        ->take(5)
+        ->pluck('name')
+        ->values();
+
+        $productLines = $scored->isNotEmpty()
+            ? $scored->map(fn ($name, $i) => '  ' . ($i + 1) . '. ' . $name)->implode("\n")
+            : '  (No scored products available yet.)';
+
+        $prompt = <<<PROMPT
+You are a senior technology editor writing for a premium product-comparison website — think Wirecutter or RTINGS. Your job is to write use-case-specific content for ONE preset on a category compare page.
+
+Category: {$categoryName}
+Use-case / Preset name: {$presetName}
+{$featuresClause}
+
+Top products ranked under this preset's weights:
+{$productLines}
+
+=== YOUR TASK ===
+
+Write TWO pieces of content specifically for buyers in the "{$presetName}" use-case. Every sentence must be relevant to THIS use-case — not generic category content.
+
+Return ONLY a valid JSON object with EXACTLY these two keys — no markdown fences, no preamble, no explanation:
+
+{
+  "intro": "<p>180-280 word paragraph addressing the {$presetName} use-case directly. Start with 'If you are buying a {$categoryName} for {$presetName}...' or similar. Name the priority features. Reference the top 1-2 products by name if they are well-known. Use only <p> tags. 9th-grade reading level. Be concrete — no fluff.</p>",
+  "faqs": [
+    {"question": "A specific question a {$presetName} buyer would type into Google", "answer": "Direct, concrete 2-4 sentence answer referencing real trade-offs for the {$presetName} use-case. 40-100 words."},
+    {"question": "...", "answer": "..."}
+  ]
+}
+
+RULES:
+- `intro`: ONE OR TWO <p> elements total. 180-280 words. Must name the preset's priority features. Must address the {$presetName} use-case directly. Hook the reader with a specific buying scenario.
+- `faqs`: 3-4 entries. Each must have both "question" and "answer" as strings. Questions must be phrased as search queries a {$presetName} buyer would type. Answers must be concrete, 40-100 words each. Cover: the most important spec for this use-case, a common trade-off, and one misconception.
+- Return ONLY the raw JSON. No ```json wrapper. No trailing text.
+PROMPT;
+
+        $raw = $this->gemini->generate($prompt, [
+            'maxOutputTokens' => 2000,
+            'timeout'         => 120,
+        ], config('services.gemini.admin_model'));
+
+        $content = $raw['content'] ?? '';
+
+        // Strip markdown code fences Gemini sometimes wraps around JSON responses.
+        $content = preg_replace('/^```(?:json)?\s*/i', '', trim($content));
+        $content = preg_replace('/\s*```\s*$/i', '', $content);
+        $content = trim($content);
+
+        $decoded = json_decode($content, true);
+
+        if (!is_array($decoded)) {
+            throw new \InvalidArgumentException(
+                'AI returned malformed JSON: ' . substr($content, 0, 300)
+            );
+        }
+
+        foreach (['intro', 'faqs'] as $key) {
+            if (!array_key_exists($key, $decoded)) {
+                throw new \InvalidArgumentException(
+                    "AI response missing key \"{$key}\". Got keys: " . implode(', ', array_keys($decoded))
+                );
+            }
+        }
+
+        if (!is_string($decoded['intro']) || empty(trim($decoded['intro']))) {
+            throw new \InvalidArgumentException('AI response "intro" must be a non-empty string.');
+        }
+
+        if (!is_array($decoded['faqs']) || empty($decoded['faqs'])) {
+            throw new \InvalidArgumentException('AI response "faqs" must be a non-empty array.');
+        }
+
+        foreach ($decoded['faqs'] as $i => $faq) {
+            if (!is_array($faq) || !isset($faq['question'], $faq['answer'])
+                || !is_string($faq['question']) || !is_string($faq['answer'])) {
+                throw new \InvalidArgumentException(
+                    "AI response faqs[{$i}] must have string keys \"question\" and \"answer\"."
+                );
+            }
+        }
+
+        return [
+            'intro' => (string) $decoded['intro'],
+            'faqs'  => $decoded['faqs'],
+        ];
     }
 
     /**

@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -12,7 +14,11 @@ use Stancl\Tenancy\Database\Concerns\BelongsToTenant;
 class Preset extends Model
 {
     use HasFactory, BelongsToTenant;
-    protected $fillable = ['tenant_id', 'category_id', 'name', 'sort_order', 'seo_description'];
+    protected $fillable = ['tenant_id', 'category_id', 'name', 'sort_order', 'seo_description', 'seo_content'];
+
+    protected $casts = [
+        'seo_content' => 'array',
+    ];
 
     public function category(): BelongsTo
     {

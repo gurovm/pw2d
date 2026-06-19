@@ -89,9 +89,14 @@
                                                         <p class="text-gray-600 text-sm leading-relaxed mb-4">{{ $activePreset->seo_description }}</p>
                                                 @endif
 
-                                                @if (!empty($category->buying_guide['intro']))
+                                                @php
+                                                    $introContent = !empty($activePreset?->seo_content['intro'])
+                                                        ? $activePreset->seo_content['intro']
+                                                        : ($category->buying_guide['intro'] ?? null);
+                                                @endphp
+                                                @if (!empty($introContent))
                                                     <div class="prose prose-sm max-w-none mb-4 text-gray-700 leading-relaxed">
-                                                        {!! $category->buying_guide['intro'] !!}
+                                                        {!! $introContent !!}
                                                     </div>
                                                 @endif
 
@@ -505,7 +510,7 @@
                         </div>
                         @endif
 
-                        @include('livewire.partials.compare-faqs')
+                        @include('livewire.partials.compare-faqs', ['activePreset' => $activePreset])
                 </div>
         </div>
 
