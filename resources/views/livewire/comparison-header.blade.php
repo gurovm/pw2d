@@ -1,9 +1,15 @@
+@php $categoryName = \App\Models\Category::find($categoryId)->name ?? 'Unknown Category'; @endphp
 <div
     x-data="{ showPreferences: false, teaser: false }"
     x-init="
-        if (!localStorage.getItem('app_customize_seen')) {
-            localStorage.setItem('app_customize_seen', '1');
-            setTimeout(() => window.dispatchEvent(new CustomEvent('app-open-sidebar')), 3000);
+        // per-session. To escalate: append ':' + the category slug for per-category, or remove the guard for every page.
+        const AUTO_OPEN_KEY = 'app_customize_autoopen';
+        if (!sessionStorage.getItem(AUTO_OPEN_KEY) && @js($autoOpen)) {
+            sessionStorage.setItem(AUTO_OPEN_KEY, '1');
+            setTimeout(() => {
+                window.dispatchEvent(new CustomEvent('app-open-sidebar'));
+                if (typeof posthog !== 'undefined') posthog.capture('customize_modal_autoopened', { category: '{{ addslashes($categoryName) }}' });
+            }, 1500);
         } else {
             teaser = true;
             setTimeout(() => teaser = false, 3500);
@@ -12,7 +18,6 @@
     x-on:app-open-sidebar.window="showPreferences = true"
     @keyup.escape.window="showPreferences = false"
 >
-    @php $categoryName = \App\Models\Category::find($categoryId)->name ?? 'Unknown Category'; @endphp
 
     <!-- FAB -->
     <div class="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-2.5"
@@ -56,7 +61,7 @@
         x-show="showPreferences"
         x-transition.opacity.duration.300ms
         @click="showPreferences = false"
-        class="fixed inset-0 z-70 bg-gray-900/40 backdrop-blur-[2px]"
+        class="fixed inset-0 z-70 bg-gray-900/10"
         style="display: none;"
     ></div>
 
