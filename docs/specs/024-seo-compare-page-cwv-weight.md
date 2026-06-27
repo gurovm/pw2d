@@ -1,11 +1,29 @@
 # Spec 024 — Compare-Page Core Web Vitals: Initial-Render Weight Cut (F31)
 
-**Status:** Draft (awaiting approval)
+**Status:** Approved — building (2026-06-26)
 **Author:** Lead Architect
-**Date:** 2026-06-19
+**Date:** 2026-06-19 (refreshed 2026-06-26)
 **Closes:** F31
 **Sequenced as:** fast-follow to Spec 023 (both push pos-10 preset pages toward the click-earning top 5;
 023 = content/intent match, 024 = page-experience ranking signal)
+
+> **2026-06-26 refresh — read before building:**
+> - **Rationale reinforced:** the Jun 26 engagement check found compare pages get ~3-6 real pageviews/week
+>   — on-site engagement can't be measured until clicks exist, and clicks need the pos-10→top-5 climb.
+>   CWV is a *traffic-driving* (ranking) lever whose payoff does NOT require existing traffic, unlike
+>   engagement work. That makes it the correct next move while 023's content settles.
+> - **Line numbers in this spec are STALE.** Spec 025 (deployed `97cac8b`) reordered the compare page:
+>   the product grid now sits directly under the H1/hook (genuinely above the fold — good for this spec),
+>   and the deep content (intro/tabs/methodology) moved into `partials/compare-content.blade.php` BELOW
+>   the grid. The builder/frontend MUST read the CURRENT blade, not trust any line ref here.
+> - **Gotcha — `displayLimit` normalization:** `ProductCompare::mount()` forces `displayLimit` to
+>   `max(12, …)` rounded to a multiple of 12. So you CANNOT just lower `displayLimit` to 6 — introduce a
+>   SEPARATE initial render-window (e.g. `renderLimit = 6`) that caps how many of the scored products are
+>   emitted in the initial server HTML, with a wire-driven reveal that raises it; leave `displayLimit` and
+>   the "Load more" semantics intact.
+> - **Real HTML-weight cut, not hide-with-CSS:** the deferred cards must be ABSENT from the initial server
+>   response and rendered on a later Livewire round-trip (x-intersect → wire reveal). Rendering 12 and
+>   `x-show`-hiding 6 does NOT reduce HTML transfer / LCP — it must be a server-side render-count cut.
 
 ---
 

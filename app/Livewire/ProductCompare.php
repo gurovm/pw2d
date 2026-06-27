@@ -40,6 +40,21 @@ class ProductCompare extends Component
     #[Url(as: 'limit')]
     public int $displayLimit = 12;
 
+    /**
+     * Initial server-render window (Spec 024 / F31 — CWV weight cut).
+     *
+     * Caps how many scored products are emitted in the FIRST server response.
+     * Always <= displayLimit. Raised in 6-card increments by revealMore() as the
+     * user scrolls — up to displayLimit, after which the existing "Load more" button
+     * takes over by bumping displayLimit (and renderLimit resets to the new ceiling
+     * on the next revealMore() call).
+     *
+     * NOT reflected in the URL — this is a transient render window, not pagination state.
+     *
+     * H2H Arena mode and pinned-staging bypass this cap entirely (see visibleProducts()).
+     */
+    public int $renderLimit = 6;
+
     // Active preset slug — read from URL so hero H1/description updates on re-renders too
     #[Url(as: 'preset')]
     public ?string $activePresetSlug = null;
@@ -197,11 +212,21 @@ class ProductCompare extends Component
     /**
      * Returns only the top X products with full data (brand, feature values + names)
      * for rendering. We fetch full data for ONLY these products, not all 200+.
+     *
+     * Spec 024 (F31 — CWV weight cut): the normal scored-list path is capped at
+     * min($renderLimit, $displayLimit) for the INITIAL server response. The frontend
+     * calls revealMore() on scroll (x-intersect sentinel) to raise renderLimit in
+     * 6-card increments up to displayLimit; thereafter the existing "Load more" button
+     * bumps displayLimit and the sentinel can continue.
+     *
+     * H2H Arena mode (isComparing && compareList) and pinned-staging bypass the
+     * renderLimit cap — they always render the full pinned set.
      */
     #[Computed]
     public function visibleProducts()
     {
-        // H2H Arena mode: show only the pinned products (still dynamically scored)
+        // H2H Arena mode: show only the pinned products (still dynamically scored).
+        // EXEMPT from renderLimit — render the full pinned set.
         if ($this->isComparing && !empty($this->compareList)) {
             $compareIds = collect($this->compareList);
             $scored = $this->scoredProducts->whereIn('id', $compareIds);
@@ -222,29 +247,124 @@ class ProductCompare extends Component
 
         $scored = $this->scoredProducts;
 
-        // Staging mode: bump pinned products to the top while keeping score order for the rest
+        // Staging mode: bump pinned products to the top while keeping score order for the rest.
+        // EXEMPT from renderLimit — pinned products must not be hidden by the initial cap.
         if (!empty($this->compareList)) {
             $pinned = $this->compareList;
             $scored = $scored->sortByDesc(fn($p) => in_array($p->id, $pinned) ? 1 : 0)->values();
+
+            // With pinned products present, render up to displayLimit (no render cap).
+            $topScored = $scored->take($this->displayLimit);
+            $topIds = $topScored->pluck('id');
+            $scoreMap = $topScored->keyBy('id');
+
+            $fullProducts = Product::whereIn('id', $topIds)
+                ->with(['brand', 'featureValues.feature', 'offers.store'])
+                ->get()
+                ->keyBy('id');
+
+            return $topIds->map(function ($id) use ($fullProducts, $scoreMap) {
+                $product = $fullProducts[$id];
+                $product->match_score = $scoreMap[$id]->match_score;
+                $product->feature_scores = $scoreMap[$id]->feature_scores;
+                return $product;
+            });
         }
 
-        $topScored = $scored->take($this->displayLimit);
+        // Normal scored-list path: cap at renderLimit for the initial server response (Spec 024).
+        // renderLimit <= displayLimit always (enforced by revealMore() and mount()).
+        $renderCount = min($this->renderLimit, $this->displayLimit);
+        $topScored = $scored->take($renderCount);
         $topIds = $topScored->pluck('id');
         $scoreMap = $topScored->keyBy('id');
 
-        // Full data query for only the visible products
+        // Full data query for only the rendered products — DB/scoring work shrinks too.
         $fullProducts = Product::whereIn('id', $topIds)
             ->with(['brand', 'featureValues.feature', 'offers.store'])
             ->get()
             ->keyBy('id');
 
-        // Restore the sorted order and attach scores
+        // Restore the sorted order and attach scores.
         return $topIds->map(function ($id) use ($fullProducts, $scoreMap) {
             $product = $fullProducts[$id];
             $product->match_score = $scoreMap[$id]->match_score;
             $product->feature_scores = $scoreMap[$id]->feature_scores;
             return $product;
         });
+    }
+
+    /**
+     * Products for the JSON-LD ItemList schema and SEO meta description (Spec 024 blocker fix).
+     *
+     * MUST reflect the full displayLimit set (top 12 on initial load), NOT the render-capped
+     * visibleProducts (top 6). Googlebot only sees the initial server response — if we pass
+     * visibleProducts to SeoSchema, the ItemList has only 6 entries and the meta description
+     * reads "Compare 6 top…" on every initial page load.
+     *
+     * Fields read by SeoSchema::buildItemListSchema() and forLeafCategory():
+     *   - name, slug, ai_summary, amazon_rating, amazon_reviews_count (on Product itself)
+     *   - brand.name   → eager-load 'brand'
+     *   - offers[0].image_url → eager-load 'offers' (first offer image for schema + og:image)
+     *
+     * We do NOT need featureValues.feature here (no schema field reads feature data),
+     * so this query is cheaper than visibleProducts' full `with(['brand','featureValues.feature','offers.store'])`.
+     *
+     * Applies the same pinned-then-scored order as visibleProducts so the ItemList position
+     * numbers reflect the page's actual display order.
+     *
+     * Not marked #[Computed] — it reads $displayLimit (mutable public property) and must
+     * re-evaluate on every render() call after loadMore() bumps displayLimit.
+     */
+    public function schemaProducts(): \Illuminate\Support\Collection
+    {
+        // H2H Arena: schema matches exactly what's displayed.
+        if ($this->isComparing && !empty($this->compareList)) {
+            $compareIds = collect($this->compareList);
+            $scored = $this->scoredProducts->whereIn('id', $compareIds);
+
+            $full = Product::whereIn('id', $compareIds)
+                ->with(['brand', 'offers'])
+                ->get()
+                ->keyBy('id');
+
+            return $scored->pluck('id')->map(fn ($id) => $full[$id]);
+        }
+
+        $scored = $this->scoredProducts;
+
+        // Staging mode: match the pinned-bump order used by visibleProducts.
+        if (!empty($this->compareList)) {
+            $pinned = $this->compareList;
+            $scored = $scored->sortByDesc(fn ($p) => in_array($p->id, $pinned) ? 1 : 0)->values();
+        }
+
+        // Always take the full displayLimit — independent of renderLimit.
+        $topIds = $scored->take($this->displayLimit)->pluck('id');
+
+        return Product::whereIn('id', $topIds)
+            ->with(['brand', 'offers'])
+            ->get()
+            ->keyBy('id')
+            // Restore the sorted order so ItemList positions match the page.
+            ->sortBy(fn ($p) => $topIds->search($p->id))
+            ->values();
+    }
+
+    /**
+     * Reveal the next batch of products (Spec 024 / F31 — CWV lazy-hydration).
+     *
+     * Called by the frontend's x-intersect sentinel just below the last rendered card.
+     * Raises renderLimit by 6 up to displayLimit, triggering a Livewire round-trip
+     * that re-renders the grid with the next 6 cards.
+     *
+     * Composition with "Load more": once renderLimit reaches displayLimit, the sentinel
+     * hides itself (hasMoreToReveal returns false). The existing "Load more" button then
+     * raises displayLimit by 12 — after which hasMoreToReveal becomes true again (because
+     * renderLimit < displayLimit), so the sentinel re-appears and can continue revealing.
+     */
+    public function revealMore(): void
+    {
+        $this->renderLimit = min($this->renderLimit + 6, $this->displayLimit);
     }
 
     public function openProduct($slug): void
@@ -511,21 +631,52 @@ class ProductCompare extends Component
         $this->analyzeUserNeeds();
     }
 
+    /**
+     * Whether there are more scored products to reveal via x-intersect sentinel (Spec 024).
+     *
+     * True when renderLimit has not yet caught up with displayLimit AND the scored list
+     * has products beyond the current renderLimit.
+     *
+     * The Blade checks this to decide whether to render the x-intersect sentinel and
+     * skeleton placeholders. When false, the sentinel is removed; the "Load more" button
+     * (guarded by scoredProducts->count() > displayLimit) is the next UX lever.
+     *
+     * Note: not marked #[Computed] because it reads $renderLimit/$displayLimit which are
+     * mutable public properties — Livewire recomputes it on every render automatically.
+     */
+    public function hasMoreToReveal(): bool
+    {
+        // H2H Arena and pinned-staging bypass renderLimit in visibleProducts() and
+        // already render the full set — no reveal sentinel should appear for them.
+        if (!empty($this->compareList)) {
+            return false;
+        }
+
+        return $this->renderLimit < $this->displayLimit
+            && $this->scoredProducts->count() > $this->renderLimit;
+    }
+
     public function loadMore(): void
     {
         $this->displayLimit += 12;
+        // renderLimit stays where it is — it is now < displayLimit, so the sentinel
+        // re-arms automatically (hasMoreToReveal() returns true again) and revealMore()
+        // will stream in the next 6-card batches up to the new displayLimit ceiling.
     }
 
     #[Layout('components.layouts.app')]
     public function render()
     {
+        // Spec 024 blocker fix: pass the full displayLimit set to SeoSchema, NOT the render-capped
+        // visibleProducts (6 cards). Googlebot sees only the initial response; ItemList and meta
+        // description must reflect the intended 12-product set, not the lazy-load window.
         $seo = SeoSchema::forCategoryPage(
             $this->category,
             $this->subcategories,
             $this->selectedProductSlug,
             $this->selectedProduct,
             $this->activePresetSlug,
-            $this->visibleProducts,
+            $this->schemaProducts(),
             $this->activePreset, // already-resolved model — skips the internal DB lookup (S1 fix)
         );
 
@@ -536,8 +687,11 @@ class ProductCompare extends Component
             : [];
 
         return view('livewire.product-compare', [
-            'samplePrompts' => $samplePrompts,
-            'activePreset'  => $this->activePreset,
+            'samplePrompts'    => $samplePrompts,
+            'activePreset'     => $this->activePreset,
+            // Spec 024 (F31): expose reveal-state to the Blade so the frontend agent can
+            // wire the x-intersect sentinel and decide whether to show skeleton slots.
+            'hasMoreToReveal'  => $this->hasMoreToReveal(),
         ])
             ->layoutData([
                 'metaTitle'       => $seo['title'],

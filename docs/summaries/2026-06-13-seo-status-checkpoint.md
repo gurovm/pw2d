@@ -89,3 +89,31 @@ content depth) makes the body match the use-case query. **Spec 024** (F31 CWV) i
 ### Next-check (~2026-07-03) — measure the bet
 After 023 deploys, watch the streamer/remote-worker/minimalist queries: did position cross 10→top-5?
 Did CTR move off 0%? That is the success criterion for the preset-content thesis.
+
+---
+
+## UPDATE — 2026-06-26 check (1 week post-023/025 deploy — TOO EARLY, pages holding not climbing)
+
+| Metric (28d GSC) | 06-13 | 06-19 | **06-26** | Note |
+|---|---|---|---|---|
+| Pages with impressions | 133 | 158 | **191** | ↑ long tail expanding |
+| Total impressions | 516 | 928 | **1,553** | ↑↑ +67% wk/wk |
+| Clicks | 1 | 1 | **4** | quadrupled (still tiny) |
+| Avg position | 15.2 | 13.7 | **17.1** | ⚠️ COMPOSITION ARTIFACT — 33 new pages entered at pos 34-44 and dragged the weighted avg; NOT a decline on target pages |
+| CTR | 0.19% | 0.11% | **0.26%** | ↑ |
+
+**Target preset queries (the thesis test) — HELD at ~pos 10, did NOT climb to top-5:**
+- "best mechanical keyboard for streamers" `?preset=streamer`: 10.4 → 10.4 → **10.0** (129 impr, 0 clicks)
+- "best gaming headset for remote workers" `?preset=remote-worker`: 11.0 → 10.8
+- "best minimalist keyboard" `?preset=minimalist`: 10.3 → **10.0**
+
+**Verdict: TOO EARLY.** Content ranking changes take 2-4 weeks to settle; 023 deployed 06-19 (1 week ago).
+Real read is ~2026-07-03/10. Pages are holding on page-1-bottom; content alone hasn't broken the 10→5
+plateau in a week. The plateau-at-exactly-10 across 3 distinct pages suggests the 10→5 jump needs the
+OTHER levers (page experience / CWV / internal links / authority), not more content → **strengthens the
+case to unhold Spec 024 (CWV)**.
+
+### Next-check (~2026-07-03/10)
+Same queries. If they cross 10→top-5 → 023 validated. If still stuck at 10 after 3-4 weeks → content is
+not the lever for the climb; ship Spec 024 (CWV) and/or pursue internal-linking/authority. Either way,
+impressions + indexation momentum (1,553 / 191 pages) remains strong and intact.

@@ -330,6 +330,20 @@
                         </div> @endforeach
                         </div>
 
+                        {{-- Spec 024: Reveal sentinel — fires a single Livewire round-trip when scrolled
+                             into view, streaming the next batch of cards into $visibleProducts.
+                             Skeletons reserve the exact same grid footprint as real cards to prevent CLS. --}}
+                        @if($hasMoreToReveal)
+                        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-1.5 md:gap-5 mt-1.5 md:mt-5"
+                             data-reveal-sentinel
+                             x-intersect.once="$wire.revealMore()"
+                             aria-hidden="true">
+                            @for ($i = 0; $i < 6; $i++)
+                            <div class="bg-gray-100 rounded-2xl animate-pulse h-85 md:h-97.5"></div>
+                            @endfor
+                        </div>
+                        @endif
+
                         @if($this->scoredProducts->count() > $displayLimit && !$isComparing)
                         <div class="mt-12 flex justify-center pb-8">
                                 <a href="{{ request()->fullUrlWithQuery(['limit' => $displayLimit + 12]) }}"
