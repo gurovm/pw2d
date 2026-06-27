@@ -117,3 +117,29 @@ case to unhold Spec 024 (CWV)**.
 Same queries. If they cross 10→top-5 → 023 validated. If still stuck at 10 after 3-4 weeks → content is
 not the lever for the climb; ship Spec 024 (CWV) and/or pursue internal-linking/authority. Either way,
 impressions + indexation momentum (1,553 / 191 pages) remains strong and intact.
+
+---
+
+## UPDATE — 2026-06-27: Spec 024 (CWV) shipped; engagement read blocked; bottleneck decision
+
+**Spec 024 deployed** (prod `170b405`): compare page renders 6 cards (was 12), schema decoupled so
+ItemList stays 12; initial HTML 185KB→152KB (18%). PSI mobile: **Perf 81, LCP 3.1s, CLS 0.015, SEO 100**.
+CLS 0.015 is excellent (skeleton footprint matched — no reveal shift). LCP barely moved (gated by
+render-blocking + LCP image, not card count).
+
+**Engagement check (PostHog, Jun 12-19 vs 19-26) = NOT READABLE.** Compare pages got 3→6 pageviews/week;
+the handful of post-period engagement events (5 slider adjusts, 6 opens) are almost certainly the owner's
+own QA, not real users. `preset_applied` instrumentation live but 0 events (low traffic). CONCLUSION:
+on-site engagement can't be measured until clicks exist — the funnel is starved at the top (impressions
+grow, but pos-10 → ~0 clicks → no compare visits). Engagement is GATED on the SEO climb.
+
+**Bottleneck decision (owner, 2026-06-27): WAIT.** Do not chase LCP/CWV bottlenecks now (parked as F35).
+Rationale: CWV is a tiebreaker; at pos-10 / low authority the real constraint is authority/off-page.
+Let the Jul checkpoint decide. The full on-page push (023 content + 024 CWV + 025 UX) is now SHIPPED;
+remaining levers if the climb stalls are off-page (authority/backlinks/landing pages), not more on-page code.
+
+### THE decision point — next check (~2026-07-03/10)
+1. Re-run the 3 target preset queries' positions (streamer / remote-worker / minimalist).
+2. **Climb (10→top-5):** 023+024 worked → CWV/content validated; close F35; start measuring engagement (PostHog).
+3. **Still stuck at 10:** on-page is not the lever → pivot to OFF-PAGE (authority/backlinks/landing pages);
+   F35 (LCP pass) only if a focused page-experience push is wanted alongside, but authority is the bigger bet.
