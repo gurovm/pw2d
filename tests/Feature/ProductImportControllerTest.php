@@ -181,6 +181,30 @@ class ProductImportControllerTest extends TestCase
     }
 
     /** @test */
+    public function long_title_produces_bounded_stub_slug(): void
+    {
+        Queue::fake();
+
+        $longTitle = 'Keychron K6 Bluetooth 5.1 Wireless Mechanical Keyboard with Keychron K Pro Brown Switch LED Backlit Rechargeable Battery 68 Keys Compact Layout for Mac and Windows';
+
+        $response = $this->postJson('/api/product-import', $this->validPayload([
+            'external_id' => 'B0LONGTTL1',
+            'title'       => $longTitle,
+        ]));
+
+        $response->assertOk();
+
+        $product = Product::where('category_id', $this->category->id)
+            ->latest('id')
+            ->first();
+
+        $this->assertNotNull($product);
+        // First-8-words slug stem + '-' + lowercased ASIN comfortably stays well under 75 chars.
+        $this->assertLessThan(75, mb_strlen($product->slug), "Slug too long: \"{$product->slug}\"");
+        $this->assertStringEndsWith('-b0longttl1', $product->slug);
+    }
+
+    /** @test */
     public function import_without_optional_fields_succeeds(): void
     {
         Queue::fake();

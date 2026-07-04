@@ -98,6 +98,11 @@ class ProcessPendingProduct implements ShouldQueue
                 $aiName = mb_substr($originalName, 0, 255);
             }
 
+            // Defensive cap: regardless of source (AI-returned name or the raw-title
+            // fallback above), never let a verbose marketing title become the stored
+            // name/slug. Keeps name and slug in agreement.
+            $aiName = $this->capProductName($aiName);
+
             // AI Memory Matching: check if this product already exists under a different ASIN/offer.
             // Uses cached decisions first, then asks AI only when needed.
             $matchedProductId = $aiService->matchProduct($originalName, $parsed['brand'], $product->tenant_id, $product->id);
@@ -233,6 +238,42 @@ class ProcessPendingProduct implements ShouldQueue
                 throw $e; // Trigger queue retry with backoff
             }
         }
+    }
+
+    /**
+     * Cap an AI/scraped product name to a concise product identity, used for both
+     * the stored `name` and the slug stem so they always agree.
+     *
+     * Truncates at the first comma or opening parenthesis (these typically start a
+     * spec/compatibility/bundle list in verbose marketing titles), falls back to the
+     * first 8 words, and strips a trailing stopword left dangling by truncation.
+     */
+    private function capProductName(string $name): string
+    {
+        $name = trim($name);
+
+        $cutPos = null;
+        foreach ([',', '('] as $delimiter) {
+            $pos = mb_strpos($name, $delimiter);
+            if ($pos !== false && $pos > 0 && ($cutPos === null || $pos < $cutPos)) {
+                $cutPos = $pos;
+            }
+        }
+        if ($cutPos !== null) {
+            $name = mb_substr($name, 0, $cutPos);
+        }
+
+        $words = preg_split('/\s+/', trim($name)) ?: [];
+        if (count($words) > 8) {
+            $words = array_slice($words, 0, 8);
+        }
+
+        $stopwords = ['with', 'for', 'and', 'the', 'of', 'in'];
+        while (!empty($words) && in_array(mb_strtolower(end($words)), $stopwords, true)) {
+            array_pop($words);
+        }
+
+        return trim(implode(' ', $words));
     }
 
     /**

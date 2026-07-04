@@ -174,7 +174,7 @@ class OfferIngestionService
             'tenant_id'            => $tenantId,
             'category_id'          => $category->id,
             'name'                 => mb_substr($data['raw_title'], 0, 255),
-            'slug'                 => Str::slug(Str::limit($data['raw_title'], 80)) . '-' . Str::random(5),
+            'slug'                 => Str::slug(Str::words($data['raw_title'], 8, '')) . '-' . Str::random(5),
             'amazon_rating'        => $data['rating'] ?? null,
             'amazon_reviews_count' => $data['reviews_count'] ?? 0,
             'price_tier'           => $category->priceTierFor($data['scraped_price']),

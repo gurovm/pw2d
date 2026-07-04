@@ -95,7 +95,7 @@ class BatchImportController extends Controller
                         'tenant_id'            => $category->tenant_id,
                         'category_id'          => $category->id,
                         'name'                 => mb_substr($p['title'], 0, 255),
-                        'slug'                 => Str::slug(Str::limit($p['title'], 80)) . '-' . strtolower($p['asin']),
+                        'slug'                 => Str::slug(Str::words($p['title'], 8, '')) . '-' . strtolower($p['asin']),
                         'amazon_rating'        => $p['rating'] ?? null,
                         'amazon_reviews_count' => $p['reviews_count'] ?? 0,
                         'price_tier'           => $category->priceTierFor($p['price'] ?? null),

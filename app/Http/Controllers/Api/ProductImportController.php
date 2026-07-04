@@ -95,7 +95,7 @@ class ProductImportController extends Controller
             // Update product
             $product->update([
                 'name'                 => mb_substr($validated['title'], 0, 255),
-                'slug'                 => Str::slug(Str::limit($validated['title'], 80)) . '-' . strtolower($asin),
+                'slug'                 => Str::slug(Str::words($validated['title'], 8, '')) . '-' . strtolower($asin),
                 'amazon_rating'        => $validated['rating'] ?? null,
                 'amazon_reviews_count' => $validated['reviews_count'] ?? 0,
                 'price_tier'           => $category->priceTierFor($validated['price'] ?? null),
@@ -110,7 +110,7 @@ class ProductImportController extends Controller
                 'tenant_id'            => $category->tenant_id,
                 'category_id'          => $category->id,
                 'name'                 => mb_substr($validated['title'], 0, 255),
-                'slug'                 => Str::slug(Str::limit($validated['title'], 80)) . '-' . strtolower($asin),
+                'slug'                 => Str::slug(Str::words($validated['title'], 8, '')) . '-' . strtolower($asin),
                 'amazon_rating'        => $validated['rating'] ?? null,
                 'amazon_reviews_count' => $validated['reviews_count'] ?? 0,
                 'price_tier'           => $category->priceTierFor($validated['price'] ?? null),
