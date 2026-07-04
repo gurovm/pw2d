@@ -44,6 +44,9 @@ class SitemapController extends Controller
         $categories = Category::select(['id', 'slug', 'updated_at'])->get();
         $products   = Product::where('is_ignored', false)
                         ->whereNull('status')
+                        // Detached products (category_id null — swept/miscategorized) have no
+                        // comparison context; keep them out of the index.
+                        ->whereNotNull('category_id')
                         ->select(['slug', 'updated_at'])
                         ->get();
 
