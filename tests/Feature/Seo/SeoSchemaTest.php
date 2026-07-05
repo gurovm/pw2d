@@ -1219,4 +1219,158 @@ class SeoSchemaTest extends TestCase
             'Str::limit must append "..." when truncation occurs'
         );
     }
+
+    // =========================================================================
+    // Spec 026 — rating-less products in the ItemList get "summary page" style
+    // ListItem entries (no nested Product) to satisfy Google's Product-snippet
+    // rule (offers/review/aggregateRating required on every emitted Product).
+    // =========================================================================
+
+    /**
+     * @test
+     * §5.1 — product with NO amazon rating data → its itemListElement entry is
+     * exactly {@type: ListItem, position: N, url: ...}, with no "item" key and
+     * no nested name/image/brand/description.
+     */
+    public function test_item_list_omits_item_key_for_rating_less_product(): void
+    {
+        $category = Category::factory()->create(['name' => 'Espresso Machines', 'slug' => 'espresso-machines-026-1']);
+        $product  = Product::factory()->create([
+            'category_id'          => $category->id,
+            'slug'                 => 'jura-x10-ratingless',
+            'amazon_rating'        => null,
+            'amazon_reviews_count' => 0,
+        ]);
+        $category->load('features');
+
+        $seo     = SeoSchema::forCategoryPage($category, collect(), null, null, null, collect([$product]));
+        $element = $seo['schemas'][0]['itemListElement'][0];
+
+        $this->assertSame(
+            ['@type', 'position', 'url'],
+            array_keys($element),
+            'Rating-less ListItem must contain exactly @type, position, url — no item key'
+        );
+        $this->assertSame('ListItem', $element['@type']);
+        $this->assertSame(1, $element['position']);
+        $this->assertSame(route('product.show', ['product' => $product->slug]), $element['url']);
+        $this->assertArrayNotHasKey('item', $element, 'Rating-less ListItem must not carry a nested "item" (Product) entity');
+    }
+
+    /**
+     * @test
+     * §5.2 — product WITH amazon_rating and amazon_reviews_count > 0 → unchanged
+     * full nested Product with name, url, brand, and aggregateRating
+     * (ratingValue, bestRating 5, worstRating 1, reviewCount).
+     */
+    public function test_item_list_includes_full_nested_product_for_rated_product(): void
+    {
+        $category = Category::factory()->create(['name' => 'Espresso Machines', 'slug' => 'espresso-machines-026-2']);
+        $brand    = Brand::factory()->create(['name' => 'JURA']);
+        $product  = Product::factory()->create([
+            'category_id'          => $category->id,
+            'brand_id'             => $brand->id,
+            'name'                 => 'JURA X10 Dark Inox',
+            'slug'                 => 'jura-x10-rated',
+            'amazon_rating'        => 4.6,
+            'amazon_reviews_count' => 312,
+        ]);
+        $category->load('features');
+
+        $seo     = SeoSchema::forCategoryPage($category, collect(), null, null, null, collect([$product]));
+        $element = $seo['schemas'][0]['itemListElement'][0];
+
+        $this->assertSame('ListItem', $element['@type']);
+        $this->assertSame(1, $element['position']);
+        $this->assertArrayHasKey('item', $element, 'Rated product must carry a nested "item" (Product) entity');
+
+        $item = $element['item'];
+        $this->assertSame('Product', $item['@type']);
+        $this->assertSame('JURA X10 Dark Inox', $item['name']);
+        $this->assertSame(route('product.show', ['product' => $product->slug]), $item['url']);
+        $this->assertArrayHasKey('brand', $item);
+        $this->assertSame('JURA', $item['brand']['name']);
+
+        $this->assertArrayHasKey('aggregateRating', $item);
+        $rating = $item['aggregateRating'];
+        $this->assertSame('AggregateRating', $rating['@type']);
+        $this->assertSame(4.6, $rating['ratingValue']);
+        $this->assertSame(5, $rating['bestRating']);
+        $this->assertSame(1, $rating['worstRating']);
+        $this->assertSame(312, $rating['reviewCount']);
+    }
+
+    /**
+     * @test
+     * §5.3 — mixed list (rated, rated, rating-less) → positions remain 1, 2, 3
+     * sequential across the full/summary split, and element count equals
+     * product count.
+     */
+    public function test_item_list_mixed_rated_and_rating_less_positions_are_sequential(): void
+    {
+        $category = Category::factory()->create(['name' => 'Espresso Machines', 'slug' => 'espresso-machines-026-3']);
+
+        $rated1 = Product::factory()->create([
+            'category_id'          => $category->id,
+            'slug'                 => 'mixed-rated-1',
+            'amazon_rating'        => 4.8,
+            'amazon_reviews_count' => 500,
+        ]);
+        $rated2 = Product::factory()->create([
+            'category_id'          => $category->id,
+            'slug'                 => 'mixed-rated-2',
+            'amazon_rating'        => 4.2,
+            'amazon_reviews_count' => 90,
+        ]);
+        $ratingLess = Product::factory()->create([
+            'category_id'          => $category->id,
+            'slug'                 => 'mixed-ratingless-3',
+            'amazon_rating'        => null,
+            'amazon_reviews_count' => 0,
+        ]);
+        $category->load('features');
+
+        $products = collect([$rated1, $rated2, $ratingLess]);
+        $seo      = SeoSchema::forCategoryPage($category, collect(), null, null, null, $products);
+        $elements = $seo['schemas'][0]['itemListElement'];
+
+        $this->assertCount(3, $elements, 'itemListElement count must equal product count');
+        $this->assertSame([1, 2, 3], array_column($elements, 'position'), 'Positions must be sequential 1..N across the mixed list');
+
+        $this->assertArrayHasKey('item', $elements[0], 'Position 1 (rated) must have a nested item');
+        $this->assertArrayHasKey('item', $elements[1], 'Position 2 (rated) must have a nested item');
+        $this->assertArrayNotHasKey('item', $elements[2], 'Position 3 (rating-less) must not have a nested item');
+    }
+
+    /**
+     * @test
+     * §5.4 — amazon_rating set but amazon_reviews_count = 0 → treated as
+     * rating-less (summary style, no "item" key). Covers the ~88 Amazon
+     * products affected by the extension extraction bug.
+     */
+    public function test_item_list_treats_zero_review_count_as_rating_less(): void
+    {
+        $category = Category::factory()->create(['name' => 'Espresso Machines', 'slug' => 'espresso-machines-026-4']);
+        $product  = Product::factory()->create([
+            'category_id'          => $category->id,
+            'slug'                 => 'zero-reviews-product',
+            'amazon_rating'        => 4.5,
+            'amazon_reviews_count' => 0,
+        ]);
+        $category->load('features');
+
+        $seo     = SeoSchema::forCategoryPage($category, collect(), null, null, null, collect([$product]));
+        $element = $seo['schemas'][0]['itemListElement'][0];
+
+        $this->assertArrayNotHasKey(
+            'item',
+            $element,
+            'amazon_rating with amazon_reviews_count=0 must still be treated as rating-less'
+        );
+        $this->assertSame(
+            ['@type', 'position', 'url'],
+            array_keys($element),
+            'Zero-review ListItem must contain exactly @type, position, url'
+        );
+    }
 }

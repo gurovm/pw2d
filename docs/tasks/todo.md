@@ -216,3 +216,7 @@ Trend confirmed across 3 checkpoints (impr 276→516→928; pos 17.4→15.2→13
 ## Completed (2026-03-22 audit)
 
 All 17 tasks from the March 22 code quality review are complete. See git history.
+
+## Spec 026 (2026-07-05) — GSC Product-snippet fix
+
+- [x] **F36: Rating-less products in compare ItemList emit invalid Product entities** -- First GSC error on coffee2decide (JURA X10, pos 12, super-automatic-espresso-machines). Fixed: rating-less items downgraded to URL-only ListItem (summary-page style) in `SeoSchema::buildItemListSchema()`; rated items byte-identical. See `docs/specs/026-schema-ratingless-itemlist.md`. Built + tested 2026-07-05: 4 new tests in `tests/Feature/Seo/SeoSchemaTest.php`, suite 401 passed / 0 failed. **AWAITING `/deploy`. POST-DEPLOY: Rich Results Test on the affected URL + GSC "Validate Fix".** *[Seo, Schema]*

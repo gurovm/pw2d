@@ -421,6 +421,26 @@ class SeoSchema
 
         $position = 1;
         foreach ($visibleProducts as $product) {
+            // A Product entity requires at least one of offers/review/aggregateRating
+            // (Google's Product snippet rule) or GSC reports a structured-data error.
+            // We only ever populate aggregateRating here, and only when both rating and
+            // reviewCount are real. Products without that data (specialty-store ingests,
+            // Amazon products with reviews_count=0) get the "summary page" ListItem style
+            // instead — a bare URL with no nested item, so Google evaluates the linked
+            // product page (which does carry valid Product markup) rather than an inline
+            // entity lacking the required signal. See docs/specs/026.
+            $hasRating = !empty($product->amazon_rating) && (int) $product->amazon_reviews_count > 0;
+
+            if (!$hasRating) {
+                $schema['itemListElement'][] = [
+                    '@type'    => 'ListItem',
+                    'position' => $position,
+                    'url'      => route('product.show', ['product' => $product->slug]),
+                ];
+                $position++;
+                continue;
+            }
+
             $item = [
                 '@type' => 'Product',
                 'name'  => $product->name,
@@ -442,20 +462,16 @@ class SeoSchema
             $brandName    = $product->brand?->name ?? explode(' ', $product->name)[0];
             $item['brand'] = ['@type' => 'Brand', 'name' => $brandName];
 
-            // aggregateRating — only emit when BOTH rating and reviewCount are real.
-            // Google rejects AggregateRating with missing/zero reviewCount, which can
-            // prevent indexing. Better to omit entirely than to emit invalid data.
-            // Offers (price) intentionally omitted — scraped prices are estimates and
-            // violate Google's strict price-matching rules for Merchant Center rich snippets.
-            if (!empty($product->amazon_rating) && (int) $product->amazon_reviews_count > 0) {
-                $item['aggregateRating'] = [
-                    '@type'       => 'AggregateRating',
-                    'ratingValue' => $product->amazon_rating,
-                    'bestRating'  => 5,
-                    'worstRating' => 1,
-                    'reviewCount' => $product->amazon_reviews_count,
-                ];
-            }
+            // aggregateRating — Offers (price) intentionally omitted — scraped prices are
+            // estimates and violate Google's strict price-matching rules for Merchant
+            // Center rich snippets.
+            $item['aggregateRating'] = [
+                '@type'       => 'AggregateRating',
+                'ratingValue' => $product->amazon_rating,
+                'bestRating'  => 5,
+                'worstRating' => 1,
+                'reviewCount' => $product->amazon_reviews_count,
+            ];
 
             $schema['itemListElement'][] = [
                 '@type'    => 'ListItem',
