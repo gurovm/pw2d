@@ -58,6 +58,10 @@
                 <meta name="google-site-verification" content="{{ $gscCode }}">
         @endif
 
+        @if (filled(config('services.adsense.publisher_id')))
+                <meta name="google-adsense-account" content="{{ config('services.adsense.publisher_id') }}">
+        @endif
+
         @if ($posthogKey)
                 <script>
                         ! function(t, e) {

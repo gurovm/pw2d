@@ -65,4 +65,8 @@ return [
     'google' => [
         'analytics_id' => env('GA_MEASUREMENT_ID'),
     ],
+
+    'adsense' => [
+        'publisher_id' => env('ADSENSE_PUBLISHER_ID'),
+    ],
 ];
