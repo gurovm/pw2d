@@ -281,6 +281,38 @@ class BatchImportControllerTest extends TestCase
     }
 
     // ────────────────────────────────────────────────────────────────────────
+    // Condition-marker guard (Spec 027 Addendum A §2b) — require MySQL
+    // ────────────────────────────────────────────────────────────────────────
+
+    /** @test */
+    public function new_product_with_a_renewed_title_is_skipped_not_created(): void
+    {
+        $this->requireMysql();
+        Queue::fake();
+
+        $payload = $this->validPayload([
+            'products' => [
+                [
+                    'asin'  => 'B0RENEWED1',
+                    'title' => 'Logitech G915 TKL (Renewed)',
+                    'price' => 149.99,
+                ],
+            ],
+        ]);
+
+        $response = $this->postJson('/api/products/batch-import', $payload);
+
+        $response->assertOk()->assertJson([
+            'success' => true,
+            'created' => 0,
+            'skipped' => 1,
+        ]);
+
+        $this->assertDatabaseCount('products', 0);
+        Queue::assertNothingPushed();
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
     // Validation failures — these never reach the SUBSTRING_INDEX query
     // ────────────────────────────────────────────────────────────────────────
 

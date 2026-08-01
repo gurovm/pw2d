@@ -2,7 +2,24 @@
     compare-content.blade.php
     Deep SEO content relocated below the product grid (Spec 025, Change 1).
     Variables required: $category, $activePreset
+    Optional: $landingPage — a published LandingPage for this category (Spec 027).
+              Guarded defensively so this partial keeps working before the
+              backend wires the variable in.
 --}}
+
+@if (isset($landingPage) && $landingPage)
+    <div class="mb-4 flex items-center gap-2 text-sm bg-tenant-secondary/60 border border-gray-100 rounded-xl px-4 py-3">
+        <svg class="w-4 h-4 text-tenant-primary shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+        </svg>
+        <span class="text-gray-700">
+            Read our ranked guide:
+            <a href="{{ route('landing.show', $landingPage->slug) }}" class="font-semibold text-tenant-primary hover:underline">
+                {{ $landingPage->title }}
+            </a>
+        </span>
+    </div>
+@endif
 
 @php
     $introContent = !empty($activePreset?->seo_content['intro'])

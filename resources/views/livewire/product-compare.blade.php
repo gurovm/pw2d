@@ -366,7 +366,7 @@
                         </div>
                         @endif
 
-                        @include('livewire.partials.compare-content', ['category' => $category, 'activePreset' => $activePreset])
+                        @include('livewire.partials.compare-content', ['category' => $category, 'activePreset' => $activePreset, 'landingPage' => $this->publishedLandingPage])
 
                         @include('livewire.partials.compare-faqs', ['activePreset' => $activePreset])
                 </div>

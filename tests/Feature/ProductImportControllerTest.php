@@ -112,6 +112,27 @@ class ProductImportControllerTest extends TestCase
     }
 
     /** @test */
+    public function renewed_title_is_skipped_not_imported(): void
+    {
+        Queue::fake();
+
+        $response = $this->postJson('/api/product-import', $this->validPayload([
+            'external_id' => 'B0RENEWED1',
+            'title'       => 'Logitech G915 TKL (Amazon Renewed)',
+        ]));
+
+        $response->assertOk()
+            ->assertJson([
+                'success' => true,
+                'action'  => 'skipped_condition',
+            ]);
+
+        $this->assertDatabaseMissing('products', ['category_id' => $this->category->id]);
+        $this->assertDatabaseMissing('product_offers', ['url' => 'https://www.amazon.com/dp/B0RENEWED1']);
+        Queue::assertNothingPushed();
+    }
+
+    /** @test */
     public function missing_category_id_returns_422(): void
     {
         $response = $this->postJson(

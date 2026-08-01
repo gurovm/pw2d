@@ -11,6 +11,7 @@ use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductOffer;
 use App\Models\Store;
+use App\Support\ProductConditionGuard;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -72,6 +73,16 @@ class ProductImportController extends Controller
 
         $asin = $validated['external_id'];
         $amazonUrl = "https://www.amazon.com/dp/{$asin}";
+
+        // Server-side condition guard (Spec 027 Addendum A §2b) — the extension's
+        // client-side title filter is version-dependent and must not be trusted alone.
+        if (ProductConditionGuard::matchesTitle($validated['title'])) {
+            return response()->json([
+                'success' => true,
+                'action'  => 'skipped_condition',
+                'message' => 'Listing title indicates a renewed/refurbished/open-box/used condition — not imported.',
+            ]);
+        }
 
         $store = Store::firstOrCreate(
             ['slug' => 'amazon', 'tenant_id' => $category->tenant_id],

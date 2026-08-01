@@ -47,4 +47,14 @@
     </url>
     @endforeach
 
+    {{-- "Best X" landing pages (Spec 027): the linkable-authority listicle pages --}}
+    @foreach ($landingPages as $landingPage)
+    <url>
+        <loc>{{ url('/best/' . $landingPage->slug) }}</loc>
+        <lastmod>{{ $landingPage->updated_at->toAtomString() }}</lastmod>
+        <changefreq>weekly</changefreq>
+        <priority>0.9</priority>
+    </url>
+    @endforeach
+
 </urlset>

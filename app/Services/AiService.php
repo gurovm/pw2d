@@ -16,6 +16,7 @@ use App\Models\Category;
 use App\Models\Preset;
 use App\Models\Product;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 
 class AiService
 {
@@ -51,13 +52,16 @@ class AiService
             . "  - Accessories, add-ons, stands, mounts, cases, or cleaning supplies\n"
             . "  - Cables, adapters, or converters\n"
             . "  - Multi-item bundles that are NOT centered on a single main device\n"
-            . "DO NOT ignore: color/size variants, refurbished units, or products with verbose titles.\n"
+            . "DO NOT ignore: color/size variants or products with verbose titles.\n"
             . "If the product functions as a standalone {$categoryName} device, you MUST score it.\n"
             . 'To ignore, return EXACTLY: {"status": "ignored", "reason": "accessory_or_bundle"}' . "\n\n"
             . "IGNORE RULE B — GENERIC / WHITE-LABEL: If the product has no recognizable, reputable brand.\n"
             . "This includes 'Generic', 'Unbranded', random Chinese model numbers as brands, and ultra-cheap no-name products.\n"
             . "Only ignore true no-name items with titles like 'Generic', 'Unbranded', or random model numbers as the brand.\n"
             . 'To ignore, return EXACTLY: {"status": "ignored", "reason": "generic_white_label"}' . "\n\n"
+            . "IGNORE RULE C — LISTING CONDITION: Ignore if the product name, title, or any provided context "
+            . "indicates the listing is Renewed, Refurbished, Open Box, or otherwise not brand-new/first-party.\n"
+            . 'To ignore, return EXACTLY: {"status": "ignored", "reason": "renewed_or_refurbished"}' . "\n\n"
             . "=== STAGE 2: BRAND NORMALIZATION ===\n\n"
             . "Unify brand names to their most common, clean English-language form. Strict rules:\n"
             . "- Strip non-ASCII characters used as stylistic affectations: 'RØDE' → 'Rode', 'Beyerdynamic' stays.\n"
@@ -890,6 +894,233 @@ PROMPT;
             'intro'       => (string) $decoded['intro'],
             'methodology' => (string) $decoded['methodology'],
             'faqs'        => $decoded['faqs'],
+        ];
+    }
+
+    /**
+     * Generate "Best X" landing-page content (Spec 027): intro, per-pick headline/body,
+     * FAQs, and a methodology note. Picks are chosen deterministically BEFORE this call
+     * (see App\Actions\SelectLandingPagePicks) — the AI only writes prose about them.
+     *
+     * @param  Category $category             The leaf category this landing page targets.
+     * @param  array<int, array{product_id: int, role: string, product: Product}> $picks
+     *         Product must have `brand`, `featureValues.feature`, and `offers` already
+     *         eager-loaded (offers needed for the `estimated_price` accessor).
+     * @param  array<int, string> $excludeFaqQuestions
+     *         Existing FAQ questions (category buying_guide + all preset seo_content) the
+     *         AI must not duplicate or closely paraphrase.
+     * @param  int $scoredProductCount
+     *         True count of fully-processed, non-ignored products in this category (the
+     *         real denominator the picks were chosen from) — grounds "we scored N X" claims
+     *         in a real number instead of a vague/inflated one.
+     * @return array{intro: string, picks: list<array{product_id: int, headline: string, body: string}>, faqs: list<array{question: string, answer: string}>, methodology_note: string}
+     * @throws \InvalidArgumentException When the model returns malformed, incomplete, or mismatched JSON.
+     * @throws \Exception               When the Gemini API call fails.
+     */
+    public function generateLandingPageContent(Category $category, array $picks, array $excludeFaqQuestions, int $scoredProductCount): array
+    {
+        $categoryName = $category->name;
+        $pickCount    = count($picks);
+
+        $cheapestPrice = collect($picks)
+            ->map(fn (array $p) => $p['product']->estimated_price)
+            ->filter(fn ($price) => $price !== null)
+            ->min();
+
+        $pickLines = collect($picks)->map(function (array $pick, int $i) use ($cheapestPrice) {
+            /** @var Product $product */
+            $product = $pick['product'];
+
+            $roleLabel = match (true) {
+                $pick['role'] === 'overall' => 'Overall pick',
+                $pick['role'] === 'budget'  => 'Budget pick',
+                $pick['role'] === 'premium' => 'Premium pick',
+                str_starts_with($pick['role'], 'preset:') => 'Best for ' . str_replace('preset:', '', $pick['role']),
+                default => $pick['role'],
+            };
+
+            $brandName = $product->brand?->name ?? '';
+            $summary   = $product->ai_summary ? strip_tags($product->ai_summary) : '(no summary)';
+            $tierLabel = match ((int) $product->price_tier) {
+                1 => 'Budget',
+                2 => 'Mid-range',
+                3 => 'Premium',
+                default => 'Unknown',
+            };
+            $price = $product->estimated_price;
+            $priceLabel = $price !== null ? '$' . $price : 'N/A';
+
+            $deltaLabel = 'N/A';
+            if ($price !== null && $cheapestPrice !== null) {
+                $delta      = $price - $cheapestPrice;
+                $deltaLabel = $delta === 0 ? 'this is the cheapest pick' : ('+$' . $delta . ' vs. the cheapest pick in this list');
+            }
+
+            $featureLines = $product->featureValues
+                ->filter(fn ($fv) => $fv->feature !== null)
+                ->map(fn ($fv) => "{$fv->feature->name}: " . round((float) $fv->raw_value))
+                ->implode(', ');
+
+            return sprintf(
+                "%d. [product_id=%d] %s %s — Role: %s | Tier: %s | Est. price: %s (%s)\n   Summary: %s\n   Feature scores: %s",
+                $i + 1,
+                $product->id,
+                $brandName,
+                $product->name,
+                $roleLabel,
+                $tierLabel,
+                $priceLabel,
+                $deltaLabel,
+                Str::limit($summary, 220),
+                $featureLines ?: '(none scored)',
+            );
+        })->implode("\n\n");
+
+        $excludeJson = json_encode(array_values($excludeFaqQuestions), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+
+        $prompt = <<<PROMPT
+You are a knowledgeable friend with strong, data-backed opinions writing a "Best {$categoryName}" guide. You've actually looked at the numbers — you're not a marketing copywriter. The picks below were selected by a DATA-DRIVEN scoring algorithm, not by you — your job is to write honest, specific prose ABOUT the pre-selected picks, not to re-rank or second-guess them.
+
+Category: {$categoryName}
+Number of picks in this list: {$pickCount}
+Total products scored in our database for this category: {$scoredProductCount}
+
+=== PICKS (already selected, in rank order — prices and deltas are real, use them) ===
+{$pickLines}
+
+=== EXISTING FAQ QUESTIONS (already answered elsewhere on the site — DO NOT repeat or closely paraphrase these) ===
+{$excludeJson}
+
+=== STYLE CONTRACT (read this before writing — violations get the response discarded) ===
+
+You are writing for a reader who has read a hundred "best X" listicles and can smell AI filler from the first sentence. Your job is to NOT sound like that. Before you finalize your answer, reread it and check it against the BANNED list below. If you find a banned phrase or pattern, rewrite that sentence. This matters more than sounding "professional."
+
+BANNED — do not write these or close paraphrases of them:
+- Stock openers: "Finding the right {$categoryName} can transform...", "In today's market...", "When it comes to {$categoryName}..."
+- Cliché words and phrases — banned INDIVIDUALLY, anywhere in your answer, even describing something unrelated to the example (e.g. "robust build," "robust testing" are both banned just for using "robust"): "cut through the noise", "game-changer", "elevate your experience", "look no further", "packs a punch", "seamless", "boasts", "comprehensive", "delve", "robust", "stands out from the crowd", "takes X to the next level". Use a plainer word instead — "sturdy," "solid," or "well-built" instead of "robust"; "full-featured" instead of "comprehensive"; "has" instead of "boasts".
+- The rule-of-three audience triad — anything shaped like "Whether you're a competitive pro, a dedicated hobbyist, or just looking for value." Ban "Whether you're..." constructions entirely, in any form.
+- "not just X, but Y" constructions.
+- Uniform sentence rhythm: every sentence medium-length and declarative, every paragraph exactly 3-4 sentences. That shape reads as machine-written even when the words are fine.
+- Empty superlative self-praise: "demonstrably the best in their class," "impartial data," or any line that compliments the ranking method's own honesty instead of just being honest.
+
+REQUIRED:
+- Ground every claim in the ACTUAL data above. Use the real scored-product count ("we scored all {$scoredProductCount} {$categoryName} in our database" or similar — use the real number, not a rounded or vague one). Use real feature names from the feature scores. Use the real price deltas given above (e.g. "the {$categoryName} pick above costs \$X more than Y; here's what that buys you") instead of vague "it's pricier" language.
+- Vary sentence length aggressively. Mix in a short one. A four-to-six-word sentence, occasionally. Fragments are fine, sparingly — used for emphasis, not as a tic.
+- Each pick's `body` MUST contain at least one concrete tradeoff or drawback, stated plainly and specifically (e.g. "the companion software is clunky," "battery life claims assume the RGB is off," "the wrist rest is sold separately") — not a hedge like "may not be for everyone." It must also cite at least one specific fact pulled directly from that pick's data above (a feature score, the price delta, the tier).
+- Voice: direct address ("you"), contractions ("it's", "you'll", "we'd"), mild honest hedges where warranted ("we'd skip it unless you specifically need..."). Write like you're telling a friend what to buy, not narrating a press release.
+- Intro: MAX 2 short paragraphs. Get to the picks fast — don't build up to them. Explain the ranking method in ONE plain sentence (e.g. "we scored every feature 0-100 and weighted them to rank these") — state it, don't sell it as trustworthy.
+- FAQs: answer like a person would answer a friend's text, not a knowledge-base entry. Where it's actually relevant, reference specific picks or prices from the list above instead of speaking in the abstract.
+
+GROUNDING — every factual claim about a SPECIFIC product must come ONLY from the PICKS data above. This is the single most important rule; a fabricated fact is worse than a boring sentence:
+- Price, condition, specs, and scores for a pick: use ONLY what's printed in that pick's line above. The payload does NOT include listing condition (new / renewed / refurbished / used / open-box) — do not mention, guess, or imply condition for any product, ever, under any circumstance.
+- NEVER use outside/world knowledge to explain WHY a price is what it is (e.g. do not write "at this price it's likely a renewed/refurbished unit" or "that's a steal for this model because..."). If a price looks surprising given what you know about the brand or model from training data, say nothing about why — just state the price plainly, or cite the price delta already given.
+- Do not invent or add a spec, feature, or score that isn't in that pick's data line, even if you "recognize" the product and know more about it. If it's not in the payload, it doesn't exist for this article.
+- General world knowledge may ONLY be used for uncontroversial, category-level context that makes no claim about a SPECIFIC pick — e.g. explaining what a switch type generally is, what "TKL" means, what QMK/VIA is. It must NEVER be used to assert or imply a fact about one of these specific products (price reasoning, condition, unlisted specs, availability, release date).
+
+=== YOUR TASK ===
+
+Write listicle content for the "Best {$categoryName}" page, following the style contract above exactly. Every factual claim must be grounded in the pick data above (role, tier, price, price delta, summary, feature scores) — do not invent facts not implied by that data.
+
+Return ONLY a valid JSON object with EXACTLY these keys — no markdown fences, no preamble, no explanation:
+
+{
+  "intro": "<p>Max 2 <p> paragraphs, ~100-160 words total. States the real scored-product count and how the ranking works in one plain sentence, then gets out of the way. Use only <p> tags. 9th-grade reading level. No methodology self-praise.</p>",
+  "picks": [
+    {"product_id": <id>, "headline": "5-8 word headline naming the specific reason this pick won its role — avoid generic superlatives", "body": "2-3 short paragraphs (120-180 words total, wrapped in <p> tags): why it won its role (cite a real feature score or price fact), who it's actually for, and one concrete, plainly-stated tradeoff or drawback."}
+  ],
+  "faqs": [
+    {"question": "A specific, search-intent-driven question a buyer would type into Google — MUST NOT duplicate or closely paraphrase any question in the EXISTING FAQ QUESTIONS list above", "answer": "Direct 2-4 sentence answer (40-100 words) that sounds like a person answering, referencing a specific pick/price from this list where relevant."}
+  ],
+  "methodology_note": "1-2 sentence plain-text note appended to the static 'How we ranked' methodology block, specific to this category and these picks."
+}
+
+RULES:
+- `picks`: MUST contain EXACTLY {$pickCount} entries, one per product_id listed above, in the SAME order. Every `product_id` must exactly match one from the PICKS list.
+- `faqs`: 4-6 entries, all distinct from the EXISTING FAQ QUESTIONS list (different angle, different wording).
+- `methodology_note`: plain text, no HTML.
+- Before returning, reread EVERY field you wrote (intro, every headline, every pick body, every FAQ answer, the methodology note) and literally search it for each banned word/phrase, one at a time. A single banned word anywhere is a failure, even in an unrelated context (e.g. "robust build" fails on "robust" alone). Replace any hit with a plainer word before returning.
+- Also reread every pick `body` for the GROUNDING rule specifically: does it state or imply anything about condition (new/renewed/refurbished/used/open-box)? Does it cite any spec, feature, or score NOT printed in that pick's data line above? If either is true, remove or rewrite that sentence before returning.
+- Return ONLY the raw JSON. No ```json wrapper. No trailing text.
+PROMPT;
+
+        $raw = $this->gemini->generate($prompt, [
+            // admin_model is a thinking model — reasoning tokens count against this
+            // budget. Match the 8192 ceiling the other admin_model content calls use
+            // (generatePresetContent's truncation lesson — never lower this).
+            'maxOutputTokens' => 8192,
+            'timeout'         => 120,
+        ], config('services.gemini.admin_model'));
+
+        $content = $raw['content'] ?? '';
+
+        // Strip markdown code fences Gemini sometimes wraps around JSON responses.
+        $content = preg_replace('/^```(?:json)?\s*/i', '', trim($content));
+        $content = preg_replace('/\s*```\s*$/i', '', $content);
+        $content = trim($content);
+
+        $decoded = json_decode($content, true);
+
+        if (!is_array($decoded)) {
+            throw new \InvalidArgumentException(
+                'AI returned malformed JSON: ' . substr($content, 0, 300)
+            );
+        }
+
+        foreach (['intro', 'picks', 'faqs', 'methodology_note'] as $key) {
+            if (!array_key_exists($key, $decoded)) {
+                throw new \InvalidArgumentException(
+                    "AI response missing key \"{$key}\". Got keys: " . implode(', ', array_keys($decoded))
+                );
+            }
+        }
+
+        if (!is_string($decoded['intro']) || trim($decoded['intro']) === '') {
+            throw new \InvalidArgumentException('AI response "intro" must be a non-empty string.');
+        }
+
+        if (!is_array($decoded['picks']) || count($decoded['picks']) !== $pickCount) {
+            throw new \InvalidArgumentException("AI response \"picks\" must contain exactly {$pickCount} entries.");
+        }
+
+        $expectedIds = collect($picks)->map(fn ($p) => (int) $p['product_id'])->values()->all();
+
+        foreach ($decoded['picks'] as $i => $pick) {
+            if (!is_array($pick) || !isset($pick['product_id'], $pick['headline'], $pick['body'])
+                || !is_string($pick['headline']) || !is_string($pick['body'])) {
+                throw new \InvalidArgumentException(
+                    "AI response picks[{$i}] must have \"product_id\", \"headline\", and \"body\"."
+                );
+            }
+
+            if ((int) $pick['product_id'] !== $expectedIds[$i]) {
+                throw new \InvalidArgumentException(
+                    "AI response picks[{$i}].product_id ({$pick['product_id']}) does not match expected product_id ({$expectedIds[$i]})."
+                );
+            }
+        }
+
+        if (!is_array($decoded['faqs']) || empty($decoded['faqs'])) {
+            throw new \InvalidArgumentException('AI response "faqs" must be a non-empty array.');
+        }
+
+        foreach ($decoded['faqs'] as $i => $faq) {
+            if (!is_array($faq) || !isset($faq['question'], $faq['answer'])
+                || !is_string($faq['question']) || !is_string($faq['answer'])) {
+                throw new \InvalidArgumentException(
+                    "AI response faqs[{$i}] must have string keys \"question\" and \"answer\"."
+                );
+            }
+        }
+
+        if (!is_string($decoded['methodology_note'])) {
+            throw new \InvalidArgumentException('AI response "methodology_note" must be a string.');
+        }
+
+        return [
+            'intro'            => (string) $decoded['intro'],
+            'picks'            => $decoded['picks'],
+            'faqs'             => $decoded['faqs'],
+            'methodology_note' => (string) $decoded['methodology_note'],
         ];
     }
 }

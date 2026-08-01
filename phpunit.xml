@@ -18,6 +18,9 @@
         </include>
     </source>
     <php>
+        <!-- Filament resource/panel discovery (Spec 027 LandingPageResource tests) pushes the
+             full-suite peak past the default 128M when run in a single process. -->
+        <ini name="memory_limit" value="512M"/>
         <env name="APP_ENV" value="testing"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>

@@ -15,6 +15,21 @@ html, body {
 @theme {
     --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
         'Segoe UI Symbol', 'Noto Color Emoji';
+
+    /*
+     * Tenant-aware color tokens (bg-tenant-primary, text-tenant-primary, etc).
+     * Tailwind v4 is CSS-first — it does NOT read tailwind.config.js unless
+     * explicitly imported via @config, so these must be registered here under
+     * the --color-* namespace for the `tenant-*` utilities to be generated at
+     * all. They resolve at runtime through the --color-primary/secondary/text
+     * custom properties set per-tenant in components/layouts/app.blade.php
+     * (<head> inline <style> on :root) — var() resolution happens lazily in
+     * the browser, so declaration order between this stylesheet and that
+     * inline block doesn't matter.
+     */
+    --color-tenant-primary: var(--color-primary);
+    --color-tenant-secondary: var(--color-secondary);
+    --color-tenant-text: var(--color-text);
 }
 
 /* Custom Range Slider Styles - Electric Blue */

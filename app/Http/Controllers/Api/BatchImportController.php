@@ -9,6 +9,7 @@ use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductOffer;
 use App\Models\Store;
+use App\Support\ProductConditionGuard;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -54,10 +55,18 @@ class BatchImportController extends Controller
 
         $created   = 0;
         $refreshed = 0;
+        $skipped   = 0;
         $now       = now();
 
         foreach ($validated['products'] as $p) {
             try {
+                // Server-side condition guard (Spec 027 Addendum A §2b) — the extension's
+                // client-side title filter is version-dependent and must not be trusted alone.
+                if (ProductConditionGuard::matchesTitle($p['title'])) {
+                    $skipped++;
+                    continue;
+                }
+
                 $existing = $existingMap->get($p['asin']);
 
                 if ($existing) {
@@ -124,13 +133,14 @@ class BatchImportController extends Controller
             }
         }
 
-        Log::info("BatchImport: {$created} created, {$refreshed} refreshed for category {$category->id}");
+        Log::info("BatchImport: {$created} created, {$refreshed} refreshed, {$skipped} skipped for category {$category->id}");
 
         return response()->json([
             'success'   => true,
             'created'   => $created,
             'refreshed' => $refreshed,
-            'message'   => "Queued {$created} new product(s) for AI processing. Refreshed data for {$refreshed} existing product(s).",
+            'skipped'   => $skipped,
+            'message'   => "Queued {$created} new product(s) for AI processing. Refreshed data for {$refreshed} existing product(s). Skipped {$skipped} condition-marked listing(s).",
         ]);
     }
 }

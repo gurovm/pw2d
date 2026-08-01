@@ -9,6 +9,7 @@ use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductOffer;
 use App\Models\Store;
+use App\Support\ProductConditionGuard;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
@@ -38,11 +39,21 @@ class OfferIngestionService
      *   rating: ?float,
      *   reviews_count: ?int,
      * } $data
-     * @return array{action: string, product_id: int}
+     * @return array{action: string, product_id: int|null}
      */
     public function processIncomingOffer(array $data): array
     {
         $tenantId = tenant('id');
+
+        // Server-side condition guard (Spec 027 Addendum A §2b) — the extension's
+        // client-side title filter is version-dependent and must not be trusted alone.
+        if (ProductConditionGuard::matchesTitle($data['raw_title'])) {
+            Log::info('OfferIngestion: skipped condition-marked listing', [
+                'raw_title' => $data['raw_title'],
+            ]);
+
+            return ['action' => 'skipped_condition', 'product_id' => null];
+        }
 
         // 1. Resolve store
         $store = Store::firstOrCreate(

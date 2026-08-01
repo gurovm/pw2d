@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Models\Category;
+use App\Models\LandingPage;
 use App\Models\Preset;
 use App\Models\Product;
 use Illuminate\Support\Facades\Cache;
@@ -65,6 +66,11 @@ class SitemapController extends Controller
                         ])
                         ->filter(fn ($p) => $p['category_slug'] !== null);
 
-        return view('sitemap', compact('categories', 'products', 'presets'))->render();
+        // "Best X" landing pages (Spec 027) — published only; draft pages stay unindexed.
+        $landingPages = LandingPage::where('status', 'published')
+                        ->select(['slug', 'updated_at'])
+                        ->get();
+
+        return view('sitemap', compact('categories', 'products', 'presets', 'landingPages'))->render();
     }
 }

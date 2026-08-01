@@ -12,12 +12,13 @@
 |
 */
 
+use App\Http\Controllers\LandingPageController;
 use App\Http\Controllers\SitemapController;
 use App\Livewire\Home;
 use App\Livewire\ProductCompare;
 use Illuminate\Support\Facades\Route;
 
-// Landing Page
+// Homepage
 Route::get('/', Home::class)->name('home');
 
 // Category Comparison Page
@@ -25,6 +26,9 @@ Route::get('/compare/{slug}', ProductCompare::class)->name('category.show');
 
 // Product Detail URL (Fallback for Modal)
 Route::get('/product/{product:slug}', ProductCompare::class)->name('product.show');
+
+// "Best X" Data-Driven Listicle Pages (Spec 027)
+Route::get('/best/{slug}', [LandingPageController::class, 'show'])->name('landing.show');
 
 // Sitemap
 Route::get('/sitemap.xml', [SitemapController::class, 'index'])->name('sitemap');

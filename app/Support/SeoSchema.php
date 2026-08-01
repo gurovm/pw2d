@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support;
 
 use App\Models\Category;
+use App\Models\LandingPage;
 use App\Models\Preset;
 use App\Models\Product;
 use Illuminate\Support\Collection;
@@ -82,6 +83,107 @@ class SeoSchema
             'ogType'       => 'website',
             'ogImage'      => tenant_seo('default_image'),
             'schemas'      => [$schema],
+            'activePreset' => null,
+        ];
+    }
+
+    /**
+     * Build meta + schema for a "Best X" landing page (Spec 027).
+     *
+     * ItemList reuses the Spec 026 rating gate (via the shared buildListItem()
+     * helper) — rated picks emit nested Product + aggregateRating, rating-less
+     * picks emit URL-only ListItems. NO offers/price anywhere (Spec 019 policy).
+     *
+     * @param  LandingPage $page          Must have `category` (with `parent`) eager-loaded.
+     * @param  Collection  $pickProducts  Products for the rendered picks, in display order.
+     *                                    Each should have `brand` and `offers` eager-loaded
+     *                                    for the ItemList item builder.
+     * @return array{title: string, description: string, canonical: string, ogType: string, ogImage: string|null, schemas: array, activePreset: null}
+     */
+    public static function forLandingPage(LandingPage $page, Collection $pickProducts): array
+    {
+        $category    = $page->category;
+        $currentYear = date('Y');
+        $title       = $page->title;
+        $canonical   = route('landing.show', ['slug' => $page->slug]);
+
+        $description = $page->intro
+            ? Str::limit(strip_tags($page->intro), 155)
+            : "The best " . ($category->name ?? '') . " in {$currentYear}, ranked by our data-driven scoring system.";
+
+        $schema = [
+            '@context'        => 'https://schema.org/',
+            '@type'           => 'ItemList',
+            'name'            => $title,
+            'description'     => $description,
+            'itemListElement' => [],
+        ];
+
+        $position = 1;
+        foreach ($pickProducts as $product) {
+            $schema['itemListElement'][] = self::buildListItem($product, $position);
+            $position++;
+        }
+
+        $breadcrumbItems = [
+            ['name' => 'Home', 'url' => url('/')],
+        ];
+
+        if ($category) {
+            if ($category->parent) {
+                $breadcrumbItems[] = [
+                    'name' => $category->parent->name,
+                    'url'  => route('category.show', ['slug' => $category->parent->slug]),
+                ];
+            }
+            $breadcrumbItems[] = [
+                'name' => $category->name,
+                'url'  => route('category.show', ['slug' => $category->slug]),
+            ];
+        }
+
+        $breadcrumbItems[] = ['name' => $title, 'url' => $canonical];
+
+        $schemas = [$schema, self::buildBreadcrumbList($breadcrumbItems)];
+
+        // Guard against a malformed hand-edit (e.g. a future Filament repeater entry
+        // saved without both keys) throwing at cache-build time — the Blade partial
+        // already guards on `!empty($faq['question'])`; the schema builder must too.
+        $faqs = is_array($page->faqs)
+            ? array_values(array_filter(
+                $page->faqs,
+                fn ($faq) => is_array($faq) && !empty($faq['question']) && !empty($faq['answer']),
+            ))
+            : [];
+
+        if (!empty($faqs)) {
+            $schemas[] = [
+                '@context'   => 'https://schema.org/',
+                '@type'      => 'FAQPage',
+                'mainEntity' => array_map(
+                    fn (array $faq) => [
+                        '@type'          => 'Question',
+                        'name'           => $faq['question'],
+                        'acceptedAnswer' => [
+                            '@type' => 'Answer',
+                            'text'  => $faq['answer'],
+                        ],
+                    ],
+                    $faqs,
+                ),
+            ];
+        }
+
+        $ogImage = $pickProducts->first()?->offers?->first()?->image_url
+            ?? tenant_seo('default_image');
+
+        return [
+            'title'        => "{$title} | " . tenant_seo('title_suffix'),
+            'description'  => $description,
+            'canonical'    => $canonical,
+            'ogType'       => 'article',
+            'ogImage'      => $ogImage,
+            'schemas'      => $schemas,
             'activePreset' => null,
         ];
     }
@@ -421,67 +523,75 @@ class SeoSchema
 
         $position = 1;
         foreach ($visibleProducts as $product) {
-            // A Product entity requires at least one of offers/review/aggregateRating
-            // (Google's Product snippet rule) or GSC reports a structured-data error.
-            // We only ever populate aggregateRating here, and only when both rating and
-            // reviewCount are real. Products without that data (specialty-store ingests,
-            // Amazon products with reviews_count=0) get the "summary page" ListItem style
-            // instead — a bare URL with no nested item, so Google evaluates the linked
-            // product page (which does carry valid Product markup) rather than an inline
-            // entity lacking the required signal. See docs/specs/026.
-            $hasRating = !empty($product->amazon_rating) && (int) $product->amazon_reviews_count > 0;
-
-            if (!$hasRating) {
-                $schema['itemListElement'][] = [
-                    '@type'    => 'ListItem',
-                    'position' => $position,
-                    'url'      => route('product.show', ['product' => $product->slug]),
-                ];
-                $position++;
-                continue;
-            }
-
-            $item = [
-                '@type' => 'Product',
-                'name'  => $product->name,
-                'url'   => route('product.show', ['product' => $product->slug]),
-            ];
-
-            // image — use Amazon CDN URL (complies with Associates TOS; no local paths)
-            $offerImage = $product->offers?->first()?->image_url;
-            if (!empty($offerImage)) {
-                $item['image'] = $offerImage;
-            }
-
-            // description — strip any HTML tags from the AI-generated verdict
-            if (!empty($product->ai_summary)) {
-                $item['description'] = strip_tags($product->ai_summary);
-            }
-
-            // brand — fall back to first word of product name if brand relation is missing
-            $brandName    = $product->brand?->name ?? explode(' ', $product->name)[0];
-            $item['brand'] = ['@type' => 'Brand', 'name' => $brandName];
-
-            // aggregateRating — Offers (price) intentionally omitted — scraped prices are
-            // estimates and violate Google's strict price-matching rules for Merchant
-            // Center rich snippets.
-            $item['aggregateRating'] = [
-                '@type'       => 'AggregateRating',
-                'ratingValue' => $product->amazon_rating,
-                'bestRating'  => 5,
-                'worstRating' => 1,
-                'reviewCount' => $product->amazon_reviews_count,
-            ];
-
-            $schema['itemListElement'][] = [
-                '@type'    => 'ListItem',
-                'position' => $position,
-                'item'     => $item,
-            ];
+            $schema['itemListElement'][] = self::buildListItem($product, $position);
             $position++;
         }
 
         return $schema;
+    }
+
+    /**
+     * Build a single ItemList entry for a product — shared by buildItemListSchema()
+     * (category/preset compare pages) and forLandingPage() ("Best X" pages).
+     *
+     * A Product entity requires at least one of offers/review/aggregateRating
+     * (Google's Product snippet rule) or GSC reports a structured-data error.
+     * We only ever populate aggregateRating here, and only when both rating and
+     * reviewCount are real. Products without that data (specialty-store ingests,
+     * Amazon products with reviews_count=0) get the "summary page" ListItem style
+     * instead — a bare URL with no nested item, so Google evaluates the linked
+     * product page (which does carry valid Product markup) rather than an inline
+     * entity lacking the required signal. See docs/specs/026.
+     */
+    private static function buildListItem(Product $product, int $position): array
+    {
+        $hasRating = !empty($product->amazon_rating) && (int) $product->amazon_reviews_count > 0;
+
+        if (!$hasRating) {
+            return [
+                '@type'    => 'ListItem',
+                'position' => $position,
+                'url'      => route('product.show', ['product' => $product->slug]),
+            ];
+        }
+
+        $item = [
+            '@type' => 'Product',
+            'name'  => $product->name,
+            'url'   => route('product.show', ['product' => $product->slug]),
+        ];
+
+        // image — use Amazon CDN URL (complies with Associates TOS; no local paths)
+        $offerImage = $product->offers?->first()?->image_url;
+        if (!empty($offerImage)) {
+            $item['image'] = $offerImage;
+        }
+
+        // description — strip any HTML tags from the AI-generated verdict
+        if (!empty($product->ai_summary)) {
+            $item['description'] = strip_tags($product->ai_summary);
+        }
+
+        // brand — fall back to first word of product name if brand relation is missing
+        $brandName    = $product->brand?->name ?? explode(' ', $product->name)[0];
+        $item['brand'] = ['@type' => 'Brand', 'name' => $brandName];
+
+        // aggregateRating — Offers (price) intentionally omitted — scraped prices are
+        // estimates and violate Google's strict price-matching rules for Merchant
+        // Center rich snippets.
+        $item['aggregateRating'] = [
+            '@type'       => 'AggregateRating',
+            'ratingValue' => $product->amazon_rating,
+            'bestRating'  => 5,
+            'worstRating' => 1,
+            'reviewCount' => $product->amazon_reviews_count,
+        ];
+
+        return [
+            '@type'    => 'ListItem',
+            'position' => $position,
+            'item'     => $item,
+        ];
     }
 
     /**

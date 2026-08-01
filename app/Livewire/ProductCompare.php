@@ -4,6 +4,7 @@ namespace App\Livewire;
 
 use App\Models\Category;
 use App\Models\Feature;
+use App\Models\LandingPage;
 use App\Models\Preset;
 use App\Models\Product;
 use App\Models\ProductOffer;
@@ -134,6 +135,24 @@ class ProductCompare extends Component
             ->with('presetFeatures.feature')
             ->get()
             ->first(fn (Preset $p) => Str::slug($p->name) === $this->activePresetSlug);
+    }
+
+    /**
+     * The published "Best X" landing page for this category, if one exists (Spec 027 §7).
+     * Drives the contextual "Read our ranked guide" link in compare-content.blade.php.
+     * Returns null for parent categories (no subcategories → no landing pages) and
+     * leaf categories that haven't had a page generated/published yet.
+     */
+    #[Computed]
+    public function publishedLandingPage(): ?LandingPage
+    {
+        if (!$this->category) {
+            return null;
+        }
+
+        return LandingPage::where('category_id', $this->category->id)
+            ->where('status', 'published')
+            ->first();
     }
 
     /**
