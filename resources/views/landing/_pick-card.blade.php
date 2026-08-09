@@ -48,7 +48,7 @@
 >
     <div class="flex flex-col md:flex-row">
         {{-- Rank + image --}}
-        <div class="relative shrink-0 md:w-64">
+        <div class="relative shrink-0 md:w-64 md:flex md:items-center">
             <div class="absolute top-3 left-3 z-10 flex items-center justify-center w-9 h-9 rounded-full bg-white/95 border-2 border-tenant-primary text-tenant-primary font-black text-sm shadow-sm">
                 #{{ $rank }}
             </div>
@@ -59,14 +59,14 @@
             </div>
 
             <a href="{{ route('product.show', ['product' => $product->slug]) }}"
-               class="flex items-center justify-center h-56 md:h-full w-full bg-white overflow-hidden">
+               class="flex items-center justify-center h-56 md:h-64 w-full bg-white overflow-hidden">
                 @if ($product->image_url)
                     <img
                         src="{{ $product->image_url }}"
                         alt="{{ $product->name }}"
                         width="400"
                         height="400"
-                        class="h-full w-auto object-contain mix-blend-multiply"
+                        class="max-h-full max-w-full object-contain mix-blend-multiply"
                         @if ($isFirst)
                             loading="eager"
                             fetchpriority="high"
@@ -138,6 +138,7 @@
                 @endif
 
                 <a href="{{ route('product.show', ['product' => $product->slug]) }}"
+                   target="_blank" rel="noopener noreferrer"
                    class="text-xs md:text-sm font-semibold text-gray-600 hover:text-tenant-primary transition-colors">
                     Full product details
                 </a>

@@ -112,6 +112,15 @@ class LandingPageControllerTest extends TestCase
         $this->assertNotNull($h1, 'Rendered page must contain an <h1>');
         $this->assertStringContainsString('Espresso Machines', $h1);
         $this->assertStringContainsString((string) date('Y'), $h1);
+
+        // The pick card's "Full product details" link must open in a new tab
+        // so closing the product drawer doesn't strand the reader off /best/.
+        $productUrl = route('product.show', ['product' => $product->slug]);
+        $this->assertMatchesRegularExpression(
+            '/<a[^>]*href="' . preg_quote($productUrl, '/') . '"[^>]*target="_blank"[^>]*>\s*Full product details/s',
+            $response->getContent(),
+            'Full product details link must carry target="_blank"'
+        );
     }
 
     /** @test */
