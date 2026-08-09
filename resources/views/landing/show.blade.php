@@ -16,6 +16,12 @@
     // "Best for {Preset}" role labels from role strings shaped `preset:{slug}`.
     $presetNameBySlug = $category->presets
         ->mapWithKeys(fn ($preset) => [\Illuminate\Support\Str::slug($preset->name) => $preset->name]);
+
+    // SelectLandingPagePicks reuses role "overall" for both the #1 pick AND any
+    // trailing fill-in picks (see its docblock) — only the FIRST 'overall' pick
+    // in the list may display "Best Overall"; every subsequent one gets
+    // "Also Great" instead, so two products never carry the same badge.
+    $overallSeen = false;
 @endphp
 
 <x-layouts.app
@@ -78,12 +84,17 @@
                             $presetSlug = $isPreset ? substr($roleKey, 7) : null;
 
                             $roleLabel = match (true) {
-                                $roleKey === 'overall' => 'Best Overall',
+                                $roleKey === 'overall' && !$overallSeen => 'Best Overall',
+                                $roleKey === 'overall' => 'Also Great',
                                 $roleKey === 'budget' => 'Best Budget',
                                 $roleKey === 'premium' => 'Best Premium',
                                 $isPreset => 'Best for ' . ($presetNameBySlug[$presetSlug] ?? \Illuminate\Support\Str::headline(str_replace('-', ' ', $presetSlug))),
                                 default => \Illuminate\Support\Str::headline($roleKey),
                             };
+
+                            if ($roleKey === 'overall') {
+                                $overallSeen = true;
+                            }
                         @endphp
                         <li>
                             @include('landing._pick-card', [

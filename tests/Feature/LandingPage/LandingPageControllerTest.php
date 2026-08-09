@@ -269,6 +269,38 @@ class LandingPageControllerTest extends TestCase
         $this->assertStringNotContainsString('249.9', $html, 'Raw scraped_price fragment must never be rendered');
     }
 
+    /**
+     * SelectLandingPagePicks reuses role "overall" for both the #1 "Best Overall"
+     * pick AND any trailing fill-in picks (see its docblock). The view must only
+     * badge the FIRST 'overall' pick as "Best Overall" — every subsequent
+     * 'overall' pick must render "Also Great" instead, so two products never
+     * carry the same "Best Overall" badge on one page.
+     *
+     * @test
+     */
+    public function only_the_first_overall_pick_is_labeled_best_overall_and_later_ones_say_also_great(): void
+    {
+        $category = Category::factory()->create(['slug' => 'lp-ctrl-dup-overall-cat', 'name' => 'Widgets']);
+        $firstOverall  = $this->makeProduct($category, 'lp-ctrl-dup-overall-first');
+        $budgetPick    = $this->makeProduct($category, 'lp-ctrl-dup-overall-budget');
+        $secondOverall = $this->makeProduct($category, 'lp-ctrl-dup-overall-second');
+
+        $page = LandingPage::factory()->published()->create([
+            'category_id' => $category->id,
+            'slug'        => 'best-lp-ctrl-dup-overall',
+            'picks'       => [
+                ['product_id' => $firstOverall->id, 'role' => 'overall', 'headline' => 'h1', 'body' => 'b1'],
+                ['product_id' => $budgetPick->id, 'role' => 'budget', 'headline' => 'h2', 'body' => 'b2'],
+                ['product_id' => $secondOverall->id, 'role' => 'overall', 'headline' => 'h3', 'body' => 'b3'],
+            ],
+        ]);
+
+        $html = $this->get('/best/' . $page->slug)->getContent();
+
+        $this->assertSame(1, substr_count($html, 'Best Overall'), 'Exactly one pick may be labeled "Best Overall"');
+        $this->assertStringContainsString('Also Great', $html, 'The trailing fill-in "overall" pick must be labeled "Also Great"');
+    }
+
     // =========================================================================
     // §9.8 — Cache invalidation
     // =========================================================================
