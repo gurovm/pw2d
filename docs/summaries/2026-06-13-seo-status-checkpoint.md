@@ -278,3 +278,108 @@ with clicks/top_query maturing.
 - pw2d: stay the course — off-page/authority is the active track (data studies, community, landing pages).
 - coffee2decide: no action, let it crawl in. Next read ~Jul 25-Aug 1 doubles as leaf #5-6 selection.
 - No new specs from this check.
+
+---
+
+## UPDATE — 2026-08-02 check: pw2d flat (as expected); coffee2decide CLIMBING HARD — weighted position 54→29 in four weeks, first 5 clicks.
+
+**Pipeline:** all 4 sources HEALTHY. GSC data through Jul 30.
+
+### pw2d (monitoring mode, authority verdict stands)
+| Metric | 07-03 | 07-10 | 07-19 | **08-02** |
+|---|---|---|---|---|
+| Pages w/ impressions | 209 | 222 | 237 | **221** |
+| Impressions (28d) | 1,849 | 2,040 | 2,175 | **2,199** |
+| Clicks (28d) | 6 | 7 | 7 | **6** |
+
+Fully plateaued — impressions flat, target presets oscillating pos 10-27 (rsi surface keeps widening:
+"rsi keyboard" 44 impr / 12.4). Consistent with the Jul-10 verdict; the lever remains off-page.
+No /best/ rows yet (pages published Aug 1; GSC lag).
+
+### coffee2decide — the story this week
+| wk | impr | clicks | wpos |
+|---|---|---|---|
+| 202626 | 16 | 0 | 54.1 |
+| 202627 | 205 | 0 | 59.7 |
+| 202628 | 354 | 1 | 50.4 |
+| 202629 | 363 | 3 | **39.5** |
+| 202630 (partial) | 255 | 1 | **28.9** |
+
+28d: 167 pages / 1,177 impr / 5 clicks. **Weighted position improved ~25 points in 3 weeks while
+impressions grew** — a genuine fresh-site climb, far steeper than pw2d's trajectory at the same age
+(pw2d needed ~2 months to reach this impression level). First clicks arriving. The 023-content stack +
+clean launch hygiene (slugs, sitemap, schema fixed pre-crawl) appear to be paying off on a domain with
+no legacy baggage.
+
+### Milestones this period
+- 4 landing pages LIVE since Aug 1 (pw2d keyboards ×2, c2d super-auto + manual grinders — c2d pair
+  published after the super-auto category sweep removed 4 semi-autos). Attribution marker: any /best/
+  data + compare-page query shifts from wk31 onward trace to this launch.
+- Spec 027 shipped (commit a35523f) incl. renewed/condition pipeline guards + sitewide tenant-color fix.
+- Condition audits pending owner --ignore decision: pw2d 33, c2d 2.
+
+### Decisions (2026-08-02)
+- Next check ~Aug 9: first /best/ crawl read + remaining-categories batch decision (generate all,
+  publish only credible pick tables).
+- c2d leaf #5-6 selection: super-auto demand dominance persists; electric-burr-grinders lean holds.
+  Decide at ~Aug 9 with another week of top_query data.
+- pw2d: no on-page work; founder off-page track (data studies, outreach) is the active lever.
+
+---
+
+## UPDATE — 2026-08-09 check: /best/ pages crawled-in on BOTH tenants within 2–4 days, zero cannibalization. pw2d flat (verdict stands). c2d consolidating at wpos ~30, CTR 0.54%.
+
+**Pipeline:** all 4 sources HEALTHY (GSC through Aug 6, normal lag).
+
+### pw2d (monitoring mode — authority verdict stands)
+| Metric | 07-10 | 07-19 | 08-02 | **08-09** |
+|---|---|---|---|---|
+| Pages w/ impressions | 222 | 237 | 221 | **239** |
+| Impressions (28d) | 2,040 | 2,175 | 2,199 | **2,346** |
+| Clicks (28d) | 7 | 7 | 6 | **3** |
+| Weighted pos* | 16.2 | — | — | **18.4** |
+
+*wpos worsening is the known composition artifact — new /best/ + widening rsi long-tail enter at pos 19–50.
+Clicks 6→3 at these volumes is noise. Target presets: "rsi keyboard" still the widest surface (46 impr /
+12.8), "streamer keyboards" 14 / 9.9 — same 10–15 band as the last 8 weeks. No reversal, no climb.
+
+**First /best/ read (published Aug 1, GSC-submitted Aug 2):**
+- Both pages impressing by Aug 3 (2–4 day crawl-in — the permanent-URL/sitemap plumbing works).
+- `/best/productivity-ergonomic-keyboards`: 5 impr, pos 10–41, top query **"best productivity
+  keyboards"** — a NET-NEW query neither preset page held. `/best/mechanical-gaming-keyboards`: 2 impr, pos ~26.
+- **Cannibalization: NONE.** Every preset compare page kept its queries at unchanged positions; the /best/
+  pages opened new "best X" head-query surface instead. Exactly the designed division of labor.
+
+### coffee2decide — climb consolidating, clicks accumulating
+28d: 197 pages / 1,468 impr / **8 clicks** / wpos 37.6 / **CTR 0.54%** (best CTR either tenant has posted).
+
+| wk | impr | clicks | wpos |
+|---|---|---|---|
+| 202629 | 363 | 3 | 39.5 |
+| 202630 | 385 | 1 | 29.8 |
+| 202631 (4 of 7 days) | 366 | 3 | **31.8** |
+
+Per-day impressions still growing (~55→~90/day); wpos consolidating around ~30 after the steep 54→29 run —
+normal post-sprint digestion, not a stall.
+
+- **`/best/super-automatic-espresso-machines`** crawling in at pos 70–98 on "best super automatic espresso
+  machine" — the compare page holds the same query at ~61. Watch which URL Google settles on; /best/ is the
+  intended winner. Manual-grinders /best/ page: no rows yet.
+- **Product pages are the strongest surface:** 447 impr / wpos 21.5 / 3 clicks in 14d — long-tail model-number
+  queries (ecam35075si, psa3228/41 @ pos 7.9, ep2330/10 @ 11.0, Snap cold brew @ 10.8). **Strongest evidence
+  yet for Spec-028 (product content depth).**
+- **Demand by surface (14d):** super-auto 132 · manual grinders 83 (+1 click) · semi-auto 44 · cold-brew 18
+  (but its PRODUCTS pull big impressions: Snap 5-gal pos 10.8–12.6, OXO 64.9) · pour-over 18 · kettles 7
+  (tiny volume but pos 9.3).
+
+### Decisions (2026-08-09)
+- **Remaining-categories batch: recommended GO.** The gate data is in: /best/ pages index fast, open net-new
+  query surface, and cannibalize nothing. Generate all 7 remaining categories (pw2d mics/headsets/lavalier;
+  c2d semi-auto/kettles/pour-over/cold-brew), publish only credible pick tables (<5 picks = command aborts).
+  Owner reviews drafts in Filament before publish, per runbook.
+- **c2d leaf #5–6: electric-burr-grinders lean CONFIRMED** — grinders are the #2 demand surface with a click,
+  and 11 seed products are detached and waiting. Second slot still open (no new demand signal for a specific
+  6th leaf; cold-brew/pour-over already exist as leaves).
+- **Spec-028 (product content depth) case keeps strengthening** — gated behind the evaluateProduct grounding
+  guardrail + ~32 polluted ai_summaries cleanup.
+- pw2d: authority verdict unchanged; founder off-page track remains the lever.
