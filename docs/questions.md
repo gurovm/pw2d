@@ -1,5 +1,44 @@
 # Questions / Findings from Test Engineering
 
+## Spec 030 (landing-page freshness engine) — builder judgment calls (2026-08-10)
+
+Spec 030 left a few implementation details to the builder. Logged here per CLAUDE.md
+("if the spec is unclear, write to docs/questions.md" — none of these blocked the
+build, but they're worth the owner/architect's eyes):
+
+1. **No pre-existing `ProductObserver`.** The spec says "find the existing Product
+   observer (app/Observers/)" — no such file existed (only `CategoryObserver` and
+   `FeatureObserver` were registered). Created `app/Observers/ProductObserver.php`
+   following the same pattern and registered it in `AppServiceProvider::boot()`.
+
+2. **`AuditLandingPagesCommand` location.** Put alongside `GenerateLandingPage.php`
+   directly under `app/Console/Commands/` (not a `LandingPages/` subfolder) since
+   that's where its sibling command already lives — mirrors that convention rather
+   than the `app/Console/Commands/Seo/` subfolder pattern used for GSC/GA4 commands.
+
+3. **`pick_ineligible` vs `render_short` overlap is structural, not a test gap.**
+   `LandingPageController`'s render-time filter (is_ignored=false, status=null,
+   category_id not null) is a strict SUBSET of `SelectLandingPagePicks`' eligibility
+   filter. Any product that fails render also fails re-selection, so `render_short`
+   almost always co-occurs with `selection_drift`, and often `pick_ineligible` too
+   (which explicitly checks is_ignored/detached/deleted). The one exception is
+   `status` (e.g. `pending_ai`) — `pick_ineligible`'s contract per the spec text
+   doesn't list it, so a status-only change fires `render_short`+`selection_drift`
+   WITHOUT `pick_ineligible`. Tests document this via `assertContains` rather than
+   exact-array assertions where the overlap is unavoidable; one test
+   (`render_short_fires_distinctly_from_pick_ineligible_when_a_pick_goes_pending`)
+   pins down the one case where they diverge.
+
+4. **`price_drift` skip rule for a zero/negative snapshot.** The spec says "picks
+   without snapshots are skipped" — treated a stored `est_price_snapshot` of `0` the
+   same as `null` (skip, avoid a divide-by-zero) since `0` is not a realistic priced
+   product and would otherwise produce a nonsensical (infinite) deviation.
+
+5. **Filament `TernaryFilter` for freshness.** Not explicitly requested by the spec
+   (only the badge column + nav badge + default sort were), but added a "Stale
+   only / Fresh only" table filter since it's a natural companion to the badge
+   column and cheap to add. Flag if this is unwanted scope creep.
+
 ## Finding: `Product.ai_summary` can itself contain a fabricated listing-condition claim (leaks into schema + any downstream AI prompt that includes it)
 
 **Discovered:** 2026-08-01, while verifying the Spec 027 landing-page GROUNDING fix (owner caught the AI inventing "renewed" for the Logitech G915 TKL pick, which retails higher than our scraped price).
@@ -64,3 +103,43 @@ Spec 027 §4's "Best for {preset}" scoring says "top-scored under that preset's 
 Spec 027 §7 lists "Compare page → landing page: one contextual link in `compare-content.blade.php`" under Task §11 as a **T2 (frontend)** deliverable, and the T2 agent built that partial defensively guarded on an `$landingPage` variable ("before the backend wires the variable in"). Since the partial is dead without a supplier, T1 wired it: added `ProductCompare::publishedLandingPage()` (a `#[Computed]` lookup by `category_id` + `status='published'`) and passed it into the `compare-content` include. Flagging this here since it's outside T1's literal task list but the alternative was shipping unreachable frontend code.
 
 The `image + ai_summary present` pick-eligibility gate (§4) is implemented against `Product::image_url` (the existing computed accessor: local `image_path` → best offer image → any offer image) rather than a raw `image_path IS NOT NULL` check — more inclusive, and matches what the site actually renders as "having an image" everywhere else.
+
+---
+
+## Builder decisions on Spec 029 (Extension Rescan v2, Phase A — server) not fully covered by the spec
+
+**Files:** migrations, `app/Support/ListingHealth.php`, `app/Services/ListingHealthService.php`, `app/Services/PriceTierRecalculator.php`, `app/Jobs/RecalculateCategoryPriceTiers.php`, `app/Services/OfferIngestionService.php`, `app/Http/Controllers/Api/{OfferIngestionController,BatchImportController,ProductImportController}.php`, `app/Actions/SelectLandingPagePicks.php`, `app/Console/Commands/RecalculatePriceTiers.php`.
+
+**`products.amazon_reviews_count` nullability (extra migration, not in the spec's migration list).** Spec 029 only lists the `product_offers` migration (`condition`/`listing_flags`/`health_checked_at`). Storing `null` for a missing reviews_count (A1's explicit requirement) is impossible on the existing `unsignedInteger('amazon_reviews_count')->default(0)` column — it's `NOT NULL` at the DB level. Added a second migration (`2026_08_10_000002_make_amazon_reviews_count_nullable_on_products_table.php`) making the column nullable. `->change()` works without `doctrine/dbal` on Laravel 12 (already used elsewhere in this codebase, e.g. `2026_02_15_120228_increase_affiliate_url_length.php`).
+
+**reviews_count refresh semantics widened from "backfill-only" to "always refresh to the latest reported value."** The pre-existing code only wrote `amazon_reviews_count` when the STORED value was empty (`!empty($product->amazon_reviews_count)` guard) — a one-time backfill, not a refresh. A1 says "update the product's amazon_reviews_count when provided" without qualifying "only if currently empty," and F38's whole premise is that refresh should heal/freshen stored data, not just fill gaps once. Changed all four ingestion paths (OfferIngestionService's existingOffer + matched branches, BatchImportController's refresh branch, ProductImportController's refresh branch) to: `reviews_count` provided (non-null) → always overwrite with the latest value; omitted → leave the stored value untouched (never null it out — that would destroy known-good data, which is different from the CREATE-path "null means unknown" case). `amazon_rating` was deliberately left with its EXISTING semantics unchanged in every path (not called out by the task) to avoid unrequested scope creep.
+
+**Freshly-flagged-condition products don't get an AI evaluation dispatched.** In all three ingestion paths, when `ListingHealthService::apply()` returns `'flagged_condition'` (product just got `is_ignored = true`), `ProcessPendingProduct::dispatch()` is skipped. This extends the pre-existing "a condition-marked title never gets AI-evaluated" convention (`skipped_condition` via `ProductConditionGuard`) to the new DOM-detected condition path — burning a Gemini call on a product we just decided to ignore seemed like clear scope creep to avoid, but it's a judgment call, not explicit in the spec text.
+
+**`RecalculateCategoryPriceTiers` dispatch conditions.** A4 says "after ingestion updates a price on an existing offer." Interpreted narrowly: dispatched only when an offer that ALREADY EXISTED gets its price touched — i.e. `OfferIngestionService`'s `existingOffer` (URL-match) branch always, its `matched` branch only when a `$priorOffer` for that exact (product_id, store_id) was found before the `updateOrCreate` call (a brand-new offer attached to an existing product isn't "updating a price," it's adding one), `BatchImportController`'s refresh branch (once per request via a `$priceUpdated` flag, not per product), and `ProductImportController`'s `!$wasNew` branch. Brand-new PRODUCT creation never dispatches it — `price_tier` is already computed correctly inline at creation via `$category->priceTierFor(...)`, so a category-wide recalc adds no value there.
+
+**Q13 (RecalculatePriceTiers memory) fixed as part of this build**, not left as a separate follow-up — A4 explicitly required chunking, and the new job reuses the exact same code path as the console command, so fixing the unbounded `->get()` was unavoidable to do this correctly. Extracted `App\Services\PriceTierRecalculator::recalculateForCategory()` (uses `Product::where(...)->chunkById(200, ...)`) — both `products:recalculate-tiers` and `RecalculateCategoryPriceTiers` call it, so the console command's existing per-product progress output still works via an optional `?callable $onUpdate` callback. Marked Q13 done in `docs/tasks/todo.md`.
+
+**Rescan-list auth: 403, not 401.** The task description said "rescan-list auth (401 without token)," but the existing `VerifyExtensionToken` middleware — used identically by every sibling extension endpoint — returns 403 (`{'error': 'Unauthorized.'}`), not 401. Per the task's own instruction to "mirror it exactly," the new endpoint uses the SAME middleware unchanged, so it also returns 403. The test (`RescanListControllerTest::it_returns_403_without_a_valid_extension_token`) asserts the real, existing behavior rather than inventing a divergent 401 response for this one endpoint.
+
+**Rescan-list response envelope.** Wrapped as `{"success": true, "offers": [...]}`, matching every sibling GET endpoint's envelope convention (`{success, asins}` from `existingAsins`, `{success, categories}` from `categories`) rather than returning a bare JSON array as the spec's literal shape example (`[{offer_id, ...}]`) might suggest.
+
+**Recognized `listing_flags` values: strictly `['high_price']` for now.** The spec explicitly says "room to grow (e.g. `unavailable`)" but only defines `high_price` as currently recognized, and the task explicitly requires rejecting unknown flag strings with a 422. Implemented as a single source of truth (`App\Support\ListingHealth::RECOGNIZED_FLAGS`) so adding `unavailable` later is a one-line change plus whatever handling `ListingHealthService::apply()` needs for it (none yet — only `high_price` has defined behavior).
+
+**Landing-page-pick warning fires only on the is_ignored transition, not on every repeat report.** A2 says "when a NEWLY-flagged product ... is a current landing-page pick, log a warning." Read literally: the warning is scoped inside `if (!$product->is_ignored) { ... }` in `ListingHealthService::apply()`, so re-scanning an already-flagged listing (still reports `renewed` on a later rescan) doesn't re-log every time — only the actual first transition into `is_ignored = true` does.
+
+**Q1's exact historical trigger for the prod `Duplicate entry` crash wasn't fully reproduced**, but the fix (`updateOrCreate` keyed on `(product_id, store_id)` replacing every raw `ProductOffer::create()` call across all three ingestion paths) is applied as defense-in-depth exactly as A1 specifies, regardless of the precise race that caused it in prod.
+
+---
+
+## Builder decisions on the 2026-08-10 consolidated audit fixes (Spec 029/030) not fully covered by the audit reports
+
+**Files:** `app/Services/OfferIngestionService.php`, `app/Http/Controllers/Api/{BatchImportController,ProductImportController}.php`, `app/Filament/Resources/LandingPageResource.php` + `.../Pages/EditLandingPage.php`, `app/Console/Commands/GenerateLandingPage.php`.
+
+**B2 fix: the condition-marker skip was moved to right after the existing-offer/AI-match determination (before AI matching itself), not literally at "the create-new step."** All three audit reports describe the fix in terms of the OUTCOME ("existing offer or explicit condition → run normal refresh; otherwise skip"), not the exact line position. Placing the marker-guard check immediately after `existingOffer` is confirmed null — but BEFORE the `AiService::matchProduct()` call — preserves the guard's original efficiency intent (never spend an AI-match call, itself a real cost, on a listing about to be discarded as junk) while still fully closing the B2 bug (a rescan of an EXISTING offer always heals now, regardless of marker). One side effect: for a **brand-new, marker-titled listing that would have matched an existing product via AI** (a title marker appearing on a first-seen offer row for an otherwise-known product, attached via a different store/URL), the guard now fires and skips before that AI-match attempt is ever made — this exact scenario isn't described in any of the three reports (all examples are same-URL rescans), and skipping here mirrors this guard's pre-Spec-029 behavior (it always ran before ANY matching, at the very top of the method) for anything but the same-URL-rescan case B2 targets. If future data shows this edge case matters (a marker title that should have healed via AI-match instead of being dropped), the fix is to move the guard after the AI-match block instead — noted here rather than silently decided.
+
+**The same guard-conditioning logic (`$condition === null && matchesTitle(...)`) was applied to all three ingestion paths' create-new branches, not just where explicitly shown in the reports' code snippets.** The reports' own suggested fix text for B2 says "(or a non-null condition was supplied)" as a bypass condition without spelling out every call site — applied consistently so an explicit, DOM-verified `condition` payload always overrides the marker heuristic even for a genuinely new listing (create it flagged, don't silently drop it).
+
+**`GenerateLandingPage`'s `product_name` persisted-at-generation field is additive to the picks JSON shape**, not documented in Spec 027/030's `picks[].{product_id,role,headline,body}` (+ 030's `est_price_snapshot`) shape. Consumers that iterate picks by explicit key list (`AuditLandingPageFreshness`, `LandingPageController::buildViewModel()`) are unaffected by an extra key; `LandingPage`'s class docblock listing the picks shape was intentionally left as-is (not exhaustively updated) since it already predates `est_price_snapshot`'s addition without being corrected then either — flagging here instead of silently drifting the doc further.
+
+**`EditLandingPage::mutateFormDataBeforeSave()` restores stored pick fields by ARRAY INDEX POSITION**, not by matching `product_id`. This is safe only because the picks Repeater is `addable(false)/deletable(false)/reorderable(false)` (already enforced pre-audit) — index alignment between the stored record and the submitted form data is guaranteed. If a future change ever allows reordering/adding/removing picks in Filament, this restoration logic would need to key off something stable (e.g. a hidden dehydrated pick UUID) instead of array position.

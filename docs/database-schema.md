@@ -16,7 +16,7 @@
 - `id`, `brand_id` → `brands` (nullable FK), `category_id` → `categories`, `name` (VARCHAR 255)
 - `slug` (unique per product), `ai_summary` (text, AI-generated 2-sentence verdict)
 - `price_tier` (int: 1=Budget, 2=Mid-range, 3=Premium — thresholds set per category via `budget_max`/`midrange_max`)
-- `amazon_rating` (float 0–5, nullable), `amazon_reviews_count` (int)
+- `amazon_rating` (float 0–5, nullable), `amazon_reviews_count` (int, nullable — null means "scraper didn't report a count," distinct from a genuine 0)
 - `image_path` (locally stored WebP image, `storage/products/images/`)
 - `affiliate_url` (nullable — if null, auto-generated from best offer URL + affiliate tag)
 - `is_ignored` (boolean, default false — AI-detected accessories suppressed from all site surfaces)
@@ -55,7 +55,10 @@
 - `scraped_price` (decimal 10,2, nullable), `raw_title` (string 500, exact scraped title)
 - `image_url` (text, nullable — external CDN image URL from this store)
 - `stock_status` (string 50, nullable — 'in_stock', 'out_of_stock')
-- Unique: `(product_id, store_name)` — one offer per store per product.
+- `condition` (string 20, nullable, indexed — `new|renewed|refurbished|open_box|used|unknown`, DOM-detected by the extension; Spec 029 §A2)
+- `listing_flags` (JSON, nullable — e.g. `["high_price"]`, Amazon buy-box warnings; Spec 029 §A2)
+- `health_checked_at` (timestamp, nullable — last time the extension DOM-inspected this listing's condition/flags)
+- Unique: `(product_id, store_id)` — one offer per store per product.
 - **This is where all vendor-specific data lives.** Products table holds only canonical/AI-processed data.
 
 **`ai_matching_decisions`** *(AI Memory Layer)*

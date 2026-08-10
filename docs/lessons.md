@@ -4,6 +4,44 @@ Living document of quirks, gotchas, and mistakes worth not repeating. Add new en
 
 ---
 
+## 2026-08-10 — Raw SQL against a JSON column must be reasoned about on MySQL separately; sqlite doesn't reproduce MySQL's JSON normalization
+
+**Symptom:** `AuditLandingPageFreshnessJob::dispatchForProduct()` used `whereRaw('picks LIKE ?', ['%"product_id":' . $id . ',%'])` against `landing_pages.picks`, a native MySQL `json` column. Every test passed on sqlite. In production, the instant freshness-audit path (observer ignore-flip/detach/delete, `high_price` flag) would have dispatched **zero jobs** — only the nightly command would ever have caught staleness.
+
+**Root cause:** MySQL stores JSON in an internal binary format and re-serializes it to a **normalized** string (spaces after every `:`/`,`) when coercing a `json` column to text for `LIKE`. The space-free pattern (`Laravel's raw json_encode` output) never matches. sqlite's `json()` column type is backed by plain `TEXT`, storing Laravel's exact space-free `json_encode()` output — so the space-free `LIKE` pattern matches perfectly in every test run, hiding the bug completely.
+
+**Fix (Spec 029/030 audit fixes, 2026-08-10):** dropped the raw SQL containment entirely — load the tenant's own landing pages (bounded, a dozen-ish rows) and filter with a PHP `Collection::filter()`/`contains()` closure instead. Identical behavior on every connection, and now directly unit-testable (assert against a picks array) instead of requiring a live MySQL smoke test.
+
+**Rule going forward:** any raw SQL fragment that touches a `json`-cast column (`LIKE`, string comparison, etc.) must be reasoned about — or smoke-tested — against MySQL specifically. A passing sqlite suite proves nothing about that fragment's behavior on the production database engine. Prefer filtering in PHP over a bounded result set, or a verified `whereJsonContains()`, over any raw string-matching against a JSON column.
+
+---
+
+## 2026-08-10 — `foreach ($arr['key'] ?? [] as &$item)` silently iterates a temporary copy, not the real array
+
+**Symptom:** `EditLandingPage::mutateFormDataBeforeSave()` tried to restore stripped-by-dehydration keys (`product_id`, `role`, `est_price_snapshot`) into `$data['picks']` via:
+```php
+foreach ($data['picks'] ?? [] as $i => &$pick) {
+    $pick['product_id'] = $stored[$i]['product_id'] ?? null;
+    // ...
+}
+```
+This ran without error, and a debug `Log::info()` right before the loop confirmed `$data['picks']` and `$stored` both had the expected shape — but the SAVED record's `picks` column came back with the restored keys **still missing**, as if the loop body never executed (it did — the mutation just never reached `$data`).
+
+**Root cause:** `$data['picks'] ?? []` is an *expression*, not a plain variable/array-element lvalue. When the left operand of `??` is set (the common case here), PHP still evaluates the whole `??` expression to produce its result — and a by-reference `foreach` over an expression's result binds `&$pick` to elements of a **temporary array**, not to `$data['picks']` itself. Every assignment through `$pick` silently vanished with the temporary.
+
+**Fix:** never combine `??`/ternaries with a by-reference `foreach`. Guard explicitly and iterate the real lvalue:
+```php
+if (isset($data['picks']) && is_array($data['picks'])) {
+    foreach ($data['picks'] as $i => &$pick) {
+        $pick['product_id'] = $stored[$i]['product_id'] ?? null;
+    }
+    unset($pick);
+}
+```
+**Impact if ignored:** the bug is a pure no-op with zero errors/warnings — the exact shape of bug that only surfaces as a downstream data-integrity assertion failure (or, in prod, a silent feature that never actually did anything). Reviewed code that does `foreach ($x ?? [] as &$y)` anywhere in the codebase should be treated as suspect.
+
+---
+
 ## 2026-06-19 — No bare `const`/`let` in Alpine `x-init`; republish Livewire assets after composer bumps
 
 **Symptom:** A new compare-page Customize drawer (Spec 025) never auto-opened. Console showed two errors:
