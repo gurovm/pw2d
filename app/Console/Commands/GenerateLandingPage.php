@@ -145,10 +145,19 @@ class GenerateLandingPage extends Command
             $aiPick = $aiPicksById[$p['product_id']] ?? null;
 
             return [
-                'product_id' => $p['product_id'],
-                'role'       => $p['role'],
-                'headline'   => $aiPick['headline'] ?? '',
-                'body'       => $aiPick['body'] ?? '',
+                'product_id'         => $p['product_id'],
+                'role'               => $p['role'],
+                'headline'           => $aiPick['headline'] ?? '',
+                'body'               => $aiPick['body'] ?? '',
+                // Spec 030 §B1: generation-time price baseline, compared against the
+                // current estimated_price by AuditLandingPageFreshness's price_drift check.
+                'est_price_snapshot' => $p['product']->estimated_price,
+                // Perf M3 — cached at generation time so LandingPageResource's picks
+                // Repeater `itemLabel` never has to look the product up per render
+                // (was Product::withoutGlobalScopes()->find(), also a Security M3
+                // cross-tenant read risk). Falls back to a tenant-scoped lookup only
+                // for pre-existing pages generated before this field existed.
+                'product_name'       => $p['product']->name,
             ];
         })->values()->all();
 
@@ -160,11 +169,15 @@ class GenerateLandingPage extends Command
         ]);
 
         $landingPage->fill([
-            'intro'            => $content['intro'],
-            'picks'            => $finalPicks,
-            'faqs'             => $content['faqs'],
-            'methodology_note' => $content['methodology_note'],
-            'generated_at'     => now(),
+            'intro'                => $content['intro'],
+            'picks'                => $finalPicks,
+            'faqs'                 => $content['faqs'],
+            'methodology_note'     => $content['methodology_note'],
+            'generated_at'         => now(),
+            // Spec 030 §B6: a (re)generation just re-picked and re-snapshotted prices,
+            // so the page IS fresh again — closes the loop the audit engine opened.
+            'stale_reasons'        => [],
+            'freshness_checked_at' => now(),
         ]);
 
         // --publish always publishes; otherwise a regeneration keeps the page's

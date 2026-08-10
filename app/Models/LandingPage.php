@@ -34,12 +34,17 @@ class LandingPage extends Model
         'methodology_note',
         'status',
         'generated_at',
+        'stale_reasons',
+        'freshness_checked_at',
     ];
 
     protected $casts = [
-        'picks'        => 'array',
-        'faqs'         => 'array',
-        'generated_at' => 'datetime',
+        'picks'                => 'array',
+        'faqs'                 => 'array',
+        'generated_at'         => 'datetime',
+        // Spec 030 §B1: null = never audited; [] = audited and fresh; non-empty = stale.
+        'stale_reasons'        => 'array',
+        'freshness_checked_at' => 'datetime',
     ];
 
     /**

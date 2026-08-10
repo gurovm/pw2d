@@ -93,7 +93,11 @@ class OfferIngestionTest extends TestCase
             'scraped_price' => 2799.00,
         ]);
 
-        Queue::assertNothingPushed();
+        // No AI evaluation job — a refresh never re-queues AI processing.
+        Queue::assertNotPushed(\App\Jobs\ProcessPendingProduct::class);
+        // A4: a price refresh on an existing offer DOES dispatch the (chunked) tier
+        // recalc for the category — see RecalculateCategoryPriceTiersTest.
+        Queue::assertPushed(\App\Jobs\RecalculateCategoryPriceTiers::class, 1);
     }
 
     /** @test */

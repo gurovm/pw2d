@@ -22,10 +22,15 @@ class ProductOffer extends Model
         'raw_title',
         'image_url',
         'stock_status',
+        'condition',
+        'listing_flags',
+        'health_checked_at',
     ];
 
     protected $casts = [
-        'scraped_price' => 'decimal:2',
+        'scraped_price'     => 'decimal:2',
+        'listing_flags'     => 'array',
+        'health_checked_at' => 'datetime',
     ];
 
     public function product(): BelongsTo

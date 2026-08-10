@@ -43,7 +43,14 @@ class SelectLandingPagePicks
             ->whereNotNull('ai_summary')
             ->with([
                 'featureValues:id,product_id,feature_id,raw_value',
-                'offers:id,product_id,image_url,raw_title',
+                // Perf M2: `store_id` (+ eager `offers.store` below) is required for
+                // `Product::bestOffer`'s commission/priority tiebreak — omitting it left
+                // `$offer->store` resolving to null here, so on a price tie this action
+                // could pick a different "best" offer than AuditLandingPageFreshness
+                // (which already eager-loads `offers.store`), risking flapping
+                // selection_drift/pick_ineligible verdicts.
+                'offers:id,product_id,store_id,scraped_price,image_url,raw_title,listing_flags',
+                'offers.store',
             ])
             ->get()
             // image_url is a computed accessor (local path → best offer → any offer);
@@ -55,6 +62,10 @@ class SelectLandingPagePicks
             // the product's own ai_summary (an earlier AI pass can itself fabricate a
             // condition claim in prose, e.g. "even if renewed" — see builder memory).
             ->reject(fn (Product $p) => self::hasConditionMarker($p))
+            // Spec 029 amendment (2026-08-10): a "High price" buy-box warning on the
+            // BEST offer means today's listing is a bad deal — the product itself is
+            // fine, so it's excluded from pick eligibility only, not ignored outright.
+            ->reject(fn (Product $p) => self::hasHighPriceFlag($p))
             ->values();
 
         if ($products->isEmpty()) {
@@ -210,6 +221,17 @@ class SelectLandingPagePicks
         }
 
         return false;
+    }
+
+    /**
+     * Spec 029 amendment: true if the product's best offer (lowest price, the one
+     * actually shown/linked) carries the `high_price` listing flag.
+     */
+    private static function hasHighPriceFlag(Product $product): bool
+    {
+        $flags = $product->best_offer?->listing_flags ?? [];
+
+        return in_array('high_price', $flags, true);
     }
 
     /**

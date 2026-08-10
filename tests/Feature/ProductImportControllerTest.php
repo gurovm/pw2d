@@ -241,15 +241,171 @@ class ProductImportControllerTest extends TestCase
         $response->assertOk()
             ->assertJson(['success' => true]);
 
-        $this->assertDatabaseHas('products', [
-            'status'               => 'pending_ai',
-            'amazon_reviews_count' => 0,
-        ]);
+        // Spec 029 §A1: a missing reviews_count must store null, never coerce to 0 —
+        // 0 would falsely claim "we checked, there are zero reviews."
+        $product = Product::where('category_id', $this->category->id)->firstOrFail();
+        $this->assertNull($product->amazon_reviews_count);
 
         $this->assertDatabaseHas('product_offers', [
             'url' => 'https://www.amazon.com/dp/B0XYZ99999',
         ]);
 
         Queue::assertPushed(ProcessPendingProduct::class);
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // Spec 029 — listing-health (condition + listing_flags)
+    // ────────────────────────────────────────────────────────────────────────
+
+    /** @test */
+    public function a_negative_condition_flags_the_product_and_skips_ai_dispatch(): void
+    {
+        Queue::fake();
+
+        $response = $this->postJson('/api/product-import', $this->validPayload([
+            'external_id' => 'B0REFURB01',
+            'title'       => 'A Clean-Sounding Title With No Marker',
+            'condition'   => 'refurbished',
+        ]));
+
+        $response->assertOk()->assertJson(['success' => true, 'action' => 'flagged_condition']);
+
+        $this->assertDatabaseHas('products', ['is_ignored' => true]);
+        $this->assertDatabaseHas('product_offers', ['condition' => 'refurbished']);
+        Queue::assertNothingPushed();
+    }
+
+    /** @test */
+    public function high_price_flag_does_not_ignore_the_product(): void
+    {
+        Queue::fake();
+
+        $response = $this->postJson('/api/product-import', $this->validPayload([
+            'external_id'   => 'B0HIGHPRC1',
+            'condition'     => 'new',
+            'listing_flags' => ['high_price'],
+        ]));
+
+        $response->assertOk()->assertJson(['success' => true, 'action' => 'queued_new']);
+
+        $this->assertDatabaseHas('products', ['is_ignored' => false]);
+        $this->assertDatabaseHas('product_offers', ['condition' => 'new']);
+        Queue::assertPushed(ProcessPendingProduct::class);
+    }
+
+    /** @test */
+    public function refresh_updates_image_url_and_leaves_it_untouched_when_omitted(): void
+    {
+        Queue::fake();
+
+        $existing = Product::factory()->create(['category_id' => $this->category->id, 'status' => null]);
+        $store = Store::firstOrCreate(['slug' => 'amazon', 'tenant_id' => $existing->tenant_id], ['name' => 'Amazon']);
+        $offer = ProductOffer::create([
+            'product_id' => $existing->id,
+            'tenant_id'  => $existing->tenant_id,
+            'store_id'   => $store->id,
+            'url'        => 'https://www.amazon.com/dp/B0ABC12345',
+            'raw_title'  => 'Old Name',
+            'image_url'  => 'https://example.com/old.jpg',
+        ]);
+
+        $this->postJson('/api/product-import', $this->validPayload(['image_url' => null]));
+
+        $this->assertSame('https://example.com/old.jpg', $offer->fresh()->image_url);
+    }
+
+    /** @test */
+    public function s2_a_rating_less_refresh_does_not_wipe_a_previously_known_rating(): void
+    {
+        Queue::fake();
+
+        $existing = Product::factory()->create([
+            'category_id'   => $this->category->id,
+            'status'        => null,
+            'amazon_rating' => 4.5,
+        ]);
+        $store = Store::firstOrCreate(['slug' => 'amazon', 'tenant_id' => $existing->tenant_id], ['name' => 'Amazon']);
+        ProductOffer::create([
+            'product_id' => $existing->id,
+            'tenant_id'  => $existing->tenant_id,
+            'store_id'   => $store->id,
+            'url'        => 'https://www.amazon.com/dp/B0ABC12345',
+            'raw_title'  => 'Old Name',
+        ]);
+
+        // Rescan payload omits `rating` entirely — must NOT null out the known 4.5.
+        $payload = $this->validPayload();
+        unset($payload['rating']);
+
+        $this->postJson('/api/product-import', $payload)->assertOk();
+
+        $this->assertEquals(4.5, $existing->fresh()->amazon_rating);
+    }
+
+    /** @test */
+    public function m1_a_reimport_of_an_ignored_product_is_skipped_and_never_un_ignores_it(): void
+    {
+        Queue::fake();
+
+        $existing = Product::factory()->create([
+            'category_id' => $this->category->id,
+            'status'      => null,
+            'is_ignored'  => true, // previously condition-flagged or human-ignored
+        ]);
+        $store = Store::firstOrCreate(['slug' => 'amazon', 'tenant_id' => $existing->tenant_id], ['name' => 'Amazon']);
+        ProductOffer::create([
+            'product_id' => $existing->id,
+            'tenant_id'  => $existing->tenant_id,
+            'store_id'   => $store->id,
+            'url'        => 'https://www.amazon.com/dp/B0ABC12345',
+            'raw_title'  => 'Old Name',
+        ]);
+
+        // A re-import payload with NO explicit condition — Spec 029's non-goal is
+        // exactly this: a re-import/refresh must never automatically un-ignore.
+        $response = $this->postJson('/api/product-import', $this->validPayload());
+
+        $response->assertOk()->assertJson(['success' => true, 'action' => 'skipped_ignored']);
+
+        $this->assertDatabaseHas('products', ['id' => $existing->id, 'is_ignored' => true]);
+        Queue::assertNothingPushed();
+    }
+
+    /** @test */
+    public function perf_h1_a_refresh_with_an_unchanged_price_does_not_dispatch_tier_recalc(): void
+    {
+        Queue::fake();
+
+        $existing = Product::factory()->create(['category_id' => $this->category->id, 'status' => null]);
+        $store = Store::firstOrCreate(['slug' => 'amazon', 'tenant_id' => $existing->tenant_id], ['name' => 'Amazon']);
+        ProductOffer::create([
+            'product_id'    => $existing->id,
+            'tenant_id'     => $existing->tenant_id,
+            'store_id'      => $store->id,
+            'url'           => 'https://www.amazon.com/dp/B0ABC12345',
+            'raw_title'     => 'Old Name',
+            'scraped_price' => 349.99,
+        ]);
+
+        // validPayload()'s default price (349.99) matches what's already stored.
+        $this->postJson('/api/product-import', $this->validPayload())->assertOk();
+
+        Queue::assertNotPushed(\App\Jobs\RecalculateCategoryPriceTiers::class);
+    }
+
+    /** @test */
+    public function invalid_condition_value_returns_422(): void
+    {
+        $this->postJson('/api/product-import', $this->validPayload(['condition' => 'mint']))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['condition']);
+    }
+
+    /** @test */
+    public function unrecognized_listing_flag_returns_422(): void
+    {
+        $this->postJson('/api/product-import', $this->validPayload(['listing_flags' => ['made_up_flag']]))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['listing_flags.0']);
     }
 }

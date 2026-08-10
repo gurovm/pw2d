@@ -313,6 +313,125 @@ class GenerateLandingPageCommandTest extends TestCase
     }
 
     // =========================================================================
+    // Spec 030 §B1/B6 — price snapshot + staleness reset
+    // =========================================================================
+
+    /** @test */
+    public function generation_stamps_est_price_snapshot_on_every_pick(): void
+    {
+        $spy = $this->makeAiSpy();
+        app()->instance(AiService::class, $spy);
+
+        $this->makeLeafCategoryWithEligibleProducts('lp-cmd-snapshot');
+
+        tenancy()->end();
+
+        Artisan::call('pw2d:generate-landing-page', [
+            'tenant'        => 'lp-cmd-tenant',
+            'category-slug' => 'lp-cmd-snapshot',
+        ]);
+
+        tenancy()->initialize($this->tenant);
+        $page = LandingPage::where('slug', 'lp-cmd-snapshot')->first();
+
+        // makeLeafCategoryWithEligibleProducts() doesn't set a scraped_price, so the
+        // snapshot legitimately resolves to null here — the point of this test is that
+        // the KEY is always written (App\Actions\AuditLandingPageFreshness's price_drift
+        // check depends on `array_key_exists`, not merely a truthy value).
+        foreach ($page->picks as $pick) {
+            $this->assertArrayHasKey('est_price_snapshot', $pick);
+        }
+    }
+
+    /** @test */
+    public function generation_stamps_product_name_on_every_pick(): void
+    {
+        $spy = $this->makeAiSpy();
+        app()->instance(AiService::class, $spy);
+
+        $this->makeLeafCategoryWithEligibleProducts('lp-cmd-product-name');
+
+        tenancy()->end();
+
+        Artisan::call('pw2d:generate-landing-page', [
+            'tenant'        => 'lp-cmd-tenant',
+            'category-slug' => 'lp-cmd-product-name',
+        ]);
+
+        tenancy()->initialize($this->tenant);
+        $page = LandingPage::where('slug', 'lp-cmd-product-name')->first();
+
+        // Perf M3: persisted at generation time so LandingPageResource's picks
+        // Repeater never needs a per-render Product lookup.
+        foreach ($page->picks as $pick) {
+            $product = Product::find($pick['product_id']);
+            $this->assertSame($product->name, $pick['product_name']);
+        }
+    }
+
+    /** @test */
+    public function generation_stamps_fresh_stale_reasons_and_freshness_checked_at(): void
+    {
+        $spy = $this->makeAiSpy();
+        app()->instance(AiService::class, $spy);
+
+        $this->makeLeafCategoryWithEligibleProducts('lp-cmd-fresh-stamp');
+
+        tenancy()->end();
+
+        Artisan::call('pw2d:generate-landing-page', [
+            'tenant'        => 'lp-cmd-tenant',
+            'category-slug' => 'lp-cmd-fresh-stamp',
+        ]);
+
+        tenancy()->initialize($this->tenant);
+        $page = LandingPage::where('slug', 'lp-cmd-fresh-stamp')->first();
+
+        $this->assertSame([], $page->stale_reasons);
+        $this->assertNotNull($page->freshness_checked_at);
+    }
+
+    /** @test */
+    public function regenerate_flag_clears_a_previously_stale_pages_staleness(): void
+    {
+        $spy = $this->makeAiSpy();
+        app()->instance(AiService::class, $spy);
+
+        $category = $this->makeLeafCategoryWithEligibleProducts('lp-cmd-clear-stale');
+
+        tenancy()->end();
+
+        Artisan::call('pw2d:generate-landing-page', [
+            'tenant'        => 'lp-cmd-tenant',
+            'category-slug' => 'lp-cmd-clear-stale',
+        ]);
+
+        tenancy()->initialize($this->tenant);
+        $page = LandingPage::where('category_id', $category->id)->first();
+        $page->update([
+            'stale_reasons'        => ['pick_ineligible'],
+            'freshness_checked_at' => now()->subDay(),
+        ]);
+        $staleCheckedAt = $page->fresh()->freshness_checked_at;
+        tenancy()->end();
+
+        Artisan::call('pw2d:generate-landing-page', [
+            'tenant'        => 'lp-cmd-tenant',
+            'category-slug' => 'lp-cmd-clear-stale',
+            '--regenerate'  => true,
+        ]);
+
+        tenancy()->initialize($this->tenant);
+        $regenerated = $page->fresh();
+
+        $this->assertSame([], $regenerated->stale_reasons, 'A regeneration must clear prior staleness');
+        $this->assertTrue(
+            $regenerated->freshness_checked_at->greaterThan($staleCheckedAt),
+            'freshness_checked_at must be re-stamped by a regeneration'
+        );
+    }
+
+    // =========================================================================
     // FAQ exclusion list
     // =========================================================================
 

@@ -353,4 +353,71 @@ class SelectLandingPagePicksTest extends TestCase
         }
         $this->assertCount(6, $pickedIds, 'winner + 5 distinct fillers; the duplicate is skipped entirely');
     }
+
+    // =========================================================================
+    // High-price exclusion (Spec 029 amendment, 2026-08-10)
+    // =========================================================================
+
+    /** @test */
+    public function it_excludes_a_product_whose_best_offer_is_flagged_high_price_and_falls_back_to_next_best(): void
+    {
+        $category = Category::factory()->create(['slug' => 'lp-picks-high-price']);
+        $feature  = Feature::factory()->create(['category_id' => $category->id, 'is_higher_better' => true, 'unit' => null]);
+
+        // Would otherwise win "Best Overall" by a wide margin, but its only (best) offer
+        // carries the high_price flag — must be excluded from pick eligibility entirely.
+        $flagged = $this->makeEligibleProduct($category, 'lp-picks-high-price-flagged');
+        $this->setScore($flagged, $feature, 99);
+        ProductOffer::where('product_id', $flagged->id)->update([
+            'scraped_price' => 50,
+            'listing_flags' => ['high_price'],
+        ]);
+
+        $eligibleIds = [];
+        foreach (range(1, 5) as $i) {
+            $p = $this->makeEligibleProduct($category, "lp-picks-high-price-clean-{$i}");
+            $this->setScore($p, $feature, 50 + $i);
+            $eligibleIds[] = $p->id;
+        }
+
+        $picks     = (new SelectLandingPagePicks())->execute($category);
+        $pickedIds = collect($picks)->pluck('product_id')->all();
+
+        $this->assertNotContains($flagged->id, $pickedIds, 'A product whose best offer is high_price-flagged must be excluded');
+        $this->assertCount(5, $pickedIds, 'The 5 clean products fill the picks instead');
+        sort($eligibleIds);
+        $sortedPicked = $pickedIds;
+        sort($sortedPicked);
+        $this->assertSame($eligibleIds, $sortedPicked);
+    }
+
+    /** @test */
+    public function a_high_price_flag_on_a_non_best_offer_does_not_exclude_the_product(): void
+    {
+        $category = Category::factory()->create(['slug' => 'lp-picks-high-price-non-best']);
+        $feature  = Feature::factory()->create(['category_id' => $category->id, 'is_higher_better' => true, 'unit' => null]);
+
+        $product = $this->makeEligibleProduct($category, 'lp-picks-high-price-non-best-winner');
+        $this->setScore($product, $feature, 99);
+        // Best offer (lowest price, $30) is clean; a pricier second offer is flagged.
+        ProductOffer::where('product_id', $product->id)->update(['scraped_price' => 30]);
+        ProductOffer::create([
+            'product_id'    => $product->id,
+            'store_id'      => null,
+            'url'           => 'https://example.com/lp-picks-high-price-non-best-winner-alt',
+            'raw_title'     => $product->name,
+            'scraped_price' => 60,
+            'listing_flags' => ['high_price'],
+        ]);
+
+        foreach (range(1, 4) as $i) {
+            $p = $this->makeEligibleProduct($category, "lp-picks-high-price-non-best-{$i}");
+            $this->setScore($p, $feature, 10 + $i);
+        }
+
+        $picks     = (new SelectLandingPagePicks())->execute($category);
+        $pickedIds = collect($picks)->pluck('product_id')->all();
+
+        $this->assertContains($product->id, $pickedIds, 'Only the BEST offer\'s flags matter — a flagged non-best offer must not exclude the product');
+    }
 }

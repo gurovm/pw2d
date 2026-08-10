@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\Category;
 use App\Models\Product;
+use App\Services\PriceTierRecalculator;
 use Illuminate\Console\Command;
 
 class RecalculatePriceTiers extends Command
@@ -13,12 +14,16 @@ class RecalculatePriceTiers extends Command
 
     protected $description = 'Recalculate price_tier for all products using each category\'s budget_max / midrange_max thresholds.';
 
+    public function __construct(private readonly PriceTierRecalculator $recalculator)
+    {
+        parent::__construct();
+    }
+
     public function handle(): int
     {
         $categoryId = $this->option('category');
 
-        $query = Category::with(['products.offers'])
-            ->whereNotNull('budget_max')
+        $query = Category::whereNotNull('budget_max')
             ->whereNotNull('midrange_max');
 
         if ($categoryId) {
@@ -37,32 +42,17 @@ class RecalculatePriceTiers extends Command
         $skipped = 0;
 
         foreach ($categories as $category) {
-            $rows = $category->products->filter(fn (Product $p) => $p->best_price !== null);
+            $this->line("<fg=cyan>{$category->name}</> (budget≤\${$category->budget_max} / mid≤\${$category->midrange_max})");
 
-            if ($rows->isEmpty()) {
-                continue;
-            }
-
-            $this->line("<fg=cyan>{$category->name}</> ({$rows->count()} products, budget≤\${$category->budget_max} / mid≤\${$category->midrange_max})");
-
-            foreach ($rows as $product) {
-                $correct = $category->priceTierFor((float) $product->best_price);
-
-                if ($correct === null) {
-                    $skipped++;
-                    continue;
+            $result = $this->recalculator->recalculateForCategory(
+                $category,
+                function (Product $product, ?int $old, int $new) {
+                    $this->line("  <fg=yellow>Updated</> {$product->name}  {$old}→{$new}  (\${$product->best_price})");
                 }
+            );
 
-                if ($correct === $product->price_tier) {
-                    continue;
-                }
-
-                $old = $product->price_tier;
-                $product->update(['price_tier' => $correct]);
-                $fixed++;
-
-                $this->line("  <fg=yellow>Updated</> {$product->name}  {$old}→{$correct}  (\${$product->best_price})");
-            }
+            $fixed   += $result['fixed'];
+            $skipped += $result['skipped'];
         }
 
         if (!$categoryId) {

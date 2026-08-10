@@ -7,10 +7,12 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ProductImportRequest;
 use App\Jobs\ProcessPendingProduct;
+use App\Jobs\RecalculateCategoryPriceTiers;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductOffer;
 use App\Models\Store;
+use App\Services\ListingHealthService;
 use App\Support\ProductConditionGuard;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -18,6 +20,8 @@ use Illuminate\Support\Str;
 
 class ProductImportController extends Controller
 {
+    public function __construct(private readonly ListingHealthService $listingHealth) {}
+
     public function categories(): JsonResponse
     {
         $categories = Category::withCount('features')
@@ -74,16 +78,6 @@ class ProductImportController extends Controller
         $asin = $validated['external_id'];
         $amazonUrl = "https://www.amazon.com/dp/{$asin}";
 
-        // Server-side condition guard (Spec 027 Addendum A §2b) — the extension's
-        // client-side title filter is version-dependent and must not be trusted alone.
-        if (ProductConditionGuard::matchesTitle($validated['title'])) {
-            return response()->json([
-                'success' => true,
-                'action'  => 'skipped_condition',
-                'message' => 'Listing title indicates a renewed/refurbished/open-box/used condition — not imported.',
-            ]);
-        }
-
         $store = Store::firstOrCreate(
             ['slug' => 'amazon', 'tenant_id' => $category->tenant_id],
             ['name' => 'Amazon']
@@ -94,28 +88,79 @@ class ProductImportController extends Controller
             ->whereHas('product', fn ($q) => $q->where('category_id', $category->id))
             ->first();
 
+        $condition    = $validated['condition'] ?? null;
+        $listingFlags = $validated['listing_flags'] ?? [];
+
         if ($existingOffer) {
             $product = $existingOffer->product;
 
-            // Update offer
+            // Security M1: a re-import/re-scan of an already-ignored product (condition
+            // flag or a human Filament decision) must NEVER silently un-ignore it — Spec
+            // 029's explicit non-goal: "reversal stays a human decision in Filament."
+            if ($product->is_ignored) {
+                return response()->json([
+                    'success' => true,
+                    'action'  => 'skipped_ignored',
+                    'message' => 'Product is ignored (condition/human decision) — un-ignore in Filament first.',
+                    'product' => ['id' => $product->id],
+                ]);
+            }
+
+            // Reviewer B2: a title marker is condition EVIDENCE for a listing we
+            // already track — a rescan of an existing offer must heal (raw_title +
+            // flag), never be silently skipped like a brand-new listing would be
+            // (see the guard in the `else` branch below). Coerce only when the
+            // payload didn't already supply an explicit `condition`.
+            $effectiveCondition = $condition ?? ProductConditionGuard::titleMarker($validated['title']);
+
+            // A1 (F38): image_url/stock_status only overwrite when the payload actually
+            // supplies a non-null value — an omitted field must never blow away a
+            // previously known-good one.
             $existingOffer->update([
                 'scraped_price' => $validated['price'] ?? null,
                 'raw_title'     => mb_substr($validated['title'], 0, 500),
+                'image_url'     => $validated['image_url'] ?? $existingOffer->image_url,
+                'stock_status'  => $validated['stock_status'] ?? $existingOffer->stock_status,
             ]);
 
             // Update product
-            $product->update([
-                'name'                 => mb_substr($validated['title'], 0, 255),
-                'slug'                 => Str::slug(Str::words($validated['title'], 8, '')) . '-' . strtolower($asin),
-                'amazon_rating'        => $validated['rating'] ?? null,
-                'amazon_reviews_count' => $validated['reviews_count'] ?? 0,
-                'price_tier'           => $category->priceTierFor($validated['price'] ?? null),
-                'status'               => 'pending_ai',
-                'is_ignored'           => false,
-            ]);
+            $productUpdates = [
+                'name'       => mb_substr($validated['title'], 0, 255),
+                'slug'       => Str::slug(Str::words($validated['title'], 8, '')) . '-' . strtolower($asin),
+                'price_tier' => $category->priceTierFor($validated['price'] ?? null),
+                'status'     => 'pending_ai',
+            ];
+            // S2: only refresh amazon_rating when the scraper actually reported one AND
+            // we don't already know it — never wipe a known rating with a rating-less
+            // rescan (mirrors OfferIngestionService's guard).
+            if (!empty($validated['rating']) && empty($product->amazon_rating)) {
+                $productUpdates['amazon_rating'] = $validated['rating'];
+            }
+            // A1: reviews_count refreshes to the latest reported value — never coerce
+            // a missing report into 0 (leaves the stored value untouched).
+            if (array_key_exists('reviews_count', $validated) && $validated['reviews_count'] !== null) {
+                $productUpdates['amazon_reviews_count'] = $validated['reviews_count'];
+            }
+            $product->update($productUpdates);
 
             $wasNew = false;
         } else {
+            // Server-side condition guard (Spec 027 Addendum A §2b) — the extension's
+            // client-side title filter is version-dependent and must not be trusted
+            // alone. Reviewer B2: reached ONLY for a genuinely NEW product (no existing
+            // offer above) — never spend a create on a listing we're about to discard.
+            // An explicit, DOM-verified `condition` from the payload overrides this
+            // text heuristic.
+            if ($condition === null && ProductConditionGuard::matchesTitle($validated['title'])) {
+                return response()->json([
+                    'success' => true,
+                    'action'  => 'skipped_condition',
+                    'message' => 'Listing title indicates a renewed/refurbished/open-box/used condition — not imported.',
+                ]);
+            }
+
+            $effectiveCondition = $condition;
+
             // Create new product
             $product = Product::create([
                 'tenant_id'            => $category->tenant_id,
@@ -123,30 +168,46 @@ class ProductImportController extends Controller
                 'name'                 => mb_substr($validated['title'], 0, 255),
                 'slug'                 => Str::slug(Str::words($validated['title'], 8, '')) . '-' . strtolower($asin),
                 'amazon_rating'        => $validated['rating'] ?? null,
-                'amazon_reviews_count' => $validated['reviews_count'] ?? 0,
+                // A1: never coerce a missing review count to 0.
+                'amazon_reviews_count' => $validated['reviews_count'] ?? null,
                 'price_tier'           => $category->priceTierFor($validated['price'] ?? null),
                 'status'               => 'pending_ai',
                 'is_ignored'           => false,
             ]);
 
-            // Create Amazon offer
-            ProductOffer::create([
-                'tenant_id'     => $category->tenant_id,
-                'product_id'    => $product->id,
-                'store_id'      => $store->id,
-                'url'           => $amazonUrl,
-                'scraped_price' => $validated['price'] ?? null,
-                'raw_title'     => mb_substr($validated['title'], 0, 500),
-            ]);
+            // Create Amazon offer — Q1: updateOrCreate keyed on (product_id, store_id).
+            $existingOffer = ProductOffer::updateOrCreate(
+                ['product_id' => $product->id, 'store_id' => $store->id],
+                [
+                    'tenant_id'     => $category->tenant_id,
+                    'url'           => $amazonUrl,
+                    'scraped_price' => $validated['price'] ?? null,
+                    'raw_title'     => mb_substr($validated['title'], 0, 500),
+                    'image_url'     => $validated['image_url'] ?? null,
+                    'stock_status'  => $validated['stock_status'] ?? null,
+                ]
+            );
 
             $wasNew = true;
         }
 
-        ProcessPendingProduct::dispatch($product->id, $category->id);
+        $listingOverride = $this->listingHealth->apply($existingOffer, $product, $effectiveCondition, $listingFlags);
+
+        // Don't burn an AI evaluation on a listing we just flagged/ignored for condition.
+        if ($listingOverride !== 'flagged_condition') {
+            ProcessPendingProduct::dispatch($product->id, $category->id);
+        }
+
+        // Perf H1: only queue a (chunked, category-wide) tier recalc when the price
+        // actually moved — a rescan/re-import of an unchanged listing must not queue
+        // a redundant job.
+        if (!$wasNew && $existingOffer->wasChanged('scraped_price')) {
+            RecalculateCategoryPriceTiers::dispatch($category->tenant_id, $category->id);
+        }
 
         return response()->json([
             'success' => true,
-            'action'  => $wasNew ? 'queued_new' : 'queued_rescan',
+            'action'  => $listingOverride ?? ($wasNew ? 'queued_new' : 'queued_rescan'),
             'product' => ['id' => $product->id],
         ]);
     }

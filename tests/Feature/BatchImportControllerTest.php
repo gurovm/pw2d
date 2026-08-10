@@ -313,6 +313,134 @@ class BatchImportControllerTest extends TestCase
     }
 
     // ────────────────────────────────────────────────────────────────────────
+    // Spec 029 — listing-health (condition + listing_flags) — require MySQL
+    // ────────────────────────────────────────────────────────────────────────
+
+    /** @test */
+    public function a_negative_condition_on_a_new_product_flags_it_without_dispatching_ai(): void
+    {
+        $this->requireMysql();
+        Queue::fake();
+
+        $payload = $this->validPayload([
+            'products' => [
+                [
+                    'asin'      => 'B0RENEWED2',
+                    'title'     => 'A Clean-Sounding Title With No Marker',
+                    'price'     => 149.99,
+                    'condition' => 'renewed',
+                ],
+            ],
+        ]);
+
+        $response = $this->postJson('/api/products/batch-import', $payload);
+
+        $response->assertOk()->assertJson(['created' => 1, 'flagged' => 1]);
+
+        $this->assertDatabaseHas('products', ['is_ignored' => true]);
+        $this->assertDatabaseHas('product_offers', ['condition' => 'renewed']);
+        Queue::assertNothingPushed();
+    }
+
+    /** @test */
+    public function high_price_flag_on_a_refreshed_offer_does_not_ignore_the_product(): void
+    {
+        $this->requireMysql();
+        Queue::fake();
+
+        $store = Store::create(['tenant_id' => $this->category->tenant_id, 'slug' => 'amazon', 'name' => 'Amazon']);
+        $existingProduct = Product::factory()->create(['category_id' => $this->category->id, 'status' => null, 'is_ignored' => false]);
+        ProductOffer::create([
+            'tenant_id'  => $this->category->tenant_id,
+            'product_id' => $existingProduct->id,
+            'store_id'   => $store->id,
+            'url'        => 'https://www.amazon.com/dp/B0ABC12345',
+            'raw_title'  => 'Old Product Name',
+        ]);
+
+        $payload = $this->validPayload([
+            'products' => [
+                [
+                    'asin'          => 'B0ABC12345',
+                    'title'         => 'Old Product Name',
+                    'price'         => 349.99,
+                    'condition'     => 'new',
+                    'listing_flags' => ['high_price'],
+                ],
+            ],
+        ]);
+
+        $this->postJson('/api/products/batch-import', $payload)->assertOk();
+
+        $this->assertDatabaseHas('products', ['id' => $existingProduct->id, 'is_ignored' => false]);
+        $this->assertDatabaseHas('product_offers', [
+            'product_id'    => $existingProduct->id,
+            'condition'     => 'new',
+            'listing_flags' => json_encode(['high_price']),
+        ]);
+    }
+
+    /** @test */
+    public function s2_a_rating_less_refresh_does_not_wipe_a_previously_known_rating(): void
+    {
+        $this->requireMysql();
+        Queue::fake();
+
+        $store = Store::create(['tenant_id' => $this->category->tenant_id, 'slug' => 'amazon', 'name' => 'Amazon']);
+        $existingProduct = Product::factory()->create([
+            'category_id'   => $this->category->id,
+            'status'        => null,
+            'amazon_rating' => 4.5,
+        ]);
+        ProductOffer::create([
+            'tenant_id'  => $this->category->tenant_id,
+            'product_id' => $existingProduct->id,
+            'store_id'   => $store->id,
+            'url'        => 'https://www.amazon.com/dp/B0ABC12345',
+            'raw_title'  => 'Old Product Name',
+        ]);
+
+        // Rescan payload omits `rating` entirely — must NOT null out the known 4.5.
+        $payload = $this->validPayload([
+            'products' => [
+                ['asin' => 'B0ABC12345', 'title' => 'Old Product Name', 'price' => 349.99],
+            ],
+        ]);
+
+        $this->postJson('/api/products/batch-import', $payload)->assertOk();
+
+        $this->assertEquals(4.5, $existingProduct->fresh()->amazon_rating);
+    }
+
+    /** @test */
+    public function invalid_condition_value_returns_422(): void
+    {
+        $payload = $this->validPayload([
+            'products' => [
+                ['asin' => 'B0BADCOND1', 'title' => 'Some Product', 'price' => 99.99, 'condition' => 'mint'],
+            ],
+        ]);
+
+        $this->postJson('/api/products/batch-import', $payload)
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['products.0.condition']);
+    }
+
+    /** @test */
+    public function unrecognized_listing_flag_returns_422(): void
+    {
+        $payload = $this->validPayload([
+            'products' => [
+                ['asin' => 'B0BADFLAG1', 'title' => 'Some Product', 'price' => 99.99, 'listing_flags' => ['made_up_flag']],
+            ],
+        ]);
+
+        $this->postJson('/api/products/batch-import', $payload)
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['products.0.listing_flags.0']);
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
     // Validation failures — these never reach the SUBSTRING_INDEX query
     // ────────────────────────────────────────────────────────────────────────
 

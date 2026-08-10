@@ -13,6 +13,8 @@ use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Cache;
 
 /**
  * Minimal v1 admin for "Best X" landing pages (Spec 027 §8).
@@ -37,6 +39,44 @@ class LandingPageResource extends Resource
     protected static ?string $navigationLabel = 'Best X Pages';
     protected static ?string $navigationGroup = 'Product Management';
     protected static ?int $navigationSort = 7;
+
+    /**
+     * Spec 030 §B5 — count of stale PUBLISHED pages for the current tenant.
+     * Cached briefly (matches ProblemProducts::getNavigationBadge()'s 120s TTL)
+     * and tenant-scoped by key, since LandingPage::query() itself is already
+     * scoped to the ambient tenant (BelongsToTenant).
+     */
+    public static function getNavigationBadge(): ?string
+    {
+        // Security L1: without an initialized tenant, `staleQuery()` runs UNSCOPED
+        // (stancl's BelongsToTenant global scope is inactive) and the cache key would
+        // degenerate to a shared `...badge:` entry across every central-context
+        // request — an all-tenants count leak. Skip the badge entirely instead.
+        if (tenant('id') === null) {
+            return null;
+        }
+
+        $count = Cache::remember(
+            'landing-pages-stale-badge:' . tenant('id'),
+            120,
+            fn () => static::staleQuery()->count(),
+        );
+
+        return $count > 0 ? (string) $count : null;
+    }
+
+    public static function getNavigationBadgeColor(): ?string
+    {
+        return 'danger';
+    }
+
+    private static function staleQuery(): Builder
+    {
+        return LandingPage::query()
+            ->where('status', 'published')
+            ->whereNotNull('stale_reasons')
+            ->where('stale_reasons', '!=', '[]');
+    }
 
     public static function form(Form $form): Form
     {
@@ -84,14 +124,23 @@ class LandingPageResource extends Resource
                         ->label('Ranked Picks')
                         ->helperText('Picks (product + role) are chosen algorithmically and are read-only here — only the prose is editable. Re-run the command with --regenerate to change WHICH products are picked.')
                         ->schema([
+                            // Security M3 / Reviewer B3: `disabled()` alone is client-
+                            // tamperable via a crafted Livewire update payload — these
+                            // fields are shown for admin context only and are NEVER
+                            // trusted on save. `dehydrated(false)` means they don't even
+                            // reach $data; identity fields (product_id/role) AND
+                            // est_price_snapshot are then force-restored from the
+                            // STORED record in EditLandingPage::mutateFormDataBeforeSave(),
+                            // so a tampered payload can never change WHICH product a pick
+                            // points at, its role, or wipe its price-drift baseline.
                             Forms\Components\TextInput::make('product_id')
                                 ->label('Product ID')
                                 ->numeric()
                                 ->disabled()
-                                ->dehydrated(),
+                                ->dehydrated(false),
                             Forms\Components\TextInput::make('role')
                                 ->disabled()
-                                ->dehydrated(),
+                                ->dehydrated(false),
                             Forms\Components\TextInput::make('headline')
                                 ->required()
                                 ->maxLength(150)
@@ -102,9 +151,14 @@ class LandingPageResource extends Resource
                         ])
                         ->columns(2)
                         ->itemLabel(function (array $state): ?string {
-                            $productName = !empty($state['product_id'])
-                                ? Product::withoutGlobalScopes()->find($state['product_id'])?->name
-                                : null;
+                            // Perf M3 / Security M3: `product_name` is persisted into the
+                            // picks JSON at generation time (GenerateLandingPage) — zero
+                            // queries per render. Falls back to a TENANT-SCOPED lookup
+                            // (never withoutGlobalScopes(), which could disclose another
+                            // tenant's product name) only for pre-existing pages
+                            // generated before this field existed.
+                            $productName = $state['product_name']
+                                ?? (!empty($state['product_id']) ? Product::find($state['product_id'])?->name : null);
 
                             return trim(($state['role'] ?? '?') . ' — ' . ($productName ?? 'product #' . ($state['product_id'] ?? '?')));
                         })
@@ -155,15 +209,37 @@ class LandingPageResource extends Resource
                     ->badge()
                     ->color(fn (string $state) => $state === 'published' ? 'success' : 'gray')
                     ->sortable(),
+                Tables\Columns\TextColumn::make('freshness')
+                    ->label('Freshness')
+                    ->badge()
+                    ->getStateUsing(fn (LandingPage $record) => empty($record->stale_reasons) ? 'FRESH' : 'STALE')
+                    ->color(fn (LandingPage $record) => empty($record->stale_reasons) ? 'success' : 'danger')
+                    ->description(fn (LandingPage $record) => empty($record->stale_reasons) ? null : implode(', ', $record->stale_reasons))
+                    ->tooltip(fn (LandingPage $record) => empty($record->stale_reasons)
+                        ? 'No staleness reasons — picks, prices, and render count all match.'
+                        : implode(', ', $record->stale_reasons)),
                 Tables\Columns\TextColumn::make('generated_at')
                     ->label('Generated')
                     ->dateTime()
                     ->sortable()
                     ->placeholder('Never'),
             ])
+            // Spec 030 §B5: stale + published pages need eyes on them first.
+            ->defaultSort(fn (Builder $query) => $query
+                ->orderByRaw("CASE WHEN status = 'published' AND stale_reasons IS NOT NULL AND stale_reasons != '[]' THEN 0 ELSE 1 END")
+                ->orderBy('status', 'desc'))
             ->filters([
                 Tables\Filters\SelectFilter::make('status')
                     ->options(['draft' => 'Draft', 'published' => 'Published']),
+                Tables\Filters\TernaryFilter::make('stale')
+                    ->label('Freshness')
+                    ->placeholder('All')
+                    ->trueLabel('Stale only')
+                    ->falseLabel('Fresh only')
+                    ->queries(
+                        true: fn (Builder $query) => $query->whereNotNull('stale_reasons')->where('stale_reasons', '!=', '[]'),
+                        false: fn (Builder $query) => $query->where(fn (Builder $q) => $q->whereNull('stale_reasons')->orWhere('stale_reasons', '[]')),
+                    ),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),

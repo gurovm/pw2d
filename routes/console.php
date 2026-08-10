@@ -16,3 +16,13 @@ Schedule::command('pw2d:seo:pull')
     ->dailyAt('03:00')
     ->withoutOverlapping()
     ->runInBackground();
+
+// Landing-page freshness audit (Spec 030) — nightly, slotted after the SEO
+// pull. Catches drift no single event announces (price moves, selection
+// changes); the instant observer/service-level path handles ignore-flip,
+// detach, delete, and high_price flags as they happen. Non-zero exit when a
+// PUBLISHED page is stale — same "check the exit code" ops habit as pw2d:seo:status.
+Schedule::command('pw2d:landing-pages:audit')
+    ->dailyAt('03:30')
+    ->withoutOverlapping()
+    ->runInBackground();

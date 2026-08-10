@@ -5,10 +5,12 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\BatchImportRequest;
 use App\Jobs\ProcessPendingProduct;
+use App\Jobs\RecalculateCategoryPriceTiers;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductOffer;
 use App\Models\Store;
+use App\Services\ListingHealthService;
 use App\Support\ProductConditionGuard;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -16,6 +18,8 @@ use Illuminate\Support\Str;
 
 class BatchImportController extends Controller
 {
+    public function __construct(private readonly ListingHealthService $listingHealth) {}
+
     public function import(BatchImportRequest $request)
     {
         $validated = $request->validated();
@@ -53,19 +57,16 @@ class BatchImportController extends Controller
             }
         }
 
-        $created   = 0;
-        $refreshed = 0;
-        $skipped   = 0;
-        $now       = now();
+        $created      = 0;
+        $refreshed    = 0;
+        $skipped      = 0;
+        $flagged      = 0;
+        $priceUpdated = false;
 
         foreach ($validated['products'] as $p) {
             try {
-                // Server-side condition guard (Spec 027 Addendum A §2b) — the extension's
-                // client-side title filter is version-dependent and must not be trusted alone.
-                if (ProductConditionGuard::matchesTitle($p['title'])) {
-                    $skipped++;
-                    continue;
-                }
+                $condition    = $p['condition'] ?? null;
+                $listingFlags = $p['listing_flags'] ?? [];
 
                 $existing = $existingMap->get($p['asin']);
 
@@ -76,22 +77,67 @@ class BatchImportController extends Controller
                         continue;
                     }
 
-                    ProductOffer::where('product_id', $existing->id)
+                    // Reviewer B2: a title marker is condition EVIDENCE for a listing
+                    // we already track — a rescan of an existing offer must heal (raw_
+                    // title + flag), never be silently skipped like a brand-new listing
+                    // would be (see the guard in the `else` branch below). Coerce only
+                    // when the payload didn't already supply an explicit `condition`.
+                    $effectiveCondition = $condition ?? ProductConditionGuard::titleMarker($p['title']);
+
+                    // A1 (F38): fetch the offer instance so image_url/stock_status can
+                    // fall back to their previous value instead of being wiped to null.
+                    $offer = ProductOffer::where('product_id', $existing->id)
                         ->where('store_id', $store->id)
-                        ->update([
+                        ->first();
+
+                    if ($offer) {
+                        // L7: no 'updated_at' key here — it's not fillable, so mass
+                        // assignment silently drops it and Eloquent touches it anyway.
+                        $offer->update([
                             'scraped_price' => $p['price'],
                             'raw_title'     => mb_substr($p['title'], 0, 500),
-                            'updated_at'    => $now,
+                            'image_url'     => $p['image_url'] ?? $offer->image_url,
+                            'stock_status'  => $p['stock_status'] ?? $offer->stock_status,
                         ]);
+                    }
 
-                    $existing->update([
-                        'amazon_rating'        => $p['rating'] ?? null,
-                        'amazon_reviews_count' => $p['reviews_count'] ?? 0,
-                        'price_tier'           => $category->priceTierFor($p['price']),
-                    ]);
+                    $productUpdates = [
+                        'price_tier' => $category->priceTierFor($p['price']),
+                    ];
+                    // S2: only refresh amazon_rating when the scraper actually reported
+                    // one AND we don't already know it — never wipe a known rating with
+                    // a rating-less rescan (mirrors OfferIngestionService's guard).
+                    if (!empty($p['rating']) && empty($existing->amazon_rating)) {
+                        $productUpdates['amazon_rating'] = $p['rating'];
+                    }
+                    // A1: reviews_count refreshes to the latest reported value — never
+                    // coerce a missing report into 0 (leaves the stored value untouched).
+                    if (array_key_exists('reviews_count', $p) && $p['reviews_count'] !== null) {
+                        $productUpdates['amazon_reviews_count'] = $p['reviews_count'];
+                    }
+                    $existing->update($productUpdates);
 
+                    if ($offer) {
+                        $override = $this->listingHealth->apply($offer, $existing, $effectiveCondition, $listingFlags);
+                        if ($override === 'flagged_condition') {
+                            $flagged++;
+                        }
+                    }
+
+                    $priceUpdated = true;
                     $refreshed++;
                 } else {
+                    // Server-side condition guard (Spec 027 Addendum A §2b) — the
+                    // extension's client-side title filter is version-dependent and
+                    // must not be trusted alone. Reviewer B2: reached ONLY for a
+                    // genuinely NEW product (no existing offer above) — never spend a
+                    // create on a listing we're about to discard. An explicit, DOM-
+                    // verified `condition` from the payload overrides this heuristic.
+                    if ($condition === null && ProductConditionGuard::matchesTitle($p['title'])) {
+                        $skipped++;
+                        continue;
+                    }
+
                     $price = $p['price'] ?? null;
                     if ($price !== null && $price > 0) {
                         $budgetMax = $category->budget_max ?? 50;
@@ -106,23 +152,33 @@ class BatchImportController extends Controller
                         'name'                 => mb_substr($p['title'], 0, 255),
                         'slug'                 => Str::slug(Str::words($p['title'], 8, '')) . '-' . strtolower($p['asin']),
                         'amazon_rating'        => $p['rating'] ?? null,
-                        'amazon_reviews_count' => $p['reviews_count'] ?? 0,
+                        // A1: never coerce a missing review count to 0.
+                        'amazon_reviews_count' => $p['reviews_count'] ?? null,
                         'price_tier'           => $category->priceTierFor($p['price'] ?? null),
                         'status'               => 'pending_ai',
                         'is_ignored'           => false,
                     ]);
 
-                    ProductOffer::create([
-                        'tenant_id'     => $category->tenant_id,
-                        'product_id'    => $product->id,
-                        'store_id'      => $store->id,
-                        'url'           => "https://www.amazon.com/dp/{$p['asin']}",
-                        'scraped_price' => $p['price'] ?? null,
-                        'raw_title'     => mb_substr($p['title'], 0, 500),
-                        'image_url'     => $p['image_url'] ?? null,
-                    ]);
+                    // Q1: updateOrCreate (not raw create()) keyed on (product_id, store_id).
+                    $offer = ProductOffer::updateOrCreate(
+                        ['product_id' => $product->id, 'store_id' => $store->id],
+                        [
+                            'tenant_id'     => $category->tenant_id,
+                            'url'           => "https://www.amazon.com/dp/{$p['asin']}",
+                            'scraped_price' => $p['price'] ?? null,
+                            'raw_title'     => mb_substr($p['title'], 0, 500),
+                            'image_url'     => $p['image_url'] ?? null,
+                            'stock_status'  => $p['stock_status'] ?? null,
+                        ]
+                    );
 
-                    ProcessPendingProduct::dispatch($product->id, $category->id);
+                    $override = $this->listingHealth->apply($offer, $product, $condition, $listingFlags);
+                    if ($override === 'flagged_condition') {
+                        $flagged++;
+                    } else {
+                        ProcessPendingProduct::dispatch($product->id, $category->id);
+                    }
+
                     $created++;
                 }
             } catch (\Exception $e) {
@@ -133,14 +189,21 @@ class BatchImportController extends Controller
             }
         }
 
-        Log::info("BatchImport: {$created} created, {$refreshed} refreshed, {$skipped} skipped for category {$category->id}");
+        // A4: dispatch tier recalc once per request (not once per offer) when at least
+        // one existing offer's price was refreshed.
+        if ($priceUpdated) {
+            RecalculateCategoryPriceTiers::dispatch($category->tenant_id, $category->id);
+        }
+
+        Log::info("BatchImport: {$created} created, {$refreshed} refreshed, {$skipped} skipped, {$flagged} flagged for category {$category->id}");
 
         return response()->json([
             'success'   => true,
             'created'   => $created,
             'refreshed' => $refreshed,
             'skipped'   => $skipped,
-            'message'   => "Queued {$created} new product(s) for AI processing. Refreshed data for {$refreshed} existing product(s). Skipped {$skipped} condition-marked listing(s).",
+            'flagged'   => $flagged,
+            'message'   => "Queued {$created} new product(s) for AI processing. Refreshed data for {$refreshed} existing product(s). Skipped {$skipped} condition-marked listing(s). Flagged {$flagged} listing(s) for condition.",
         ]);
     }
 }

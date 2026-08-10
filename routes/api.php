@@ -38,4 +38,5 @@ Route::middleware([
     'throttle:120,1',
 ])->group(function () {
     Route::post('/extension/ingest-offer', [OfferIngestionController::class, 'ingest']);
+    Route::get('/extension/rescan-list', [OfferIngestionController::class, 'rescanList']);
 });
