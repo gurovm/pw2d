@@ -58,6 +58,37 @@
 
 **B4. SERP batch mode:** keep sending the untouched raw title; pass `condition` when the SERP title itself contains a marker.
 
+## Phase B QA (owner)
+
+Manual checklist — there is no JS test harness; `detectListingHealth()`, `conditionMarkerFromText()`
+and `extractReviewsCount()` are pure functions of a Document/element so they can get fixture tests later.
+
+1. **Load unpacked extension** (`chrome://extensions` → Developer mode → Load unpacked →
+   `chrome_extension/`). Confirm version shows **1.1** and no manifest errors.
+2. **Regression — batch import still works:** open an Amazon SERP → Scan Page for Products →
+   Start Batch Import on a test category. Confirm created/refreshed counts and no console errors
+   in the popup or service worker.
+3. **Regression — single import still works** on one Amazon product page and one non-Amazon
+   (Clive/SCG/WLL) product page.
+4. **Rescan a small category:** select **gooseneck-kettles** (37 products) → Rescan Selected
+   Category. Verify: progress counter advances, ~3–5s between page loads, one background worker
+   tab is reused, Pause/Resume works, closing and reopening the popup restores the running state,
+   and the final summary shows `updated / flagged / skipped / errors`.
+5. **CAPTCHA path:** if Amazon serves a robot check mid-run, the run must auto-pause with
+   "solve the captcha in the tab" and Resume must retry the same offer.
+6. **Filament verification:** after the rescan, confirm in Filament that (a) known renewed/
+   refurbished listings show `condition` set and product `is_ignored = true`, (b) any buy-box
+   "High price" listing carries `listing_flags = ["high_price"]` on the OFFER only (product still
+   visible), (c) every rescanned offer has a fresh `health_checked_at` stamp, and (d) clean
+   listings show `condition = new`, `listing_flags = []`.
+7. **reviews_count spot-check:** pick 3 of the 88 known zero-reviews products, open their Amazon
+   pages, run a single import (or rescan their category), and confirm `amazon_reviews_count` now
+   matches the on-page ratings count — or stays untouched (null sent) when the page truly shows
+   none. (Empirical verification of the new selectors is an owner step — the builder cannot load
+   Amazon pages.)
+8. **Old-server degradation:** point the extension at an environment without Phase A and press
+   Rescan — expect the clear error "This server does not support rescan yet", no crash.
+
 ## Phase C — Operation (owner)
 
 1. Deploy Phase A (safe before extension ships — new fields optional).
