@@ -489,7 +489,7 @@ class OfferIngestionServiceTest extends TestCase
     }
 
     /** @test */
-    public function s4_a_clean_report_of_unknown_condition_is_stored_as_unknown_not_coerced_to_new(): void
+    public function b3_an_unknown_report_is_stamp_only_stores_unknown_and_touches_nothing_else(): void
     {
         Queue::fake();
 
@@ -504,16 +504,92 @@ class OfferIngestionServiceTest extends TestCase
             'raw_title'  => 'Old Title',
         ]);
 
-        app(OfferIngestionService::class)->processIncomingOffer($this->basePayload([
+        $result = app(OfferIngestionService::class)->processIncomingOffer($this->basePayload([
             'category_id'   => $category->id,
             'condition'     => 'unknown',
             'listing_flags' => [],
         ]));
 
+        $this->assertSame('refreshed', $result['action'], 'unknown must never override the base action');
+
         $offer->refresh();
         $this->assertSame('unknown', $offer->condition, 'an "unknown" report must be stored as-is, never coerced to "new"');
-        $this->assertSame([], $offer->listing_flags);
+        $this->assertNull($offer->listing_flags, 'stamp-only: an unverified page must not write flags');
+        $this->assertNotNull($offer->health_checked_at, 'the stamp records that the extension looked');
+    }
+
+    /** @test */
+    public function b3_an_unknown_report_never_clears_existing_flags_and_never_dispatches_the_freshness_audit(): void
+    {
+        Queue::fake();
+
+        $category = Category::factory()->create();
+        Feature::factory()->create(['category_id' => $category->id]);
+        $store   = Store::create(['name' => 'Example Store', 'slug' => 'example-store']);
+        $product = Product::factory()->create(['category_id' => $category->id, 'status' => null, 'is_ignored' => false]);
+        $offer   = ProductOffer::create([
+            'product_id'    => $product->id,
+            'store_id'      => $store->id,
+            'url'           => 'https://example.com/product/unverified',
+            'raw_title'     => 'Old Title',
+            'condition'     => 'new',
+            'listing_flags' => ['high_price'],
+        ]);
+
+        LandingPage::factory()->create([
+            'category_id' => $category->id,
+            'picks'       => [['product_id' => $product->id, 'role' => 'overall']],
+        ]);
+
+        // The extension could NOT verify this page (missing title / no buy-box) —
+        // an 'unknown' report off it must not be treated as a clean rescan.
+        app(OfferIngestionService::class)->processIncomingOffer($this->basePayload([
+            'category_id'   => $category->id,
+            'url'           => 'https://example.com/product/unverified',
+            'condition'     => 'unknown',
+            'listing_flags' => [],
+        ]));
+
+        $offer->refresh();
+        $this->assertSame(['high_price'], $offer->listing_flags, 'an unverified page must never wipe a previously stored flag');
+        $this->assertSame('unknown', $offer->condition);
         $this->assertNotNull($offer->health_checked_at);
+        $this->assertFalse($product->fresh()->is_ignored);
+
+        Queue::assertNotPushed(AuditLandingPageFreshnessJob::class);
+    }
+
+    /** @test */
+    public function b4_a_refurbished_raw_title_on_an_existing_offer_rescan_flags_the_canonical_condition_and_ignores_the_product(): void
+    {
+        Queue::fake();
+
+        $category = Category::factory()->create();
+        Feature::factory()->create(['category_id' => $category->id]);
+        $store   = Store::create(['name' => 'Example Store', 'slug' => 'example-store']);
+        $product = Product::factory()->create(['category_id' => $category->id, 'status' => null, 'is_ignored' => false]);
+        $offer   = ProductOffer::create([
+            'product_id' => $product->id,
+            'store_id'   => $store->id,
+            'url'        => 'https://example.com/product/1',
+            'raw_title'  => 'Jura E8 Espresso Machine',
+        ]);
+
+        // Rescan payload carries NO explicit `condition` — only the raw title marker.
+        // 029B-B4: the raw marker 'refurbish' must be mapped to the CANONICAL
+        // 'refurbished' before ListingHealthService::apply(); before the fix it
+        // missed NEGATIVE_CONDITIONS and was stored verbatim via the clean branch
+        // with the product left visible.
+        $result = app(OfferIngestionService::class)->processIncomingOffer($this->basePayload([
+            'category_id' => $category->id,
+            'raw_title'   => 'Refurbished Jura E8 Espresso Machine, Chrome',
+        ]));
+
+        $this->assertSame('flagged_condition', $result['action']);
+
+        $offer->refresh();
+        $this->assertSame('refurbished', $offer->condition, 'raw marker must be stored as canonical vocabulary, never verbatim');
+        $this->assertTrue($product->fresh()->is_ignored);
     }
 
     /** @test */

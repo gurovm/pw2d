@@ -19,18 +19,20 @@ use Illuminate\Support\Facades\Log;
  *
  * Rules:
  * - `condition` absent (null) → no-op, today's behavior. Nothing is touched.
+ * - `condition` = 'unknown' (029B-B3) → stamp-only: the extension COULD NOT verify the
+ *   page (missing #productTitle / no buy-box after settle), so this is "we looked", not
+ *   a clean bill of health. Stores 'unknown' + `health_checked_at`, but never clears
+ *   `listing_flags`, never counts as clean, never dispatches the freshness audit.
  * - `condition` ∈ NEGATIVE_CONDITIONS (renewed/refurbished/open_box/used) → offer gets
  *   the condition + flags stored, product is ignored. Returns 'flagged_condition' so the
  *   caller can override its response `action`. A landing-page-pick warning is logged only
  *   on the transition into is_ignored (not on every repeat report of an already-flagged
  *   listing).
- * - `condition` clean (new/unknown) + non-empty `listing_flags` (e.g. `high_price`) →
+ * - `condition` clean ('new') + non-empty `listing_flags` (e.g. `high_price`) →
  *   flags stored on the OFFER only; the product stays visible. Returns null (base
  *   ingestion action stands).
- * - `condition` clean + no flags (a clean explicit DOM report) → clears `listing_flags`
- *   to `[]` and stores the REPORTED clean value as-is (S4, 2026-08-10): 'new' means the
- *   extension affirmatively confirmed a standard listing; 'unknown' means it couldn't
- *   tell — coercing 'unknown' to 'new' would overstate what was actually verified.
+ * - `condition` clean ('new') + no flags (a clean explicit DOM report) → clears
+ *   `listing_flags` to `[]`: the extension affirmatively confirmed a standard listing.
  *   Flags are point-in-time listing state and must flip both ways as a listing recovers.
  *
  * Every branch stamps `health_checked_at` — it's simply "the last time the extension
@@ -55,6 +57,18 @@ class ListingHealthService
         }
 
         $now = now();
+
+        if ($condition === 'unknown') {
+            // 029B-B3: 'unknown' = "the extension looked but could not verify the
+            // page" — stamp-only. Reported flags off an unverified page are not
+            // trusted either; previously stored flags stay exactly as they were.
+            $offer->update([
+                'condition'         => 'unknown',
+                'health_checked_at' => $now,
+            ]);
+
+            return null;
+        }
 
         if (in_array($condition, ListingHealth::NEGATIVE_CONDITIONS, true)) {
             $offer->update([
@@ -90,9 +104,9 @@ class ListingHealthService
             return null;
         }
 
-        // Clean explicit report — clears listing_flags and stores the REPORTED clean
-        // condition value as-is (S4): 'new' vs 'unknown' are both valid here; coercing
-        // 'unknown' to 'new' would overstate what was actually verified.
+        // Clean explicit report ('new', affirmatively verified) — clears listing_flags.
+        // 'unknown' never reaches this branch (stamp-only above, 029B-B3), so a clean
+        // wipe of flags always reflects a page the extension actually verified.
         $offer->update([
             'condition'         => $condition,
             'listing_flags'     => [],

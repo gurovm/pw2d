@@ -101,6 +101,24 @@
         <button id="stopBatchBtn" style="background: #ef4444;">Stop Batch</button>
     </div>
 
+    <hr style="margin: 15px 0; border: 0; border-top: 1px solid #eee;">
+
+    <!-- Rescan Mode UI (Spec 029 B2) -->
+    <h4 style="margin: 0 0 10px 0; color: #333;">Rescan Category</h4>
+
+    <button id="startRescanBtn" style="background: #f59e0b;">Rescan Selected Category</button>
+
+    <div id="rescanProgress" style="display: none;">
+        <div style="font-size: 13px; margin: 8px 0 5px 0;">
+            Rescanning: <span id="rescanCount">0/0</span>
+        </div>
+        <div id="rescanSummary" style="font-size: 12px; color: #666; margin-bottom: 8px;"></div>
+        <button id="pauseRescanBtn" style="background: #6366f1; margin-bottom: 8px;">Pause Rescan</button>
+        <button id="resumeRescanBtn" style="display: none; background: #10b981; margin-bottom: 8px;">Resume
+            Rescan</button>
+        <button id="stopRescanBtn" style="background: #ef4444;">Stop Rescan</button>
+    </div>
+
     <div id="status"></div>
 
     <hr style="margin: 15px 0; border: 0; border-top: 1px solid #eee;">

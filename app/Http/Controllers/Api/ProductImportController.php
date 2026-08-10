@@ -111,7 +111,9 @@ class ProductImportController extends Controller
             // flag), never be silently skipped like a brand-new listing would be
             // (see the guard in the `else` branch below). Coerce only when the
             // payload didn't already supply an explicit `condition`.
-            $effectiveCondition = $condition ?? ProductConditionGuard::titleMarker($validated['title']);
+            // 029B-B4: titleCondition() (not titleMarker()) — apply() needs the
+            // canonical ListingHealth vocabulary, never a raw marker string.
+            $effectiveCondition = $condition ?? ProductConditionGuard::titleCondition($validated['title']);
 
             // A1 (F38): image_url/stock_status only overwrite when the payload actually
             // supplies a non-null value — an omitted field must never blow away a

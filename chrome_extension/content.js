@@ -52,6 +52,121 @@ function checkForRobot() {
     return false;
 }
 
+// ─────────────────────────────────────────────────────────────
+// Listing health detection — Spec 029 B1 (Amazon product pages)
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Map a raw listing title to a condition value, or null when clean.
+ * Marker list mirrors App\Support\ProductConditionGuard::TITLE_MARKERS,
+ * vocabulary mirrors App\Support\ListingHealth::CONDITIONS.
+ * Pure function of its input string (testable).
+ */
+function conditionMarkerFromText(text) {
+    if (!text) return null;
+    const t = text.toLowerCase();
+    if (/\brenewed\b/.test(t)) return 'renewed';
+    if (/refurbish/.test(t)) return 'refurbished';       // refurbished / refurbishment / certified refurbished
+    if (/open[\s-]?box/.test(t)) return 'open_box';
+    if (/\bpre-?owned\b/.test(t)) return 'used';
+    // 029B-S3: bare "used" only in parenthetical or leading position — "(Used)",
+    // "(Certified Used)", "Used - Like New", leading "Used …". Mid-title verb
+    // phrasing ("…can be used with…") must never mark a listing.
+    if (/\(\s*(?:certified\s+)?used\b[^)]*\)/.test(t) || /^\s*used\b/.test(t)) return 'used';
+    return null;
+}
+
+/**
+ * Detect listing health {condition, listing_flags} from an Amazon product-page
+ * Document. Pure function of `doc` (testable against saved DOM fixtures).
+ *
+ * ALL condition/flag selector + text logic lives in THIS one function —
+ * Amazon DOM churn is expected, so there is exactly one place to fix.
+ * Text-content scanning is preferred over brittle CSS classes.
+ *
+ * Markers checked (naming mirrors App\Support\ProductConditionGuard /
+ * App\Support\ListingHealth):
+ *   condition (new | renewed | refurbished | open_box | used | unknown):
+ *     - product title parenthetical/phrase: "(Renewed)", "Refurbished",
+ *       "Open Box", "Pre-Owned", "Used"
+ *     - byline/brand link: "Amazon Renewed" / "Visit the Amazon Renewed Store"
+ *     - standalone "Renewed" / "Open Box" / "Refurbished" badge near the title
+ *     - 'new' ONLY when a normal buy-box affirmatively loaded and no marker hit;
+ *       'unknown' when the page looks partial/blocked (checkForRobot() signals)
+ *   listing_flags:
+ *     - 'high_price': Amazon's buy-box "High price" label (exact leaf text,
+ *       tooltip "We have recently seen better prices…", adjacent "Learn more"
+ *       disclosure). Scoped to the buy-box / right-hand column so review text
+ *       can never false-positive.
+ */
+function detectListingHealth(doc) {
+    doc = doc || document;
+    const health = { condition: 'unknown', listing_flags: [] };
+
+    // Partial/blocked page (same signals as checkForRobot()) → unknown.
+    if (!doc.body) return health;
+    if ((doc.title || '').includes('Robot Check') ||
+        doc.body.innerText.includes('Enter the characters you see below')) {
+        return health;
+    }
+
+    const titleEl = doc.querySelector('#productTitle');
+
+    // ── Condition ────────────────────────────────────────────
+    let condition = null;
+
+    // (a) Title parenthetical/phrase markers
+    if (titleEl) condition = conditionMarkerFromText(titleEl.textContent);
+
+    // (b) Byline/brand link text
+    if (!condition) {
+        const byline = doc.querySelector('#bylineInfo, #bylineInfo_feature_div');
+        if (byline && /amazon\s+renewed/i.test(byline.textContent)) condition = 'renewed';
+    }
+
+    // (c) Standalone badge near the title block — leaf elements whose ENTIRE
+    //     text is the badge word (exact match avoids review/description hits)
+    if (!condition) {
+        const titleRegion = doc.querySelector('#title_feature_div, #titleSection, #centerCol');
+        if (titleRegion) {
+            for (const el of titleRegion.querySelectorAll('span, div, a')) {
+                if (el.children.length > 0) continue; // leaf nodes only
+                const text = el.textContent.trim();
+                if (/^renewed$/i.test(text)) { condition = 'renewed'; break; }
+                if (/^(certified\s+)?refurbished$/i.test(text)) { condition = 'refurbished'; break; }
+                if (/^open[\s-]?box$/i.test(text)) { condition = 'open_box'; break; }
+            }
+        }
+    }
+
+    if (condition) {
+        health.condition = condition;
+    } else {
+        // 'new' ONLY when the page affirmatively loaded a normal product +
+        // buy-box; anything less stays 'unknown' (partial render, blocked, etc.)
+        const buyBoxLoaded = !!(titleEl && doc.querySelector(
+            '#add-to-cart-button, #buy-now-button, #buybox, #addToCart_feature_div, #availability, #outOfStock'
+        ));
+        health.condition = buyBoxLoaded ? 'new' : 'unknown';
+    }
+
+    // ── Flags ────────────────────────────────────────────────
+    // "High price" buy-box label: exact leaf text, scoped to the buy-box /
+    // right-hand column region only (never the review/description areas).
+    const buyBoxRegion = doc.querySelector('#rightCol, #desktop_buybox, #buybox, #apex_desktop');
+    if (buyBoxRegion) {
+        for (const el of buyBoxRegion.querySelectorAll('span, h1, h2, h3, h4, h5, h6, div')) {
+            if (el.children.length > 0) continue; // leaf nodes only
+            if (el.textContent.trim() === 'High price') {
+                health.listing_flags.push('high_price');
+                break;
+            }
+        }
+    }
+
+    return health;
+}
+
 // ── SERP / Listing page helpers ───────────────────────────────
 
 function extractProductLinks() {
@@ -120,11 +235,66 @@ function extractPrice(el) {
 }
 
 /**
- * Extract reviews count from a product card element.
- * Tries four strategies in order, returns 0 if all fail.
+ * Extract reviews count from a SERP product-card element OR a full
+ * product-page Document (pass `document`). Pure function of its scope
+ * (testable). Tries strategies in order; returns NULL when nothing
+ * matches — never 0 (Spec 029 B3: null means "unknown", 0 is a claim).
  */
 function extractReviewsCount(el) {
     try {
+        // 0a. Product page: #acrCustomerReviewText ("2,567 ratings") —
+        //     the canonical element next to the title stars
+        const acr = el.querySelector('#acrCustomerReviewText');
+        if (acr) {
+            const m = acr.textContent.match(/([\d,]+)/);
+            if (m) {
+                const n = parseInt(m[1].replace(/,/g, ''));
+                if (n > 0) return n;
+            }
+        }
+
+        // 0b. Product page reviews section: [data-hook="total-review-count"]
+        //     ("1,234 global ratings")
+        const hook = el.querySelector('[data-hook="total-review-count"]');
+        if (hook) {
+            const m = hook.textContent.match(/([\d,]+)/);
+            if (m) {
+                const n = parseInt(m[1].replace(/,/g, ''));
+                if (n > 0) return n;
+            }
+        }
+
+        // 0c. Product page: #averageCustomerReviews subtree aria-labels/text
+        //     containing "N ratings" (newer layouts drop #acrCustomerReviewText)
+        const avg = el.querySelector('#averageCustomerReviews');
+        if (avg) {
+            for (const cand of [avg, ...avg.querySelectorAll('[aria-label]')]) {
+                const text = (cand.getAttribute && cand.getAttribute('aria-label')) || cand.textContent || '';
+                const m = text.match(/([\d,]+)\s+(?:global\s+)?ratings?/i);
+                if (m) {
+                    const n = parseInt(m[1].replace(/,/g, ''));
+                    if (n > 0) return n;
+                }
+            }
+        }
+
+        // 0d. Any anchor to the reviews section whose text says "N ratings"
+        const reviewAnchor = el.querySelector('a[href*="#customerReviews"], a[href*="customerReviews"]');
+        if (reviewAnchor) {
+            const m = reviewAnchor.textContent.match(/([\d,]+)\s+(?:global\s+)?ratings?/i);
+            if (m) {
+                const n = parseInt(m[1].replace(/,/g, ''));
+                if (n > 0) return n;
+            }
+        }
+
+        // 029B-B2: product-page strategies (0a–0d) exhausted. On a full-page
+        // Document the SERP-card heuristics below (1–5) would scan the ENTIRE
+        // page — including related-product carousels — and return ANOTHER
+        // product's count. Card heuristics are card-scoped only: an honest null
+        // ("unknown") is the only correct answer for a zero-review product page.
+        if (el.nodeType === 9 /* Node.DOCUMENT_NODE */) return null;
+
         // 1. aria-label containing "N ratings" anywhere in the string
         // Handles: "2,567 ratings", "4.3 out of 5 stars 2,567 ratings", etc.
         const ratingEls = el.querySelectorAll('[aria-label*="rating"]');
@@ -176,7 +346,7 @@ function extractReviewsCount(el) {
         }
     } catch (e) {}
 
-    return 0;
+    return null; // unknown — never claim 0 (server keeps the stored value)
 }
 
 function extractSerpProducts() {
@@ -241,10 +411,13 @@ function extractSerpProducts() {
             if (!title || title.length < 3) return; // no usable title — skip
 
             // ── Garbage filter ────────────────────────────────
-            // Skip sponsored labels, ad widgets, and non-product cards
+            // Skip sponsored labels, ad widgets, and non-product cards.
+            // Spec 029 B4: condition-marked titles (renewed/refurbished/…) are
+            // NO LONGER skipped client-side — they're sent with an explicit
+            // `condition` so the server can flag/heal the listing.
             const titleLower = title.toLowerCase();
             if (/^sponsored$/i.test(title)) return;
-            if (/\b(refurbished|renewed|certified refurbished|package)\b/i.test(title)) return;
+            if (/\bpackage\b/i.test(title)) return;
             if (titleLower.length < 10 && !/\d/.test(title)) return; // too short and no model number
             // Skip if the element is a tiny widget (no price, no reviews, small area)
             const rect = el.getBoundingClientRect();
@@ -304,7 +477,15 @@ function extractSerpProducts() {
             // Skip products with no reviews — likely new/fake listings with no real data
             if (!reviews_count || reviews_count < 5) return;
 
-            products.push({ asin, title, price, rating, reviews_count, image_url, status: 'pending_ai' });
+            // Spec 029 B4: title stays untouched raw; when it carries a condition
+            // marker, report it explicitly so the server flags instead of guessing
+            const condition = conditionMarkerFromText(title);
+
+            products.push({
+                asin, title, price, rating, reviews_count, image_url,
+                status: 'pending_ai',
+                ...(condition ? { condition } : {}),
+            });
 
         } catch (e) {
             console.warn('PW2D: Skipped product due to extraction error:', e);
@@ -321,13 +502,15 @@ function extractProductPageData() {
     const asin = getASIN();
     if (!asin) return null;
 
-    // Check if product is unavailable
+    // Check if product is unavailable + derive stock_status when extractable
+    let stock_status = null;
     const availEl = document.querySelector('#availability, #outOfStock');
     if (availEl) {
         const text = availEl.textContent.toLowerCase();
         if (text.includes('currently unavailable') || text.includes('out of stock')) {
             return { unavailable: true, asin };
         }
+        if (text.includes('in stock')) stock_status = 'in_stock';
     }
 
     // Title — from #productTitle or meta title
@@ -407,18 +590,13 @@ function extractProductPageData() {
         }
     }
 
-    // Reviews count
-    let reviews_count = 0;
-    const reviewEl = document.querySelector('#acrCustomerReviewText');
-    if (reviewEl) {
-        const m = reviewEl.textContent.match(/([\d,]+)/);
-        if (m) reviews_count = parseInt(m[1].replace(/,/g, ''));
-    }
+    // Reviews count — shared multi-strategy extractor; null when absent (B3)
+    const reviews_count = extractReviewsCount(document);
 
     // Image
     const image_url = getImageUrl();
 
-    return { asin, title, price, rating, reviews_count, image_url, status: 'pending_ai' };
+    return { asin, title, price, rating, reviews_count, image_url, stock_status, status: 'pending_ai' };
 }
 
 // ── Message router ────────────────────────────────────────────
@@ -458,6 +636,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         const data = extractStoreProduct();
         sendResponse(data);
 
+    } else if (request.action === 'RESCAN_EXTRACT') {
+        // Spec 029 B2: full-field refresh extraction for the rescan walk.
+        // Amazon products carry condition/listing_flags (detectListingHealth is
+        // called inside extractAmazonProduct); other stores omit them.
+        if (checkForRobot()) { sendResponse({ success: false, robot: true }); return; }
+        sendResponse(extractStoreProduct());
+
     } else if (request.action === 'EXTRACT_STORE_LISTING') {
         const data = extractStoreListing();
         sendResponse(data);
@@ -490,6 +675,9 @@ function extractStoreProduct() {
 
     try {
         const product = extractor(url);
+        if (product && product.unavailable) {
+            return { success: true, product }; // callers check product.unavailable
+        }
         if (!product || !product.raw_title) {
             return { success: false, error: 'Could not extract product data from this page.' };
         }
@@ -516,6 +704,9 @@ function extractAmazonProduct(url) {
         if (brandRow) brand = brandRow.textContent?.trim() || brandRow.getAttribute('data-csa-c-brand');
     }
 
+    // Listing health (Spec 029 B1) — DOM-verified condition + flags
+    const health = detectListingHealth(document);
+
     return {
         url,
         store_slug: 'amazon',
@@ -524,8 +715,11 @@ function extractAmazonProduct(url) {
         brand,
         scraped_price: data.price,
         image_url: data.image_url,
+        stock_status: data.stock_status ?? null,
         rating: data.rating,
         reviews_count: data.reviews_count,
+        condition: health.condition,
+        listing_flags: health.listing_flags,
     };
 }
 

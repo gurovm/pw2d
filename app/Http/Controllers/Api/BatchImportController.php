@@ -82,7 +82,9 @@ class BatchImportController extends Controller
                     // title + flag), never be silently skipped like a brand-new listing
                     // would be (see the guard in the `else` branch below). Coerce only
                     // when the payload didn't already supply an explicit `condition`.
-                    $effectiveCondition = $condition ?? ProductConditionGuard::titleMarker($p['title']);
+                    // 029B-B4: titleCondition() (not titleMarker()) — apply() needs the
+                    // canonical ListingHealth vocabulary, never a raw marker string.
+                    $effectiveCondition = $condition ?? ProductConditionGuard::titleCondition($p['title']);
 
                     // A1 (F38): fetch the offer instance so image_url/stock_status can
                     // fall back to their previous value instead of being wiped to null.

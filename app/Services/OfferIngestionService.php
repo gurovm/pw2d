@@ -71,7 +71,9 @@ class OfferIngestionService
             // flag), never be silently skipped like a brand-new listing would be
             // (see the create-new guard at the bottom of this method). Coerce only
             // when the payload didn't already supply an explicit `condition`.
-            $effectiveCondition = $condition ?? ProductConditionGuard::titleMarker($data['raw_title']);
+            // 029B-B4: titleCondition() (not titleMarker()) — apply() needs the
+            // canonical ListingHealth vocabulary, never a raw marker string.
+            $effectiveCondition = $condition ?? ProductConditionGuard::titleCondition($data['raw_title']);
 
             // A1 (F38): scraped_price + raw_title always refresh; image_url/stock_status
             // only overwrite when the payload actually supplies a non-null value — an

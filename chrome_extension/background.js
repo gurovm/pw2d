@@ -1,12 +1,12 @@
-// Background Service Worker for Batch Scraping
-
-let queue = [];
-let currentCategoryId = null;
-let isProcessing = false;
-let processedCount = 0;
-let totalCount = 0;
-let currentTabId = null;
-let nextPageUrl = null;
+// Background Service Worker — Rescan Mode (Spec 029 B2)
+//
+// 029B-S1: the legacy tab-walking batch importer (START_BATCH / SCRAPE_COMPLETE /
+// RESUME_BATCH and friends) was removed — the live SERP batch flow runs entirely
+// inside popup.js against /api/products/batch-import + /api/extension/ingest-offer,
+// and the walker's /api/product-import payload no longer matched the server's
+// validation. Batch↔rescan mutual exclusion now lives in popup.js, which is the
+// only place either flow can be started: it checks rescan state (GET_STATUS)
+// before starting a batch, and its own in-flight batch flag before START_RESCAN.
 
 const API_CONFIG = {
     local: 'http://127.0.0.1:8003',
@@ -17,14 +17,51 @@ let baseUrl = API_CONFIG.local;
 let EXTENSION_TOKEN = '';
 let TENANT_ID = '';
 
+// ----- Rescan Mode State (Spec 029 B2) -----
+// Persisted to chrome.storage.local ('rescanRun') after every step so Resume
+// works after the popup closes or the service worker restarts.
+let rescanRun = {
+    active: false,
+    paused: false,
+    pausedReason: null,   // 'user' | 'captcha' | 'worker_restart'
+    categoryId: null,
+    offers: [],           // [{offer_id, product_id, url, asin, last_scanned_at}]
+    index: 0,
+    tabId: null,          // reused worker tab (never persisted)
+    results: { updated: 0, flagged_condition: 0, skipped: 0, errors: 0 },
+};
+let rescanTimer = null;
+
+// 029B-B1: exactly ONE page-load listener + watchdog may be armed at a time, and
+// both must be cancellable on pause/stop — module-level refs make that possible.
+let rescanLoadListener = null;   // active chrome.tabs.onUpdated listener
+let rescanWatchdog = null;       // active 60s page-load watchdog timer
+// 029B-B1: generation counter. Bumped on every offer (re)start, on pause, and when
+// an offer's advance is consumed — every async step in an offer's chain (load
+// listener, watchdog, extraction delay/retry, POST completion) captures it and
+// bails if it no longer matches, so a pause→resume mid-flight can never leave two
+// chains alive for the same offer (no double-POST, no double-count, no skip).
+let rescanAttempt = 0;
+
 // Initialize from storage
-chrome.storage.local.get(['env', 'extensionToken', 'tenantId'], (result) => {
+chrome.storage.local.get(['env', 'extensionToken', 'tenantId', 'rescanRun'], (result) => {
     if (result.env && API_CONFIG[result.env]) {
         currentEnv = result.env;
         baseUrl = API_CONFIG[result.env];
     }
     EXTENSION_TOKEN = result.extensionToken || '';
     TENANT_ID = result.tenantId || '';
+
+    // Restore an interrupted rescan run as PAUSED — the user resumes explicitly
+    if (result.rescanRun && result.rescanRun.active) {
+        rescanRun = {
+            ...rescanRun,
+            ...result.rescanRun,
+            tabId: null,
+            paused: true,
+            pausedReason: result.rescanRun.pausedReason || 'worker_restart',
+        };
+    }
 });
 
 // Sync token/tenant whenever popup saves new values
@@ -47,182 +84,240 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         });
         sendResponse({ success: true });
         return true;
-    } else if (request.action === "START_BATCH") {
-        startBatch(request.urls, request.categoryId, request.nextPageUrl);
-        sendResponse({ success: true, message: "Batch started" });
-    } else if (request.action === "STOP_BATCH") {
-        stopBatch();
-        sendResponse({ success: true, message: "Batch stopped" });
+    } else if (request.action === "START_RESCAN") {
+        if (rescanRun.active) {
+            sendResponse({ success: false, message: "A rescan is already running." });
+            return true;
+        }
+        startRescan(request.offers, request.categoryId);
+        sendResponse({ success: true });
+    } else if (request.action === "PAUSE_RESCAN") {
+        pauseRescan('user');
+        sendResponse({ success: true });
+    } else if (request.action === "RESUME_RESCAN") {
+        resumeRescan();
+        sendResponse({ success: true });
+    } else if (request.action === "STOP_RESCAN") {
+        const results = { ...rescanRun.results };
+        stopRescan();
+        sendResponse({ success: true, results });
     } else if (request.action === "GET_STATUS") {
         sendResponse({
-            isProcessing,
-            processedCount,
-            totalCount,
-            queueLength: queue.length,
-            nextPageUrl: nextPageUrl
+            rescan: {
+                active: rescanRun.active,
+                paused: rescanRun.paused,
+                pausedReason: rescanRun.pausedReason,
+                processed: rescanRun.index,
+                total: rescanRun.offers.length,
+                results: rescanRun.results,
+            },
         });
-    } else if (request.action === "SCRAPE_COMPLETE") {
-        if (request.payload && request.payload.robot) {
-            handleRobotDetected(sender.tab.id);
-        } else {
-            handleScrapeComplete(request.payload);
-        }
-    } else if (request.action === "RESUME_BATCH") {
-        if (!isProcessing && queue.length > 0) {
-            isProcessing = true;
-            broadcastStatus("Resuming Batch...");
-            // Retry the current tab or move to next?
-            // Better to close current (user solved it) and process next,
-            // OR re-scrape current if user solved it on that tab.
-            // Let's assume user solved it and wants to retry scraping THIS tab.
-            // But getting back to the product page might be tricky.
-            // Safest: Close current tab and Retry same URL (push back to front of queue).
-
-            // Actually, if we just call processNext(), it takes from queue.
-            // We need to re-add the current URL if it wasn't processed.
-            // But wait, processNext SHIFTS from queue. So we need to PUT IT BACK if it failed.
-
-            processNext();
-        }
     }
     return true; // Keep channel open for async responses if needed
 });
 
-function handleRobotDetected(tabId) {
-    isProcessing = false;
-    broadcastStatus("⚠️ Robot Detected! Batch Paused.");
+// ─────────────────────────────────────────────────────────────
+// Rescan Mode (Spec 029 B2) — walk a category's stored offer URLs,
+// re-extract full data + listing health, POST refresh payloads to
+// /api/extension/ingest-offer with a 3–5s polite delay between URLs.
+// ─────────────────────────────────────────────────────────────
 
-    // 1. Focus the tab
-    chrome.tabs.update(tabId, { active: true });
-
-    // 2. Put the current URL back to the front of the queue?
-    // We haven't popped it yet?
-    // processNext pops it effectively.
-    // We should store 'processingUrl' to put it back.
-    // Let's rely on user to reload/fix.
-
-    // Ideally, we re-queue the current URL.
-    // We don't have it easily available here unless we stored it globally.
-    // But 'currentTabId' corresponds to it.
-
-    // Let's just pause. The user can close tab and Resume (which will pick next).
-    // Or if they fix it, they can Resume and we should retry scraping?
-    // Let's keep it simple: Pause.
+function startRescan(offers, categoryId) {
+    rescanRun = {
+        active: true,
+        paused: false,
+        pausedReason: null,
+        categoryId,
+        offers: offers || [],
+        index: 0,
+        tabId: null,
+        results: { updated: 0, flagged_condition: 0, skipped: 0, errors: 0 },
+    };
+    persistRescan();
+    processNextRescan();
 }
 
-// Start the Batch Process
-function startBatch(urls, categoryId, nextUrl = null) {
-    if (isProcessing) return;
-
-    queue = [...urls];
-    totalCount += urls.length; // Append to total if continuing
-    currentCategoryId = categoryId;
-    nextPageUrl = nextUrl;
-    isProcessing = true;
-
-    processNext();
-}
-
-// Stop the Batch
-function stopBatch() {
-    isProcessing = false;
-    queue = [];
-    if (currentTabId) {
-        chrome.tabs.remove(currentTabId).catch(() => { });
-        currentTabId = null;
+// 029B-B1: cancel the armed page-load listener + watchdog together. Called on
+// pause/stop, at the top of every processNextRescan(), and when a load settles —
+// so re-arming always starts from a clean slate (never two listeners alive).
+function clearRescanPageHandlers() {
+    if (rescanLoadListener) {
+        chrome.tabs.onUpdated.removeListener(rescanLoadListener);
+        rescanLoadListener = null;
     }
+    if (rescanWatchdog) { clearTimeout(rescanWatchdog); rescanWatchdog = null; }
 }
 
-// Process Next Item in Queue
-async function processNext() {
-    if (!isProcessing) return;
+function pauseRescan(reason) {
+    if (!rescanRun.active) return;
+    rescanRun.paused = true;
+    rescanRun.pausedReason = reason;
+    if (rescanTimer) { clearTimeout(rescanTimer); rescanTimer = null; }
+    // 029B-B1: cancel the in-flight page-load listener + watchdog and invalidate
+    // every async step of the current offer's chain — Resume restarts this SAME
+    // offer from scratch, so nothing from the pre-pause attempt may tally/advance.
+    clearRescanPageHandlers();
+    rescanAttempt++;
+    persistRescan();
+    broadcastRescan(reason === 'captcha'
+        ? "Paused — solve the captcha in the tab, then press Resume."
+        : "Rescan paused.");
+}
 
-    if (queue.length === 0) {
-        if (nextPageUrl) {
-            handleNextPage();
-            return;
-        }
+function resumeRescan() {
+    if (!rescanRun.active || !rescanRun.paused) return;
+    rescanRun.paused = false;
+    rescanRun.pausedReason = null;
+    persistRescan();
+    broadcastRescan("Resuming rescan...");
+    processNextRescan();
+}
 
-        isProcessing = false;
-        broadcastStatus("Batch Complete!");
-        nextPageUrl = null;
-        totalCount = 0; // Reset for next brand new batch
-        processedCount = 0;
+function stopRescan() {
+    rescanRun.active = false;
+    rescanRun.paused = false;
+    if (rescanTimer) { clearTimeout(rescanTimer); rescanTimer = null; }
+    clearRescanPageHandlers();
+    rescanAttempt++;
+    closeRescanTab();
+    chrome.storage.local.remove('rescanRun');
+}
+
+async function processNextRescan() {
+    if (!rescanRun.active || rescanRun.paused) return;
+    if (rescanTimer) { clearTimeout(rescanTimer); rescanTimer = null; }
+    // 029B-B1: start this offer's attempt from a clean slate — any previously
+    // armed listener/watchdog (e.g. from a pause mid-load) is cancelled first,
+    // so exactly ONE listener + ONE watchdog exist for the current offer.
+    clearRescanPageHandlers();
+    const attempt = ++rescanAttempt;
+
+    if (rescanRun.index >= rescanRun.offers.length) {
+        finishRescan();
         return;
     }
 
-    const url = queue.shift();
-    broadcastStatus(`Processing ${processedCount + 1}/${totalCount}...`);
+    const offer = rescanRun.offers[rescanRun.index];
+    broadcastRescan(`Rescanning ${rescanRun.index + 1}/${rescanRun.offers.length}...`);
 
     try {
-        // 1. Create Tab
-        const tab = await chrome.tabs.create({ url: url, active: false });
-        currentTabId = tab.id;
-
-        // 2. Wait for Tab to Load
-        chrome.tabs.onUpdated.addListener(function listener(tabId, info) {
-            if (tabId === currentTabId && info.status === 'complete') {
-                chrome.tabs.onUpdated.removeListener(listener);
-
-                // 3. Inject Scraper (wait longer for dynamic content/scripts)
-                // Amazon is heavy, 5s is safer than 2s to ensure DOM is ready
-                setTimeout(() => {
-                    injectScraper(tabId);
-                }, 5000);
+        // Reuse a single background worker tab; create it on first use
+        if (rescanRun.tabId !== null) {
+            try {
+                await chrome.tabs.update(rescanRun.tabId, { url: offer.url, active: false });
+            } catch (e) {
+                rescanRun.tabId = null; // tab was closed — recreate below
             }
-        });
+        }
+        if (rescanRun.tabId === null) {
+            const tab = await chrome.tabs.create({ url: offer.url, active: false });
+            rescanRun.tabId = tab.id;
+        }
+
+        if (attempt !== rescanAttempt) return; // paused/stopped during tab navigation
+
+        const targetTabId = rescanRun.tabId;
+
+        rescanLoadListener = (tabId, info) => {
+            if (attempt !== rescanAttempt) return; // stale — superseded by pause/advance
+            if (tabId === targetTabId && info.status === 'complete') {
+                clearRescanPageHandlers(); // consume listener + watchdog together
+                // Let dynamic buy-box content render before extraction
+                setTimeout(() => extractRescanData(targetTabId, offer, attempt), 3000);
+            }
+        };
+        chrome.tabs.onUpdated.addListener(rescanLoadListener);
+
+        // Watchdog: never let a hung page stall the whole run. Cancelled on
+        // pause/settle (B1), and guarded so it can never fire for a stale attempt.
+        rescanWatchdog = setTimeout(() => {
+            if (attempt !== rescanAttempt || !rescanRun.active || rescanRun.paused) return;
+            clearRescanPageHandlers();
+            console.warn("Rescan: page load timed out", offer.url);
+            rescanRun.results.errors++;
+            advanceRescan(attempt);
+        }, 60000);
 
     } catch (error) {
-        console.error("Tab creation failed:", error);
-        processedCount++; // Skip this one
-        scheduleNext();
+        console.error("Rescan: tab navigation failed:", error);
+        if (attempt !== rescanAttempt) return;
+        rescanRun.results.errors++;
+        advanceRescan(attempt);
     }
 }
 
-// Inject Scraper Script
-function injectScraper(tabId, retry = 0) {
-    if (!isProcessing) return;
+function extractRescanData(tabId, offer, attempt, retry = 0) {
+    if (!rescanRun.active || rescanRun.paused || attempt !== rescanAttempt) return;
 
-    // Send message to trigger scrape
-    chrome.tabs.sendMessage(tabId, { action: "extract_all" }, (response) => {
-        if (chrome.runtime.lastError) {
-            console.error("Scraper injection failed:", chrome.runtime.lastError);
-
-            // Retry once after 2s if failed (maybe script wasn't ready)
+    chrome.tabs.sendMessage(tabId, { action: "RESCAN_EXTRACT" }, (response) => {
+        if (attempt !== rescanAttempt) return; // paused/stopped while extracting
+        if (chrome.runtime.lastError || !response) {
+            // Content script may not be ready — retry once after 2s
             if (retry === 0) {
-                setTimeout(() => injectScraper(tabId, 1), 2000);
+                setTimeout(() => extractRescanData(tabId, offer, attempt, 1), 2000);
                 return;
             }
-
-            // If failed twice, skip
-            if (isProcessing) {
-                processedCount++;
-                closeCurrentTab();
-                scheduleNext(); // Skip bad page
-            }
+            console.error("Rescan: extraction failed:", chrome.runtime.lastError, offer.url);
+            rescanRun.results.errors++;
+            advanceRescan(attempt);
             return;
         }
 
-        if (response) {
-            handleScrapeComplete(response);
-        } else {
-            console.error("Scraper returned null response");
-            if (isProcessing) {
-                processedCount++;
-                closeCurrentTab();
-                scheduleNext();
-            }
+        if (response.robot) {
+            // CAPTCHA — surface the tab and auto-pause; Resume retries this offer
+            chrome.tabs.update(tabId, { active: true }).catch(() => { });
+            pauseRescan('captcha');
+            return;
         }
+
+        handleRescanExtract(offer, response, attempt);
     });
 }
 
-// Handle Data from Content Script
-async function handleScrapeComplete(payload) {
-    if (!isProcessing) return;
+async function handleRescanExtract(offer, response, attempt) {
+    if (!rescanRun.active || rescanRun.paused || attempt !== rescanAttempt) return;
+
+    const product = response.success ? response.product : null;
+
+    if (!product) {
+        rescanRun.results.errors++;
+        advanceRescan(attempt);
+        return;
+    }
+    if (product.unavailable || !product.raw_title) {
+        // Listing gone / partial page — nothing trustworthy to refresh with
+        rescanRun.results.skipped++;
+        advanceRescan(attempt);
+        return;
+    }
+
+    // Refresh payload — field names mirror OfferIngestionController::ingest()
+    // validation. CRITICAL: `url` must be the DB-stored offer URL (from
+    // rescan-list), NOT the tab's post-redirect URL — the server matches the
+    // existing offer by exact URL.
+    const payload = {
+        url: offer.url,
+        store_slug: product.store_slug,
+        raw_title: product.raw_title,               // raw as scraped — heals cleaned-title rows
+        brand: product.brand ?? null,
+        scraped_price: product.scraped_price ?? null,
+        image_url: product.image_url ?? null,
+        stock_status: product.stock_status ?? null,
+        rating: product.rating ?? null,
+        reviews_count: product.reviews_count ?? null, // null = unknown, never 0
+        category_id: rescanRun.categoryId,
+    };
+    // Amazon pages carry DOM-verified listing health (Spec 029 B1).
+    // 029B-B3: 'unknown' means the page could NOT be verified — omit the keys
+    // entirely (server treats absent as a true no-op), never report it as if it
+    // were a health observation.
+    if (product.condition && product.condition !== 'unknown') {
+        payload.condition = product.condition;
+        payload.listing_flags = product.listing_flags || [];
+    }
 
     try {
-        // 4. Upload to API
-        const response = await fetch(`${baseUrl}/api/product-import`, {
+        const res = await fetch(`${baseUrl}/api/extension/ingest-offer`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -230,156 +325,86 @@ async function handleScrapeComplete(payload) {
                 'X-Extension-Token': EXTENSION_TOKEN,
                 'X-Tenant-Id': TENANT_ID,
             },
-            body: JSON.stringify({
-                raw_text: payload.rawText,
-                image_url: payload.imageUrl,
-                product_url: payload.productUrl,
-                external_id: payload.external_id,
-                category_id: currentCategoryId
-            })
+            body: JSON.stringify(payload),
         });
+        const data = await res.json();
 
-        const data = await response.json();
-        console.log("Import Result:", data);
+        // 029B-B1: a pause/stop while the POST was in flight invalidates this
+        // chain — Resume retries this SAME offer, so no tally and no advance here.
+        if (attempt !== rescanAttempt) return;
 
+        if (res.ok && data.success) {
+            if (data.action === 'flagged_condition') rescanRun.results.flagged_condition++;
+            else if (data.action === 'skipped_condition') rescanRun.results.skipped++;
+            else rescanRun.results.updated++; // refreshed | matched | created
+        } else {
+            console.error("Rescan: API rejected refresh:", data, offer.url);
+            rescanRun.results.errors++;
+        }
     } catch (error) {
-        console.error("API Upload failed:", error);
-    } finally {
-        processedCount++;
-        closeCurrentTab();
-        scheduleNext();
+        if (attempt !== rescanAttempt) return;
+        console.error("Rescan: API upload failed:", error);
+        rescanRun.results.errors++;
     }
+
+    advanceRescan(attempt);
 }
 
-function closeCurrentTab() {
-    if (currentTabId) {
-        chrome.tabs.remove(currentTabId).catch(() => { });
-        currentTabId = null;
-    }
+// 029B-B1: idempotent per offer — the attempt guard makes a second call for the
+// same offer (stale watchdog, duplicate chain) a no-op, and consuming the attempt
+// below closes the window until the next offer starts. Never advances while
+// paused: Resume must retry the SAME offer.
+function advanceRescan(attempt) {
+    if (!rescanRun.active || rescanRun.paused) return;
+    if (attempt !== rescanAttempt) return; // stale chain — this offer already advanced
+    rescanAttempt++; // consume: any other callback still holding this attempt is now stale
+
+    rescanRun.index++;
+    persistRescan();
+    broadcastRescan();
+
+    // Polite randomized delay between URLs: 3–5s
+    const delay = 3000 + Math.floor(Math.random() * 2001);
+    rescanTimer = setTimeout(processNextRescan, delay);
 }
 
-// Schedule Next with Random Delay
-function scheduleNext() {
-    if (!isProcessing) return;
-
-    const delay = Math.floor(Math.random() * (15000 - 5000 + 1) + 5000); // 5-15 seconds
-    broadcastStatus(`Waiting ${Math.round(delay / 1000)}s...`);
-
-    // Use Alarms API or simple timeout
-    setTimeout(() => {
-        processNext();
-    }, delay);
-}
-
-// Broadcast Status to Popup
-function broadcastStatus(msg) {
+function finishRescan() {
+    const summary = { ...rescanRun.results };
+    const total = rescanRun.offers.length;
+    rescanRun.active = false;
+    rescanRun.paused = false;
+    closeRescanTab();
+    chrome.storage.local.remove('rescanRun');
     chrome.runtime.sendMessage({
-        action: "BATCH_PROGRESS",
-        processed: processedCount,
-        total: totalCount,
-        message: msg
-    }).catch(() => { }); // Ignore error if popup is closed
+        action: "RESCAN_PROGRESS",
+        done: true,
+        processed: total,
+        total: total,
+        results: summary,
+        paused: false,
+    }).catch(() => { });
 }
 
-// ----- Auto Pagination Logic -----
-async function handleNextPage() {
-    if (!nextPageUrl) return;
-
-    broadcastStatus(`Navigating to Next Page...`);
-    const targetUrl = nextPageUrl;
-    nextPageUrl = null; // Clear it so we don't loop infinitely if extraction fails
-
-    try {
-        const tab = await chrome.tabs.create({ url: targetUrl, active: false });
-        currentTabId = tab.id;
-
-        chrome.tabs.onUpdated.addListener(function listener(tabId, info) {
-            if (tabId === currentTabId && info.status === 'complete') {
-                chrome.tabs.onUpdated.removeListener(listener);
-
-                // Wait for page to settle
-                setTimeout(() => scanNextPage(tabId), 5000);
-            }
-        });
-    } catch (e) {
-        console.error("Next page navigation failed:", e);
-        isProcessing = false;
-        broadcastStatus("Failed to load next page.");
+function closeRescanTab() {
+    if (rescanRun.tabId) {
+        chrome.tabs.remove(rescanRun.tabId).catch(() => { });
+        rescanRun.tabId = null;
     }
 }
 
-function scanNextPage(tabId) {
-    broadcastStatus(`Scanning next page...`);
-    chrome.tabs.sendMessage(tabId, { action: "SCAN_PAGE" }, async (response) => {
-        if (chrome.runtime.lastError || !response || !response.success) {
-            console.error("Scan next page failed:", chrome.runtime.lastError);
-            isProcessing = false;
-            broadcastStatus("Stopped: Could not scan next page.");
-            closeCurrentTab();
-            return;
-        }
+function persistRescan() {
+    const { tabId, ...persistable } = rescanRun;
+    chrome.storage.local.set({ rescanRun: persistable });
+}
 
-        const newLinks = response.links;
-        const newNextPageUrl = response.nextPageUrl;
-
-        if (newLinks.length === 0) {
-            isProcessing = false;
-            broadcastStatus("No products found on next page. Complete.");
-            closeCurrentTab();
-            return;
-        }
-
-        broadcastStatus(`Filtering existing products...`);
-        try {
-            // Check existing ASINs
-            const apiRes = await fetch(`${baseUrl}/api/existing-asins?category_id=${currentCategoryId}`, {
-                headers: {
-                    'X-Extension-Token': EXTENSION_TOKEN,
-                    'X-Tenant-Id': TENANT_ID,
-                }
-            });
-            const data = await apiRes.json();
-
-            let existingAsins = [];
-            if (data.success && data.asins) {
-                existingAsins = data.asins;
-            }
-
-            const newUrls = newLinks.filter(url => {
-                const match = url.match(/(?:\/dp\/|\/gp\/product\/)(B[0-9A-Z]{9})/);
-                if (match && match[1]) {
-                    return !existingAsins.includes(match[1]);
-                }
-                return true;
-            });
-
-            closeCurrentTab(); // Close the search tab, we have the URLs
-
-            if (newUrls.length === 0) {
-                // Try next page immediately if all existed
-                nextPageUrl = newNextPageUrl;
-                if (nextPageUrl) {
-                    broadcastStatus(`All existing. Skipping to next page...`);
-                    setTimeout(handleNextPage, 3000);
-                } else {
-                    isProcessing = false;
-                    broadcastStatus("Batch Complete (All products existed).");
-                }
-                return;
-            }
-
-            // Continue Batch
-            queue = newUrls;
-            totalCount += newUrls.length;
-            nextPageUrl = newNextPageUrl;
-
-            scheduleNext();
-
-        } catch (e) {
-            console.error("Async check failed on next page", e);
-            isProcessing = false;
-            broadcastStatus("Error checking existing products on next page.");
-            closeCurrentTab();
-        }
-    });
+function broadcastRescan(msg) {
+    chrome.runtime.sendMessage({
+        action: "RESCAN_PROGRESS",
+        processed: rescanRun.index,
+        total: rescanRun.offers.length,
+        results: rescanRun.results,
+        paused: rescanRun.paused,
+        pausedReason: rescanRun.pausedReason,
+        message: msg,
+    }).catch(() => { }); // popup may be closed
 }

@@ -381,6 +381,43 @@ class BatchImportControllerTest extends TestCase
     }
 
     /** @test */
+    public function b4_an_open_box_title_on_an_existing_offer_rescan_maps_to_canonical_condition_and_ignores_the_product(): void
+    {
+        $this->requireMysql();
+        Queue::fake();
+
+        $store = Store::create(['tenant_id' => $this->category->tenant_id, 'slug' => 'amazon', 'name' => 'Amazon']);
+        $existingProduct = Product::factory()->create(['category_id' => $this->category->id, 'status' => null, 'is_ignored' => false]);
+        ProductOffer::create([
+            'tenant_id'  => $this->category->tenant_id,
+            'product_id' => $existingProduct->id,
+            'store_id'   => $store->id,
+            'url'        => 'https://www.amazon.com/dp/B0ABC12345',
+            'raw_title'  => 'Old Product Name',
+        ]);
+
+        // Rescan payload: NO explicit `condition` — the raw title carries an
+        // "Open Box" marker. 029B-B4: the raw marker 'open box' must map to the
+        // canonical 'open_box'; before the fix it missed NEGATIVE_CONDITIONS and
+        // was stored verbatim via the clean branch with the product left visible.
+        $payload = $this->validPayload([
+            'products' => [
+                ['asin' => 'B0ABC12345', 'title' => 'Sony WH-1000XM5 (Open Box)', 'price' => 279.99],
+            ],
+        ]);
+
+        $response = $this->postJson('/api/products/batch-import', $payload);
+
+        $response->assertOk()->assertJson(['refreshed' => 1, 'flagged' => 1]);
+
+        $this->assertDatabaseHas('products', ['id' => $existingProduct->id, 'is_ignored' => true]);
+        $this->assertDatabaseHas('product_offers', [
+            'product_id' => $existingProduct->id,
+            'condition'  => 'open_box',
+        ]);
+    }
+
+    /** @test */
     public function s2_a_rating_less_refresh_does_not_wipe_a_previously_known_rating(): void
     {
         $this->requireMysql();

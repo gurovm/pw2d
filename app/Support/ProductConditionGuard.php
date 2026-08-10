@@ -39,6 +39,25 @@ class ProductConditionGuard
     ];
 
     /**
+     * 029B-B4: maps every raw marker string this guard can emit to the canonical
+     * {@see ListingHealth} condition vocabulary. Raw markers ('refurbish', 'open box',
+     * 'pre-owned', …) are substring-match tokens, NOT valid `product_offers.condition`
+     * values — feeding them to ListingHealthService::apply() verbatim would miss the
+     * NEGATIVE_CONDITIONS check and store out-of-vocabulary junk via the clean branch.
+     * Canonical spellings are included so the map stays total if the marker lists grow.
+     */
+    private const MARKER_CONDITIONS = [
+        'renewed'     => 'renewed',
+        'refurbish'   => 'refurbished',
+        'refurbished' => 'refurbished',
+        'open box'    => 'open_box',
+        'open-box'    => 'open_box',
+        'open_box'    => 'open_box',
+        'pre-owned'   => 'used',
+        'used'        => 'used',
+    ];
+
+    /**
      * Returns the first matched marker in a raw listing title, or null if clean.
      */
     public static function titleMarker(?string $title): ?string
@@ -53,6 +72,28 @@ class ProductConditionGuard
     public static function summaryMarker(?string $summary): ?string
     {
         return self::firstMatch($summary, self::SUMMARY_MARKERS);
+    }
+
+    /**
+     * 029B-B4: like {@see titleMarker()}, but returns the CANONICAL
+     * {@see ListingHealth} condition ('renewed' | 'refurbished' | 'open_box' | 'used')
+     * instead of the raw matched marker string, or null if the title is clean.
+     *
+     * This is the method every ingestion path MUST use when coercing a title marker
+     * into a `condition` for {@see \App\Services\ListingHealthService::apply()} —
+     * a marker always means "not a new-condition listing", so an unmapped (future)
+     * marker deliberately falls back to 'used' rather than ever leaking a raw marker
+     * string into the stored condition vocabulary.
+     */
+    public static function titleCondition(?string $title): ?string
+    {
+        $marker = self::titleMarker($title);
+
+        if ($marker === null) {
+            return null;
+        }
+
+        return self::MARKER_CONDITIONS[$marker] ?? 'used';
     }
 
     public static function matchesTitle(?string $title): bool

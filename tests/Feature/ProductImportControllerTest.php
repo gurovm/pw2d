@@ -343,6 +343,42 @@ class ProductImportControllerTest extends TestCase
     }
 
     /** @test */
+    public function b4_a_pre_owned_title_on_an_existing_offer_rescan_maps_to_canonical_used_and_ignores_the_product(): void
+    {
+        Queue::fake();
+
+        $existing = Product::factory()->create([
+            'category_id' => $this->category->id,
+            'status'      => null,
+            'is_ignored'  => false,
+        ]);
+        $store = Store::firstOrCreate(['slug' => 'amazon', 'tenant_id' => $existing->tenant_id], ['name' => 'Amazon']);
+        ProductOffer::create([
+            'product_id' => $existing->id,
+            'tenant_id'  => $existing->tenant_id,
+            'store_id'   => $store->id,
+            'url'        => 'https://www.amazon.com/dp/B0ABC12345',
+            'raw_title'  => 'Old Name',
+        ]);
+
+        // Rescan payload: NO explicit `condition` — the title's "Pre-Owned" marker
+        // must map to the canonical 'used' (029B-B4); before the fix the raw marker
+        // 'pre-owned' missed NEGATIVE_CONDITIONS and was stored verbatim via the
+        // clean branch with the product left visible.
+        $response = $this->postJson('/api/product-import', $this->validPayload([
+            'title' => 'Sony WH-1000XM5 Wireless Headphones (Pre-Owned)',
+        ]));
+
+        $response->assertOk()->assertJson(['success' => true, 'action' => 'flagged_condition']);
+
+        $this->assertDatabaseHas('products', ['id' => $existing->id, 'is_ignored' => true]);
+        $this->assertDatabaseHas('product_offers', [
+            'product_id' => $existing->id,
+            'condition'  => 'used',
+        ]);
+    }
+
+    /** @test */
     public function m1_a_reimport_of_an_ignored_product_is_skipped_and_never_un_ignores_it(): void
     {
         Queue::fake();
