@@ -114,10 +114,15 @@ class GenerateLandingPageCommandTest extends TestCase
             ]);
 
             ProductOffer::create([
-                'product_id' => $product->id,
-                'url'        => "https://example.com/{$slug}-{$i}",
-                'raw_title'  => $product->name,
-                'image_url'  => "https://images.example.com/{$slug}-{$i}.jpg",
+                'product_id'    => $product->id,
+                'url'           => "https://example.com/{$slug}-{$i}",
+                'raw_title'     => $product->name,
+                'image_url'     => "https://images.example.com/{$slug}-{$i}.jpg",
+                // A pick-eligible fixture needs a real, buyable offer (2026-08-12
+                // fix: SelectLandingPagePicks now requires >=1 priced, unflagged
+                // offer per product) — a null price is exactly the prod-incident
+                // condition, not a baseline default.
+                'scraped_price' => 100,
             ]);
 
             ProductFeatureValue::factory()->create([
@@ -334,10 +339,10 @@ class GenerateLandingPageCommandTest extends TestCase
         tenancy()->initialize($this->tenant);
         $page = LandingPage::where('slug', 'lp-cmd-snapshot')->first();
 
-        // makeLeafCategoryWithEligibleProducts() doesn't set a scraped_price, so the
-        // snapshot legitimately resolves to null here — the point of this test is that
-        // the KEY is always written (App\Actions\AuditLandingPageFreshness's price_drift
-        // check depends on `array_key_exists`, not merely a truthy value).
+        // The point of this test is that the KEY is always written
+        // (App\Actions\AuditLandingPageFreshness's price_drift check depends on
+        // `array_key_exists`, not merely a truthy value) — independent of whatever
+        // value it holds.
         foreach ($page->picks as $pick) {
             $this->assertArrayHasKey('est_price_snapshot', $pick);
         }

@@ -63,11 +63,14 @@ class SelectLandingPagePicks
             // the product's own ai_summary (an earlier AI pass can itself fabricate a
             // condition claim in prose, e.g. "even if renewed" — see builder memory).
             ->reject(fn (Product $p) => self::hasConditionMarker($p))
-            // Spec 029 amendment (2026-08-10, `unavailable` added 2026-08-12): a
-            // pick-excluding flag on the BEST offer (`high_price` = bad deal today,
-            // `unavailable` = nothing to buy today) means the product itself is fine
-            // but it's excluded from pick eligibility only, not ignored outright.
-            ->reject(fn (Product $p) => self::hasPickExcludingFlag($p))
+            // Spec 029 amendment (2026-08-10, `unavailable` added 2026-08-12; fixed
+            // 2026-08-12 to check every offer instead of only `best_offer` — see
+            // hasEligibleOffer() below): a product is pick-eligible only if it has at
+            // least one offer a reader could actually buy today — priced and free of
+            // any pick-excluding flag (`high_price` = bad deal today, `unavailable` =
+            // nothing to buy today). The product itself stays visible elsewhere on the
+            // site; it's excluded from pick eligibility only, not ignored outright.
+            ->reject(fn (Product $p) => !self::hasEligibleOffer($p))
             ->values();
 
         if ($products->isEmpty()) {
@@ -226,15 +229,29 @@ class SelectLandingPagePicks
     }
 
     /**
-     * Spec 029 amendment: true if the product's best offer (lowest price, the one
-     * actually shown/linked) carries any pick-excluding listing flag
-     * (`high_price`, `unavailable` — see ListingHealth::PICK_EXCLUDING_FLAGS).
+     * True if ANY of the product's offers is simultaneously priced (`scraped_price`
+     * non-null and > 0) and free of any pick-excluding listing flag (`high_price`,
+     * `unavailable` — see ListingHealth::PICK_EXCLUDING_FLAGS). Condition-marker
+     * exclusion (renewed/refurbished/open box/pre-owned/used) is checked separately,
+     * at the product level, by hasConditionMarker() above.
+     *
+     * Fixed 2026-08-12 (prod incident): the prior version only inspected the
+     * product's `best_offer`, but `Product::bestOffer` itself excludes null-price
+     * offers. A product whose ONLY offer had gone flagged + null-price (e.g. an
+     * Amazon listing a category rescan found "Currently unavailable", price
+     * cleared) then had no best_offer at all — the flag check had nothing to
+     * inspect and silently passed the product as eligible. It was picked and
+     * ranked #1 "Best Overall" on a live landing page with no purchasable offer.
+     * Checking every offer directly means the flag check can never be skipped by
+     * best-offer absence: a pick the reader can't buy is not a pick.
      */
-    private static function hasPickExcludingFlag(Product $product): bool
+    private static function hasEligibleOffer(Product $product): bool
     {
-        $flags = $product->best_offer?->listing_flags ?? [];
-
-        return array_intersect(ListingHealth::PICK_EXCLUDING_FLAGS, $flags) !== [];
+        return $product->offers->contains(
+            fn ($offer) => $offer->scraped_price !== null
+                && (float) $offer->scraped_price > 0
+                && array_intersect(ListingHealth::PICK_EXCLUDING_FLAGS, $offer->listing_flags ?? []) === []
+        );
     }
 
     /**

@@ -222,6 +222,28 @@ class AuditLandingPageFreshnessTest extends TestCase
     }
 
     /** @test */
+    public function pick_ineligible_fires_when_a_picks_only_offer_goes_unavailable_flagged_with_a_null_price(): void
+    {
+        [, $page, $products] = $this->makeFreshCategoryAndPage('lp-audit-null-price-unavailable', 7);
+
+        // Regression for the prod incident: the prior version read only `best_offer`,
+        // which excludes null-price offers (Product::bestOffer) — a stored pick
+        // whose ONLY offer went null-price + unavailable-flagged had no best_offer
+        // at all, so the condition/flag checks were silently skipped and
+        // `pick_ineligible` never fired. Same 7 = MAX_PICKS isolation trick as the
+        // high_price/unavailable tests above.
+        ProductOffer::where('product_id', $products->first()->id)->update([
+            'scraped_price' => null,
+            'listing_flags' => ['unavailable'],
+        ]);
+
+        $reasons = (new AuditLandingPageFreshness())->execute($page);
+
+        $this->assertContains('pick_ineligible', $reasons);
+        $this->assertContains('selection_drift', $reasons, 'the delisted offer also excludes the product from re-selection');
+    }
+
+    /** @test */
     public function pick_ineligible_cascades_with_selection_drift_and_render_short_when_a_pick_is_ignored(): void
     {
         [, $page, $products] = $this->makeFreshCategoryAndPage('lp-audit-ignored');

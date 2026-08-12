@@ -65,11 +65,15 @@ class SelectLandingPagePicksTest extends TestCase
         ], $overrides));
 
         ProductOffer::create([
-            'product_id' => $product->id,
-            'store_id'   => null,
-            'url'        => "https://example.com/{$slug}",
-            'raw_title'  => $product->name,
-            'image_url'  => "https://images.example.com/{$slug}.jpg",
+            'product_id'    => $product->id,
+            'store_id'      => null,
+            'url'           => "https://example.com/{$slug}",
+            'raw_title'     => $product->name,
+            'image_url'     => "https://images.example.com/{$slug}.jpg",
+            // A pick-eligible fixture needs a real, buyable offer (2026-08-12 fix:
+            // eligibility now requires >=1 priced, unflagged offer) — a null price
+            // is exactly the prod-incident condition, not a baseline default.
+            'scraped_price' => 100,
         ]);
 
         return $product;
@@ -448,6 +452,121 @@ class SelectLandingPagePicksTest extends TestCase
         $pickedIds = collect($picks)->pluck('product_id')->all();
 
         $this->assertNotContains($flagged->id, $pickedIds, 'A product whose best offer is unavailable-flagged must be excluded');
+        $this->assertCount(5, $pickedIds, 'The 5 clean products fill the picks instead');
+        sort($eligibleIds);
+        $sortedPicked = $pickedIds;
+        sort($sortedPicked);
+        $this->assertSame($eligibleIds, $sortedPicked);
+    }
+
+    // =========================================================================
+    // Null-price + flagged blind spot (prod incident, 2026-08-12 fix)
+    // =========================================================================
+
+    /** @test */
+    public function it_excludes_a_product_whose_only_offer_is_unavailable_flagged_with_a_null_price(): void
+    {
+        $category = Category::factory()->create(['slug' => 'lp-picks-null-price-unavailable']);
+        $feature  = Feature::factory()->create(['category_id' => $category->id, 'is_higher_better' => true, 'unit' => null]);
+
+        // Regression for the live prod incident: a category rescan delisted this
+        // product's only offer (unavailable flag + scraped_price cleared to NULL).
+        // Product::bestOffer excludes null-price offers, so the OLD flag check
+        // (best_offer only) had nothing to inspect and let this through — it was
+        // picked and ranked #1 "Best Overall" on a live page with nothing to buy.
+        $delisted = $this->makeEligibleProduct($category, 'lp-picks-null-price-unavailable-delisted');
+        $this->setScore($delisted, $feature, 99);
+        ProductOffer::where('product_id', $delisted->id)->update([
+            'scraped_price' => null,
+            'listing_flags' => ['unavailable'],
+        ]);
+
+        $eligibleIds = [];
+        foreach (range(1, 5) as $i) {
+            $p = $this->makeEligibleProduct($category, "lp-picks-null-price-unavailable-clean-{$i}");
+            $this->setScore($p, $feature, 50 + $i);
+            $eligibleIds[] = $p->id;
+        }
+
+        $picks     = (new SelectLandingPagePicks())->execute($category);
+        $pickedIds = collect($picks)->pluck('product_id')->all();
+
+        $this->assertNotContains($delisted->id, $pickedIds, 'A product whose only offer is null-price + unavailable-flagged must be excluded');
+        $this->assertCount(5, $pickedIds, 'The 5 clean products fill the picks instead');
+        sort($eligibleIds);
+        $sortedPicked = $pickedIds;
+        sort($sortedPicked);
+        $this->assertSame($eligibleIds, $sortedPicked);
+    }
+
+    /** @test */
+    public function a_product_is_selectable_when_only_one_of_its_two_offers_is_eligible(): void
+    {
+        $category = Category::factory()->create(['slug' => 'lp-picks-multi-offer-partial']);
+        $feature  = Feature::factory()->create(['category_id' => $category->id, 'is_higher_better' => true, 'unit' => null]);
+
+        // Two offers: the cheaper one is flagged + priceless (delisted at that
+        // store), but a second store still carries a clean, priced offer. Multi-
+        // offer products must not be over-excluded just because ONE of their
+        // offers went bad — only a product with ZERO eligible offers is excluded.
+        $product = $this->makeEligibleProduct($category, 'lp-picks-multi-offer-partial-winner');
+        $this->setScore($product, $feature, 99);
+        ProductOffer::where('product_id', $product->id)->update([
+            'scraped_price' => null,
+            'listing_flags' => ['unavailable'],
+        ]);
+        ProductOffer::create([
+            'product_id'    => $product->id,
+            'store_id'      => null,
+            'url'           => 'https://example.com/lp-picks-multi-offer-partial-winner-alt',
+            'raw_title'     => $product->name,
+            'scraped_price' => 45,
+            'listing_flags' => [],
+        ]);
+
+        foreach (range(1, 4) as $i) {
+            $p = $this->makeEligibleProduct($category, "lp-picks-multi-offer-partial-{$i}");
+            $this->setScore($p, $feature, 10 + $i);
+        }
+
+        $picks     = (new SelectLandingPagePicks())->execute($category);
+        $pickedIds = collect($picks)->pluck('product_id')->all();
+
+        $this->assertContains($product->id, $pickedIds, 'A product with at least one clean, priced offer must remain selectable');
+    }
+
+    /** @test */
+    public function it_excludes_a_product_whose_offers_are_all_null_priced(): void
+    {
+        $category = Category::factory()->create(['slug' => 'lp-picks-all-null-price']);
+        $feature  = Feature::factory()->create(['category_id' => $category->id, 'is_higher_better' => true, 'unit' => null]);
+
+        // Neither offer carries a pick-excluding flag, but neither is priced either —
+        // no phantom "Price N/A" picks. A product needs at least one PRICED, clean
+        // offer to be pick-eligible, not merely an unflagged one.
+        $noPrice = $this->makeEligibleProduct($category, 'lp-picks-all-null-price-none');
+        $this->setScore($noPrice, $feature, 99);
+        ProductOffer::where('product_id', $noPrice->id)->update(['scraped_price' => null]);
+        ProductOffer::create([
+            'product_id'    => $noPrice->id,
+            'store_id'      => null,
+            'url'           => 'https://example.com/lp-picks-all-null-price-none-alt',
+            'raw_title'     => $noPrice->name,
+            'scraped_price' => null,
+            'listing_flags' => [],
+        ]);
+
+        $eligibleIds = [];
+        foreach (range(1, 5) as $i) {
+            $p = $this->makeEligibleProduct($category, "lp-picks-all-null-price-clean-{$i}");
+            $this->setScore($p, $feature, 50 + $i);
+            $eligibleIds[] = $p->id;
+        }
+
+        $picks     = (new SelectLandingPagePicks())->execute($category);
+        $pickedIds = collect($picks)->pluck('product_id')->all();
+
+        $this->assertNotContains($noPrice->id, $pickedIds, 'A product with zero priced offers must be excluded, even with no flags');
         $this->assertCount(5, $pickedIds, 'The 5 clean products fill the picks instead');
         sort($eligibleIds);
         $sortedPicked = $pickedIds;

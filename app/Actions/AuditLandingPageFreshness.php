@@ -71,9 +71,11 @@ final class AuditLandingPageFreshness
 
     /**
      * A stored pick is deleted, detached (category_id null/changed away from the
-     * page's own category), is_ignored, or its best offer carries a negative
-     * condition (Spec 029) or any pick-excluding listing flag
-     * (`high_price`, `unavailable` — ListingHealth::PICK_EXCLUDING_FLAGS).
+     * page's own category), is_ignored, or has no offer that is simultaneously
+     * priced, free of a negative condition (Spec 029), and free of a
+     * pick-excluding listing flag (`high_price`, `unavailable` —
+     * ListingHealth::PICK_EXCLUDING_FLAGS) — the identical rule SelectLandingPagePicks
+     * applies (2026-08-12 fix).
      */
     private function hasIneligiblePick(Collection $picks, Collection $products, LandingPage $page): bool
     {
@@ -92,18 +94,32 @@ final class AuditLandingPageFreshness
                 return true;
             }
 
-            $bestOffer = $product->best_offer;
-
-            if ($bestOffer === null) {
-                return false;
-            }
-
-            if (in_array($bestOffer->condition, ListingHealth::NEGATIVE_CONDITIONS, true)) {
-                return true;
-            }
-
-            return array_intersect(ListingHealth::PICK_EXCLUDING_FLAGS, $bestOffer->listing_flags ?? []) !== [];
+            return !self::hasEligibleOffer($product);
         });
+    }
+
+    /**
+     * True if ANY of the product's offers is simultaneously priced (`scraped_price`
+     * non-null and > 0), free of a negative condition (`condition` not in
+     * ListingHealth::NEGATIVE_CONDITIONS), and free of a pick-excluding listing flag
+     * (ListingHealth::PICK_EXCLUDING_FLAGS). Mirrors SelectLandingPagePicks's
+     * identical rule.
+     *
+     * Fixed 2026-08-12 (prod incident): the prior version inspected only the
+     * product's `best_offer`, but `Product::bestOffer` itself excludes null-price
+     * offers — so a stored pick whose ONLY offer had gone flagged + null-price had
+     * no best_offer at all, and the condition/flag checks silently passed it as
+     * still eligible (`pick_ineligible` never fired). Checking every offer directly
+     * closes that blind spot: a stored pick the reader can't buy is ineligible.
+     */
+    private static function hasEligibleOffer(Product $product): bool
+    {
+        return $product->offers->contains(
+            fn ($offer) => $offer->scraped_price !== null
+                && (float) $offer->scraped_price > 0
+                && !in_array($offer->condition, ListingHealth::NEGATIVE_CONDITIONS, true)
+                && array_intersect(ListingHealth::PICK_EXCLUDING_FLAGS, $offer->listing_flags ?? []) === []
+        );
     }
 
     /**
