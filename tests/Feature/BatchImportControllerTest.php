@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Http\Middleware\InitializeTenancyFromPayload;
 use App\Http\Middleware\VerifyExtensionToken;
 use App\Jobs\ProcessPendingProduct;
+use App\Jobs\RecalculateCategoryPriceTiers;
 use App\Models\Category;
 use App\Models\Feature;
 use App\Models\Product;
@@ -224,7 +225,7 @@ class BatchImportControllerTest extends TestCase
             'is_ignored'  => false,
         ]);
 
-        ProductOffer::create([
+        $existingOffer = ProductOffer::create([
             'tenant_id'  => $this->category->tenant_id,
             'product_id' => $existingProduct->id,
             'store_id'   => $store->id,
@@ -242,12 +243,24 @@ class BatchImportControllerTest extends TestCase
             ],
         ]);
 
-        $this->postJson('/api/products/batch-import', $payload);
+        // No condition, no title marker, no listing_flags — genuinely dead
+        // listing. This is the ONLY shape the heuristic still fires for
+        // (contrast with the negative-condition/flag regression tests above).
+        $response = $this->postJson('/api/products/batch-import', $payload);
+
+        $response->assertOk()->assertJson(['refreshed' => 1, 'flagged' => 0]);
 
         $this->assertDatabaseHas('products', [
             'id'         => $existingProduct->id,
             'is_ignored' => true,
         ]);
+
+        // The heuristic short-circuits with `continue` — the offer itself is
+        // never touched (no heal, no health stamp) for a plain dead listing.
+        $offer = $existingOffer->fresh();
+        $this->assertSame('Some Product', $offer->raw_title);
+        $this->assertNull($offer->condition);
+        $this->assertNull($offer->health_checked_at);
 
         Queue::assertNothingPushed();
     }
@@ -422,6 +435,100 @@ class BatchImportControllerTest extends TestCase
             'listing_flags' => json_encode(['unavailable']),
             'stock_status'  => 'out_of_stock',
         ]);
+    }
+
+    /** @test */
+    public function no_price_refresh_with_a_negative_condition_heals_the_offer_and_is_flagged_not_silently_delisted(): void
+    {
+        $this->requireMysql();
+        Queue::fake();
+
+        // Regression: live QA, product 1744 (HyperX Cloud Alpha Wireless,
+        // ASIN B09Z6PM1PV) — a RENEWED re-listing with no extractable price used
+        // to hit the dead-listing heuristic (wrong reason for is_ignored) and
+        // `continue` before the offer heal / health stamp / ListingHealthService
+        // ran. It must now fall through to the normal refresh path instead.
+        $store = Store::create(['tenant_id' => $this->category->tenant_id, 'slug' => 'amazon', 'name' => 'Amazon']);
+        $existingProduct = Product::factory()->create(['category_id' => $this->category->id, 'status' => null, 'is_ignored' => false]);
+        $existingOffer = ProductOffer::create([
+            'tenant_id'  => $this->category->tenant_id,
+            'product_id' => $existingProduct->id,
+            'store_id'   => $store->id,
+            'url'        => 'https://www.amazon.com/dp/B09Z6PM1PV',
+            'raw_title'  => 'HyperX Cloud Alpha Wireless',
+        ]);
+
+        $payload = $this->validPayload([
+            'products' => [
+                [
+                    'asin'      => 'B09Z6PM1PV',
+                    'title'     => 'HyperX Cloud Alpha Wireless (Renewed)',
+                    'price'     => null,
+                    'condition' => 'renewed',
+                ],
+            ],
+        ]);
+
+        $response = $this->postJson('/api/products/batch-import', $payload);
+
+        $response->assertOk()->assertJson(['flagged' => 1]);
+
+        $this->assertDatabaseHas('products', ['id' => $existingProduct->id, 'is_ignored' => true]);
+
+        $offer = $existingOffer->fresh();
+        $this->assertSame('renewed', $offer->condition);
+        $this->assertSame('HyperX Cloud Alpha Wireless (Renewed)', $offer->raw_title);
+        $this->assertNotNull($offer->health_checked_at);
+
+        // Falls through to the normal existing-offer refresh path (unlike the
+        // dead-listing heuristic's early `continue`), so the standard A4 tier
+        // recalc dispatch fires — this is NOT a brand-new product, so no AI job.
+        Queue::assertPushed(RecalculateCategoryPriceTiers::class);
+        Queue::assertNotPushed(ProcessPendingProduct::class);
+    }
+
+    /** @test */
+    public function no_price_refresh_with_only_a_recognized_flag_is_not_delisted_and_stores_the_flag(): void
+    {
+        $this->requireMysql();
+        Queue::fake();
+
+        // Regression: the pre-fix heuristic only special-cased `unavailable` —
+        // any OTHER recognized flag (e.g. `high_price`) paired with a no-price
+        // payload was still wrongly delisted as a "dead listing".
+        $store = Store::create(['tenant_id' => $this->category->tenant_id, 'slug' => 'amazon', 'name' => 'Amazon']);
+        $existingProduct = Product::factory()->create(['category_id' => $this->category->id, 'status' => null, 'is_ignored' => false]);
+        $existingOffer = ProductOffer::create([
+            'tenant_id'  => $this->category->tenant_id,
+            'product_id' => $existingProduct->id,
+            'store_id'   => $store->id,
+            'url'        => 'https://www.amazon.com/dp/B0ABC12345',
+            'raw_title'  => 'Old Product Name',
+        ]);
+
+        $payload = $this->validPayload([
+            'products' => [
+                [
+                    'asin'          => 'B0ABC12345',
+                    'title'         => 'Old Product Name',
+                    'price'         => null,
+                    'condition'     => 'new',
+                    'listing_flags' => ['high_price'],
+                ],
+            ],
+        ]);
+
+        $this->postJson('/api/products/batch-import', $payload)->assertOk();
+
+        $this->assertDatabaseHas('products', ['id' => $existingProduct->id, 'is_ignored' => false]);
+
+        // Array-cast assertion (not assertDatabaseHas) — a raw `=` comparison of a
+        // native MySQL `json` column against a string-encoded value is unreliable
+        // (see docs/questions.md); comparing the hydrated/cast PHP array is exact
+        // on every DB driver.
+        $offer = $existingOffer->fresh();
+        $this->assertSame('new', $offer->condition);
+        $this->assertSame(['high_price'], $offer->listing_flags);
     }
 
     /** @test */

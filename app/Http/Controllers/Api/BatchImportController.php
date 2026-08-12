@@ -11,6 +11,7 @@ use App\Models\Product;
 use App\Models\ProductOffer;
 use App\Models\Store;
 use App\Services\ListingHealthService;
+use App\Support\ListingHealth;
 use App\Support\ProductConditionGuard;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -71,18 +72,6 @@ class BatchImportController extends Controller
                 $existing = $existingMap->get($p['asin']);
 
                 if ($existing) {
-                    // Pre-existing delisting heuristic: a refresh with no price marks
-                    // the product ignored (dead listing). An `unavailable`-flagged
-                    // payload is exactly the legitimate no-price case that must NOT
-                    // be delisted (Spec 029: offer-level flag, product stays visible)
-                    // — let it flow through the normal refresh so ListingHealthService
-                    // stores the flag + coerces stock_status instead.
-                    if (empty($p['price']) && !in_array('unavailable', $listingFlags, true)) {
-                        $existing->update(['is_ignored' => true]);
-                        $refreshed++;
-                        continue;
-                    }
-
                     // Reviewer B2: a title marker is condition EVIDENCE for a listing
                     // we already track — a rescan of an existing offer must heal (raw_
                     // title + flag), never be silently skipped like a brand-new listing
@@ -90,7 +79,27 @@ class BatchImportController extends Controller
                     // when the payload didn't already supply an explicit `condition`.
                     // 029B-B4: titleCondition() (not titleMarker()) — apply() needs the
                     // canonical ListingHealth vocabulary, never a raw marker string.
+                    // Computed BEFORE the dead-listing heuristic below so that heuristic
+                    // can tell a genuinely dead listing apart from a condition-flagged one.
                     $effectiveCondition = $condition ?? ProductConditionGuard::titleCondition($p['title']);
+
+                    // Dead-listing heuristic: a refresh with no price AND no condition/
+                    // flag evidence at all is treated as delisted (is_ignored, counted
+                    // `refreshed`, nothing else touched). Live bug (2026-08, product
+                    // 1744/B09Z6PM1PV): a no-price RENEWED re-listing used to hit this
+                    // same branch and get silently ignored with no condition stored, no
+                    // health_checked_at stamp, and no raw_title heal — the forensics
+                    // said nothing about why. A no-price report carrying a negative
+                    // condition (renewed/refurbished/open_box/used) or ANY recognized
+                    // listing flag is NOT a dead listing — it must fall through to the
+                    // normal refresh path below so the offer heals and
+                    // ListingHealthService::apply() records the real reason and counts
+                    // it as `flagged` instead.
+                    if (empty($p['price']) && !in_array($effectiveCondition, ListingHealth::NEGATIVE_CONDITIONS, true) && empty($listingFlags)) {
+                        $existing->update(['is_ignored' => true]);
+                        $refreshed++;
+                        continue;
+                    }
 
                     // A1 (F38): fetch the offer instance so image_url/stock_status can
                     // fall back to their previous value instead of being wiped to null.
