@@ -193,7 +193,7 @@ class ProductImportController extends Controller
             $wasNew = true;
         }
 
-        $listingOverride = $this->listingHealth->apply($existingOffer, $product, $effectiveCondition, $listingFlags);
+        $listingOverride = $this->listingHealth->apply($existingOffer, $product, $effectiveCondition, $listingFlags, $validated['stock_status'] ?? null);
 
         // Don't burn an AI evaluation on a listing we just flagged/ignored for condition.
         if ($listingOverride !== 'flagged_condition') {

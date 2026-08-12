@@ -8,6 +8,7 @@ use App\Models\Category;
 use App\Models\Feature;
 use App\Models\Product;
 use App\Services\ProductScoringService;
+use App\Support\ListingHealth;
 use App\Support\ProductConditionGuard;
 use Illuminate\Support\Str;
 
@@ -62,10 +63,11 @@ class SelectLandingPagePicks
             // the product's own ai_summary (an earlier AI pass can itself fabricate a
             // condition claim in prose, e.g. "even if renewed" — see builder memory).
             ->reject(fn (Product $p) => self::hasConditionMarker($p))
-            // Spec 029 amendment (2026-08-10): a "High price" buy-box warning on the
-            // BEST offer means today's listing is a bad deal — the product itself is
-            // fine, so it's excluded from pick eligibility only, not ignored outright.
-            ->reject(fn (Product $p) => self::hasHighPriceFlag($p))
+            // Spec 029 amendment (2026-08-10, `unavailable` added 2026-08-12): a
+            // pick-excluding flag on the BEST offer (`high_price` = bad deal today,
+            // `unavailable` = nothing to buy today) means the product itself is fine
+            // but it's excluded from pick eligibility only, not ignored outright.
+            ->reject(fn (Product $p) => self::hasPickExcludingFlag($p))
             ->values();
 
         if ($products->isEmpty()) {
@@ -225,13 +227,14 @@ class SelectLandingPagePicks
 
     /**
      * Spec 029 amendment: true if the product's best offer (lowest price, the one
-     * actually shown/linked) carries the `high_price` listing flag.
+     * actually shown/linked) carries any pick-excluding listing flag
+     * (`high_price`, `unavailable` — see ListingHealth::PICK_EXCLUDING_FLAGS).
      */
-    private static function hasHighPriceFlag(Product $product): bool
+    private static function hasPickExcludingFlag(Product $product): bool
     {
         $flags = $product->best_offer?->listing_flags ?? [];
 
-        return in_array('high_price', $flags, true);
+        return array_intersect(ListingHealth::PICK_EXCLUDING_FLAGS, $flags) !== [];
     }
 
     /**

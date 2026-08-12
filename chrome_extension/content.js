@@ -98,6 +98,10 @@ function conditionMarkerFromText(text) {
  *       tooltip "We have recently seen better prices…", adjacent "Learn more"
  *       disclosure). Scoped to the buy-box / right-hand column so review text
  *       can never false-positive.
+ *     - 'unavailable': the availability block stating "Currently unavailable"
+ *       (#availability is the classic anchor; exact-leaf-text scan of the
+ *       buy-box column is the DOM-churn fallback). NOT a condition — the
+ *       product is fine, the listing just cannot be bought today.
  */
 function detectListingHealth(doc) {
     doc = doc || document;
@@ -162,6 +166,31 @@ function detectListingHealth(doc) {
                 break;
             }
         }
+    }
+
+    // "Currently unavailable" availability block → 'unavailable' flag.
+    // #availability/#outOfStock is the classic anchor; the fallback is an
+    // exact-leaf-text scan scoped to the buy-box column (same anti-false-
+    // positive discipline as 'high_price' — review/description text never hits).
+    const availEl = doc.querySelector('#availability, #outOfStock');
+    if (availEl && /currently unavailable/i.test(availEl.textContent)) {
+        health.listing_flags.push('unavailable');
+    } else if (buyBoxRegion) {
+        for (const el of buyBoxRegion.querySelectorAll('span, div')) {
+            if (el.children.length > 0) continue; // leaf nodes only
+            if (/^currently unavailable\.?$/i.test(el.textContent.trim())) {
+                health.listing_flags.push('unavailable');
+                break;
+            }
+        }
+    }
+
+    // An affirmatively detected "Currently unavailable" block IS a fully loaded
+    // page — a titled, unavailable listing must not be demoted to 'unknown' just
+    // because the buy-box has no buttons ('unknown' is stamp-only server-side and
+    // would drop the flag, resurrecting the endless-rescan loop).
+    if (health.condition === 'unknown' && titleEl && health.listing_flags.includes('unavailable')) {
+        health.condition = 'new';
     }
 
     return health;
@@ -502,15 +531,23 @@ function extractProductPageData() {
     const asin = getASIN();
     if (!asin) return null;
 
-    // Check if product is unavailable + derive stock_status when extractable
+    // Derive stock_status from the availability block. An unavailable/out-of-stock
+    // page NO LONGER early-returns (Spec 029 `unavailable` flag): #productTitle,
+    // image and reviews are all still present on those pages, so extraction
+    // proceeds normally and the rescan POSTs them like any other page — the server
+    // stamps health_checked_at and flags the offer instead of the old client-side
+    // skip that left these pages heading the rescan list forever.
     let stock_status = null;
+    let isUnavailable = false;
     const availEl = document.querySelector('#availability, #outOfStock');
     if (availEl) {
         const text = availEl.textContent.toLowerCase();
         if (text.includes('currently unavailable') || text.includes('out of stock')) {
-            return { unavailable: true, asin };
+            stock_status = 'out_of_stock';
+            isUnavailable = true;
+        } else if (text.includes('in stock')) {
+            stock_status = 'in_stock';
         }
-        if (text.includes('in stock')) stock_status = 'in_stock';
     }
 
     // Title — from #productTitle or meta title
@@ -574,6 +611,10 @@ function extractProductPageData() {
             if (p > 0) price = p;
         }
     }
+    // An unavailable listing has no buy-box price — anything the fallback
+    // strategies caught (stale meta tag, carousel leftovers) is not THIS
+    // listing's price today. Send null.
+    if (isUnavailable) price = null;
 
     // Rating
     let rating = null;
@@ -675,9 +716,6 @@ function extractStoreProduct() {
 
     try {
         const product = extractor(url);
-        if (product && product.unavailable) {
-            return { success: true, product }; // callers check product.unavailable
-        }
         if (!product || !product.raw_title) {
             return { success: false, error: 'Could not extract product data from this page.' };
         }
@@ -690,7 +728,6 @@ function extractStoreProduct() {
 function extractAmazonProduct(url) {
     const data = extractProductPageData();
     if (!data) return null;
-    if (data.unavailable) return { unavailable: true };
 
     // Extract brand from the "Visit the X Store" link or brand table row
     let brand = null;

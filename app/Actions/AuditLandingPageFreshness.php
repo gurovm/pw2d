@@ -72,7 +72,8 @@ final class AuditLandingPageFreshness
     /**
      * A stored pick is deleted, detached (category_id null/changed away from the
      * page's own category), is_ignored, or its best offer carries a negative
-     * condition (Spec 029) or the `high_price` listing flag.
+     * condition (Spec 029) or any pick-excluding listing flag
+     * (`high_price`, `unavailable` — ListingHealth::PICK_EXCLUDING_FLAGS).
      */
     private function hasIneligiblePick(Collection $picks, Collection $products, LandingPage $page): bool
     {
@@ -101,7 +102,7 @@ final class AuditLandingPageFreshness
                 return true;
             }
 
-            return in_array('high_price', $bestOffer->listing_flags ?? [], true);
+            return array_intersect(ListingHealth::PICK_EXCLUDING_FLAGS, $bestOffer->listing_flags ?? []) !== [];
         });
     }
 

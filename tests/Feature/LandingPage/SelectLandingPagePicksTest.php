@@ -420,4 +420,38 @@ class SelectLandingPagePicksTest extends TestCase
 
         $this->assertContains($product->id, $pickedIds, 'Only the BEST offer\'s flags matter — a flagged non-best offer must not exclude the product');
     }
+
+    /** @test */
+    public function it_excludes_a_product_whose_best_offer_is_flagged_unavailable(): void
+    {
+        $category = Category::factory()->create(['slug' => 'lp-picks-unavailable']);
+        $feature  = Feature::factory()->create(['category_id' => $category->id, 'is_higher_better' => true, 'unit' => null]);
+
+        // Would otherwise win "Best Overall", but its only (best) offer carries the
+        // `unavailable` flag — pick-excluding exactly like high_price (Spec 029,
+        // ListingHealth::PICK_EXCLUDING_FLAGS).
+        $flagged = $this->makeEligibleProduct($category, 'lp-picks-unavailable-flagged');
+        $this->setScore($flagged, $feature, 99);
+        ProductOffer::where('product_id', $flagged->id)->update([
+            'scraped_price' => 50,
+            'listing_flags' => ['unavailable'],
+        ]);
+
+        $eligibleIds = [];
+        foreach (range(1, 5) as $i) {
+            $p = $this->makeEligibleProduct($category, "lp-picks-unavailable-clean-{$i}");
+            $this->setScore($p, $feature, 50 + $i);
+            $eligibleIds[] = $p->id;
+        }
+
+        $picks     = (new SelectLandingPagePicks())->execute($category);
+        $pickedIds = collect($picks)->pluck('product_id')->all();
+
+        $this->assertNotContains($flagged->id, $pickedIds, 'A product whose best offer is unavailable-flagged must be excluded');
+        $this->assertCount(5, $pickedIds, 'The 5 clean products fill the picks instead');
+        sort($eligibleIds);
+        $sortedPicked = $pickedIds;
+        sort($sortedPicked);
+        $this->assertSame($eligibleIds, $sortedPicked);
+    }
 }

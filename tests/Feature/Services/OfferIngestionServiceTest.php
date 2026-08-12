@@ -420,6 +420,55 @@ class OfferIngestionServiceTest extends TestCase
     }
 
     /** @test */
+    public function unavailable_flags_the_offer_without_ignoring_the_product_and_coerces_stock_status(): void
+    {
+        Queue::fake();
+
+        $category = Category::factory()->create();
+        Feature::factory()->create(['category_id' => $category->id]);
+
+        // Unavailable page: no price, no stock_status in the payload — the flag
+        // alone must set the offer out_of_stock (Spec 029, 2026-08-12).
+        $result = app(OfferIngestionService::class)->processIncomingOffer($this->basePayload([
+            'category_id'   => $category->id,
+            'scraped_price' => null,
+            'condition'     => 'new',
+            'listing_flags' => ['unavailable'],
+        ]));
+
+        $this->assertSame('created', $result['action']);
+
+        $product = Product::find($result['product_id']);
+        $this->assertFalse($product->is_ignored, 'unavailable is offer-level — the product stays visible');
+
+        $offer = ProductOffer::where('product_id', $product->id)->first();
+        $this->assertSame(['unavailable'], $offer->listing_flags);
+        $this->assertSame('new', $offer->condition);
+        $this->assertSame('out_of_stock', $offer->stock_status);
+        $this->assertNotNull($offer->health_checked_at);
+    }
+
+    /** @test */
+    public function an_explicit_payload_stock_status_is_never_overridden_by_the_unavailable_flag(): void
+    {
+        Queue::fake();
+
+        $category = Category::factory()->create();
+        Feature::factory()->create(['category_id' => $category->id]);
+
+        $result = app(OfferIngestionService::class)->processIncomingOffer($this->basePayload([
+            'category_id'   => $category->id,
+            'condition'     => 'new',
+            'listing_flags' => ['unavailable'],
+            'stock_status'  => 'back_ordered',
+        ]));
+
+        $offer = ProductOffer::where('product_id', $result['product_id'])->first();
+        $this->assertSame(['unavailable'], $offer->listing_flags);
+        $this->assertSame('back_ordered', $offer->stock_status, 'the extension saw the page — an explicit stock_status wins');
+    }
+
+    /** @test */
     public function high_price_flag_on_a_landing_page_pick_dispatches_the_freshness_audit_job(): void
     {
         Queue::fake();
@@ -473,7 +522,7 @@ class OfferIngestionServiceTest extends TestCase
             'url'           => 'https://example.com/product/1',
             'raw_title'     => 'Old Title',
             'condition'     => 'renewed',
-            'listing_flags' => ['high_price'],
+            'listing_flags' => ['high_price', 'unavailable'],
         ]);
 
         app(OfferIngestionService::class)->processIncomingOffer($this->basePayload([
@@ -484,7 +533,7 @@ class OfferIngestionServiceTest extends TestCase
 
         $offer->refresh();
         $this->assertSame('new', $offer->condition);
-        $this->assertSame([], $offer->listing_flags);
+        $this->assertSame([], $offer->listing_flags, 'a clean rescan clears high_price AND unavailable — flags flip both ways');
         $this->assertNotNull($offer->health_checked_at);
     }
 

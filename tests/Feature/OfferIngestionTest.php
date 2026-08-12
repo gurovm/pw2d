@@ -147,6 +147,50 @@ class OfferIngestionTest extends TestCase
     }
 
     /** @test */
+    public function unavailable_flag_is_accepted_stored_and_coerces_stock_status_when_payload_has_none(): void
+    {
+        Queue::fake();
+
+        $store   = Store::create(['name' => 'Clive Coffee', 'slug' => 'clive-coffee']);
+        $product = Product::factory()->create(['category_id' => $this->category->id, 'status' => null, 'is_ignored' => false]);
+        ProductOffer::create([
+            'product_id'   => $product->id,
+            'store_id'     => $store->id,
+            'url'          => 'https://clivecoffee.com/products/lelit-bianca-v3',
+            'raw_title'    => 'Lelit Bianca V3',
+            'stock_status' => 'in_stock',
+        ]);
+
+        // Unavailable page: no price, no explicit stock_status — the flag alone
+        // must flip the offer to out_of_stock (Spec 029, `unavailable` flag).
+        $response = $this->postJson('/api/extension/ingest-offer', $this->validPayload([
+            'scraped_price' => null,
+            'condition'     => 'new',
+            'listing_flags' => ['unavailable'],
+        ]));
+
+        $response->assertOk()->assertJson(['success' => true, 'action' => 'refreshed']);
+
+        $this->assertDatabaseHas('product_offers', [
+            'product_id'    => $product->id,
+            'listing_flags' => json_encode(['unavailable']),
+            'stock_status'  => 'out_of_stock',
+        ]);
+        // Offer-level flag only — the product stays visible (same as high_price).
+        $this->assertDatabaseHas('products', ['id' => $product->id, 'is_ignored' => false]);
+    }
+
+    /** @test */
+    public function an_unrecognized_listing_flag_still_returns_422(): void
+    {
+        $this->postJson('/api/extension/ingest-offer', $this->validPayload([
+            'listing_flags' => ['made_up_flag'],
+        ]))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['listing_flags.0']);
+    }
+
+    /** @test */
     public function store_is_auto_created_from_slug(): void
     {
         Queue::fake();

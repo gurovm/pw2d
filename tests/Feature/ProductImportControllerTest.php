@@ -294,6 +294,31 @@ class ProductImportControllerTest extends TestCase
     }
 
     /** @test */
+    public function unavailable_flag_is_stored_and_coerces_stock_status_without_ignoring_the_product(): void
+    {
+        Queue::fake();
+
+        // "Currently unavailable" page: null price, no explicit stock_status — the
+        // flag alone must set out_of_stock; the product stays visible (Spec 029).
+        $response = $this->postJson('/api/product-import', $this->validPayload([
+            'external_id'   => 'B0UNAVAIL1',
+            'price'         => null,
+            'condition'     => 'new',
+            'listing_flags' => ['unavailable'],
+        ]));
+
+        $response->assertOk()->assertJson(['success' => true, 'action' => 'queued_new']);
+
+        $this->assertDatabaseHas('products', ['is_ignored' => false]);
+        $this->assertDatabaseHas('product_offers', [
+            'url'           => 'https://www.amazon.com/dp/B0UNAVAIL1',
+            'condition'     => 'new',
+            'listing_flags' => json_encode(['unavailable']),
+            'stock_status'  => 'out_of_stock',
+        ]);
+    }
+
+    /** @test */
     public function refresh_updates_image_url_and_leaves_it_untouched_when_omitted(): void
     {
         Queue::fake();

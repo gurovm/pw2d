@@ -103,7 +103,7 @@ class OfferIngestionService
                     $product->update($updates);
                 }
 
-                $override = $this->listingHealth->apply($existingOffer, $product, $effectiveCondition, $listingFlags);
+                $override = $this->listingHealth->apply($existingOffer, $product, $effectiveCondition, $listingFlags, $data['stock_status'] ?? null);
                 if ($override !== null) {
                     $action = $override;
                 }
@@ -231,7 +231,7 @@ class OfferIngestionService
                     $product->update($updates);
                 }
 
-                $override = $this->listingHealth->apply($offer, $product, $condition, $listingFlags);
+                $override = $this->listingHealth->apply($offer, $product, $condition, $listingFlags, $data['stock_status'] ?? null);
                 if ($override !== null) {
                     $action = $override;
                 }
@@ -285,7 +285,7 @@ class OfferIngestionService
 
         $action = 'created';
 
-        $override = $this->listingHealth->apply($offer, $product, $condition, $listingFlags);
+        $override = $this->listingHealth->apply($offer, $product, $condition, $listingFlags, $data['stock_status'] ?? null);
         if ($override !== null) {
             $action = $override;
         }

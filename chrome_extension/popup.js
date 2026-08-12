@@ -586,11 +586,6 @@ scrapeBtn.addEventListener('click', async () => {
 
             const product = response.product;
 
-            if (product.unavailable) {
-                showError('Product is currently unavailable — skipped.');
-                return;
-            }
-
             statusDiv.textContent = `Sending "${product.raw_title?.substring(0, 40)}..." to PW2D...`;
 
             try {

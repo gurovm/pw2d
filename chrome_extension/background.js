@@ -284,8 +284,11 @@ async function handleRescanExtract(offer, response, attempt) {
         advanceRescan(attempt);
         return;
     }
-    if (product.unavailable || !product.raw_title) {
-        // Listing gone / partial page — nothing trustworthy to refresh with
+    if (!product.raw_title) {
+        // Partial page — nothing trustworthy to refresh with. ("Currently
+        // unavailable" pages are NOT this case anymore: extractProductPageData()
+        // extracts them normally with stock_status 'out_of_stock' + the
+        // 'unavailable' listing flag, and they POST like any other page.)
         rescanRun.results.skipped++;
         advanceRescan(attempt);
         return;

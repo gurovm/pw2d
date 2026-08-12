@@ -28,9 +28,9 @@ use Illuminate\Support\Facades\Log;
  *   caller can override its response `action`. A landing-page-pick warning is logged only
  *   on the transition into is_ignored (not on every repeat report of an already-flagged
  *   listing).
- * - `condition` clean ('new') + non-empty `listing_flags` (e.g. `high_price`) →
- *   flags stored on the OFFER only; the product stays visible. Returns null (base
- *   ingestion action stands).
+ * - `condition` clean ('new') + non-empty `listing_flags` (e.g. `high_price`,
+ *   `unavailable`) → flags stored on the OFFER only; the product stays visible.
+ *   Returns null (base ingestion action stands).
  * - `condition` clean ('new') + no flags (a clean explicit DOM report) → clears
  *   `listing_flags` to `[]`: the extension affirmatively confirmed a standard listing.
  *   Flags are point-in-time listing state and must flip both ways as a listing recovers.
@@ -42,21 +42,36 @@ use Illuminate\Support\Facades\Log;
  * to `listing_flags`/`condition` in the two clean branches below — both directions (a
  * flag being SET and a flag being CLEARED can each flip a product's landing-page pick
  * eligibility), not just a fresh `high_price`.
+ *
+ * `unavailable` (Spec 029, 2026-08-12): when the payload carries the flag WITHOUT an
+ * explicit stock_status, the offer's stock_status is coerced to 'out_of_stock' here —
+ * the one choke point every ingestion path already routes flags through. An explicit
+ * payload stock_status always wins (the extension saw the page; trust it).
  */
 class ListingHealthService
 {
     /**
      * @param array<int, string> $listingFlags
+     * @param string|null $payloadStockStatus The stock_status the PAYLOAD explicitly
+     *   supplied (null when omitted) — NOT the offer's current column value, which by
+     *   apply()-time already contains the fallback-preserved previous value.
      * @return string|null 'flagged_condition' when the caller should override its
      *   response action; null when the base ingestion action stands.
      */
-    public function apply(ProductOffer $offer, Product $product, ?string $condition, array $listingFlags): ?string
+    public function apply(ProductOffer $offer, Product $product, ?string $condition, array $listingFlags, ?string $payloadStockStatus = null): ?string
     {
         if ($condition === null) {
             return null;
         }
 
         $now = now();
+
+        // `unavailable` semantics: a listing with nothing to buy IS out of stock. Only
+        // when the payload didn't explicitly say otherwise — and never in the 'unknown'
+        // branch, where reported flags are untrusted and not stored either.
+        $stockCoercion = ($payloadStockStatus === null && in_array('unavailable', $listingFlags, true))
+            ? ['stock_status' => 'out_of_stock']
+            : [];
 
         if ($condition === 'unknown') {
             // 029B-B3: 'unknown' = "the extension looked but could not verify the
@@ -75,6 +90,7 @@ class ListingHealthService
                 'condition'         => $condition,
                 'listing_flags'     => $listingFlags,
                 'health_checked_at' => $now,
+                ...$stockCoercion,
             ]);
 
             if (!$product->is_ignored) {
@@ -90,6 +106,7 @@ class ListingHealthService
                 'condition'         => $condition,
                 'listing_flags'     => $listingFlags,
                 'health_checked_at' => $now,
+                ...$stockCoercion,
             ]);
 
             // Spec 030 §B3 / S1: `high_price` (or any future flag) doesn't flip

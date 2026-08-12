@@ -1,6 +1,6 @@
 # Spec 029 — Extension Rescan v2: full-field refresh + listing-health detection
 
-**Status:** DRAFT (2026-08-09, amended 2026-08-10) · **Bundles:** F37 (verify-condition mode), F38 (refresh drops image/stock), Q1 (offer unique-constraint, CONFIRMED firing in prod), reviews_count extraction fix, cleaned-raw_title blindness fix (found 2026-08-09), **Amazon "High price" buy-box label detection (owner, 2026-08-10)**.
+**Status:** DRAFT (2026-08-09, amended 2026-08-10; `unavailable` listing-flag implemented 2026-08-12) · **Bundles:** F37 (verify-condition mode), F38 (refresh drops image/stock), Q1 (offer unique-constraint, CONFIRMED firing in prod), reviews_count extraction fix, cleaned-raw_title blindness fix (found 2026-08-09), **Amazon "High price" buy-box label detection (owner, 2026-08-10)**.
 
 > **Amendment 2026-08-10:** detection broadened from *condition* to *listing health*. Amazon's own
 > buy-box "High price" warning ("We have recently seen better prices on Amazon or from other
@@ -31,10 +31,11 @@
 - Same refresh semantics in `BatchImportController` (ASIN-dedup branch) and `ProductImportController`.
 
 **A2. Listing-health fields on ingest payloads.**
-- Accept optional `condition` ∈ `new | renewed | refurbished | open_box | used | unknown` AND optional `listing_flags` (array; initially `high_price`, room for `unavailable` later) on `POST /api/extension/ingest-offer` and both import endpoints. Absent → `unknown` / `[]` (today's behavior).
+- Accept optional `condition` ∈ `new | renewed | refurbished | open_box | used | unknown` AND optional `listing_flags` (array; `high_price` + `unavailable` — the latter implemented 2026-08-12 after real "Currently unavailable" listings surfaced) on `POST /api/extension/ingest-offer` and both import endpoints. Absent → `unknown` / `[]` (today's behavior). Unknown flag strings still 422.
 - Migration: `product_offers.condition` (string, nullable, indexed), `product_offers.listing_flags` (JSON, nullable), `product_offers.health_checked_at` (timestamp, nullable).
 - On `renewed|refurbished|open_box|used`: set offer condition, set product `is_ignored = true`, respond `action: flagged_condition`. `ProductConditionGuard` remains the single marker-source of truth for text checks; DOM-detected condition is a stronger signal layered on top.
 - On `high_price`: store the flag on the OFFER only — the product stays visible (it's a fine product; today's listing is a bad deal). `SelectLandingPagePicks` excludes products whose best offer carries `high_price` from pick eligibility. Compare pages unchanged for now (informational value stands); revisit if CTR data says otherwise.
+- On `unavailable` (2026-08-12): identical offer-level semantics — flag stored on the OFFER, product stays visible, clean rescan clears it, and pick eligibility is excluded via the shared `ListingHealth::PICK_EXCLUDING_FLAGS` intersection (`SelectLandingPagePicks` + `AuditLandingPageFreshness` `pick_ineligible` both read it). One extra side effect: when the payload carries the flag WITHOUT an explicit `stock_status`, `ListingHealthService` coerces the offer's `stock_status` to `out_of_stock` (a listing with nothing to buy IS out of stock); an explicit payload stock_status always wins.
 - A clean rescan (no markers, no flags) clears `condition`→`new`, `listing_flags`→`[]`, stamps `health_checked_at` — flags are point-in-time listing state, meant to flip both ways.
 - Landing-page fallout (picks going ineligible mid-publication) is Spec 030's job; this spec only guarantees the signals land in the DB.
 
@@ -50,7 +51,7 @@
 
 **B1. `detectListingHealth()` in content.js** (product page DOM), returning `{condition, listing_flags}`:
 - Condition: title parenthetical `(Renewed)`, the "Renewed" badge element, byline "Brand: Amazon Renewed" / "Visit the Amazon Renewed Store", "Refurbished"/"Open Box" markers. `new` only when the page affirmatively looks like a standard listing, else `unknown`.
-- Flags: the buy-box "High price" label (heading text "High price" adjacent to the "Learn more" disclosure in the buy-box column) → `high_price`. Keep selector logic in this one function; Amazon DOM churn is expected.
+- Flags: the buy-box "High price" label (heading text "High price" adjacent to the "Learn more" disclosure in the buy-box column) → `high_price`; the availability block stating "Currently unavailable" (`#availability` is the classic anchor, exact-leaf-text scan of the buy-box column as DOM-churn fallback) → `unavailable` — a FLAG, never a condition. Keep selector logic in this one function; Amazon DOM churn is expected. Unavailable pages still extract normally (`#productTitle` exists; price null, stock `out_of_stock`, reviews as usual) and POST like any other page — never skipped client-side, so their `health_checked_at` advances and they stop heading the rescan list.
 
 **B2. Rescan mode in popup.** Select category → fetch `/api/extension/rescan-list` → background.js walks each URL in a tab with a 3–5s polite delay (reuse batch-mode pause/resume/progress UI) → content.js extracts `{raw title, price, image_url, stock, reviews_count, condition}` via `extractProductPageData()` + `detectCondition()` → POST to `ingest-offer` per offer. CAPTCHA/robot page (existing `checkForRobot()`) pauses the run.
 
@@ -64,7 +65,7 @@ Manual checklist — there is no JS test harness; `detectListingHealth()`, `cond
 and `extractReviewsCount()` are pure functions of a Document/element so they can get fixture tests later.
 
 1. **Load unpacked extension** (`chrome://extensions` → Developer mode → Load unpacked →
-   `chrome_extension/`). Confirm version shows **1.1** and no manifest errors.
+   `chrome_extension/`). Confirm version shows **1.2** and no manifest errors.
 2. **Regression — batch import still works:** open an Amazon SERP → Scan Page for Products →
    Start Batch Import on a test category. Confirm created/refreshed counts and no console errors
    in the popup or service worker.
@@ -86,7 +87,12 @@ and `extractReviewsCount()` are pure functions of a Document/element so they can
    matches the on-page ratings count — or stays untouched (null sent) when the page truly shows
    none. (Empirical verification of the new selectors is an owner step — the builder cannot load
    Amazon pages.)
-8. **Old-server degradation:** point the extension at an environment without Phase A and press
+8. **Unavailable listing (v1.2):** open one known "Currently unavailable" product page and run a
+   single import (Import This Product). Confirm in Filament that the OFFER carries
+   `listing_flags = ["unavailable"]` + `stock_status = out_of_stock` + a fresh `health_checked_at`,
+   and the product is still visible (`is_ignored = false`). Then rescan its category and confirm
+   the page counts as **updated** (not skipped) in the summary.
+9. **Old-server degradation:** point the extension at an environment without Phase A and press
    Rescan — expect the clear error "This server does not support rescan yet", no crash.
 
 ## Phase C — Operation (owner)

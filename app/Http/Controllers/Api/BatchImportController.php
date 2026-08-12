@@ -71,7 +71,13 @@ class BatchImportController extends Controller
                 $existing = $existingMap->get($p['asin']);
 
                 if ($existing) {
-                    if (empty($p['price'])) {
+                    // Pre-existing delisting heuristic: a refresh with no price marks
+                    // the product ignored (dead listing). An `unavailable`-flagged
+                    // payload is exactly the legitimate no-price case that must NOT
+                    // be delisted (Spec 029: offer-level flag, product stays visible)
+                    // — let it flow through the normal refresh so ListingHealthService
+                    // stores the flag + coerces stock_status instead.
+                    if (empty($p['price']) && !in_array('unavailable', $listingFlags, true)) {
                         $existing->update(['is_ignored' => true]);
                         $refreshed++;
                         continue;
@@ -96,7 +102,7 @@ class BatchImportController extends Controller
                         // L7: no 'updated_at' key here — it's not fillable, so mass
                         // assignment silently drops it and Eloquent touches it anyway.
                         $offer->update([
-                            'scraped_price' => $p['price'],
+                            'scraped_price' => $p['price'] ?? null,
                             'raw_title'     => mb_substr($p['title'], 0, 500),
                             'image_url'     => $p['image_url'] ?? $offer->image_url,
                             'stock_status'  => $p['stock_status'] ?? $offer->stock_status,
@@ -104,7 +110,7 @@ class BatchImportController extends Controller
                     }
 
                     $productUpdates = [
-                        'price_tier' => $category->priceTierFor($p['price']),
+                        'price_tier' => $category->priceTierFor($p['price'] ?? null),
                     ];
                     // S2: only refresh amazon_rating when the scraper actually reported
                     // one AND we don't already know it — never wipe a known rating with
@@ -120,7 +126,7 @@ class BatchImportController extends Controller
                     $existing->update($productUpdates);
 
                     if ($offer) {
-                        $override = $this->listingHealth->apply($offer, $existing, $effectiveCondition, $listingFlags);
+                        $override = $this->listingHealth->apply($offer, $existing, $effectiveCondition, $listingFlags, $p['stock_status'] ?? null);
                         if ($override === 'flagged_condition') {
                             $flagged++;
                         }
@@ -174,7 +180,7 @@ class BatchImportController extends Controller
                         ]
                     );
 
-                    $override = $this->listingHealth->apply($offer, $product, $condition, $listingFlags);
+                    $override = $this->listingHealth->apply($offer, $product, $condition, $listingFlags, $p['stock_status'] ?? null);
                     if ($override === 'flagged_condition') {
                         $flagged++;
                     } else {

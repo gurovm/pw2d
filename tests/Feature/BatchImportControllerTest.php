@@ -381,6 +381,50 @@ class BatchImportControllerTest extends TestCase
     }
 
     /** @test */
+    public function unavailable_flag_with_no_price_refreshes_the_offer_and_coerces_stock_without_delisting(): void
+    {
+        $this->requireMysql();
+        Queue::fake();
+
+        $store = Store::create(['tenant_id' => $this->category->tenant_id, 'slug' => 'amazon', 'name' => 'Amazon']);
+        $existingProduct = Product::factory()->create(['category_id' => $this->category->id, 'status' => null, 'is_ignored' => false]);
+        ProductOffer::create([
+            'tenant_id'    => $this->category->tenant_id,
+            'product_id'   => $existingProduct->id,
+            'store_id'     => $store->id,
+            'url'          => 'https://www.amazon.com/dp/B0ABC12345',
+            'raw_title'    => 'Old Product Name',
+            'stock_status' => 'in_stock',
+        ]);
+
+        // A "Currently unavailable" page: null price, no explicit stock_status.
+        // The pre-existing empty-price delisting heuristic must NOT fire — Spec 029:
+        // `unavailable` is offer-level, the product stays visible, and the flag
+        // alone coerces the offer to out_of_stock.
+        $payload = $this->validPayload([
+            'products' => [
+                [
+                    'asin'          => 'B0ABC12345',
+                    'title'         => 'Old Product Name',
+                    'price'         => null,
+                    'condition'     => 'new',
+                    'listing_flags' => ['unavailable'],
+                ],
+            ],
+        ]);
+
+        $this->postJson('/api/products/batch-import', $payload)->assertOk()->assertJson(['refreshed' => 1]);
+
+        $this->assertDatabaseHas('products', ['id' => $existingProduct->id, 'is_ignored' => false]);
+        $this->assertDatabaseHas('product_offers', [
+            'product_id'    => $existingProduct->id,
+            'condition'     => 'new',
+            'listing_flags' => json_encode(['unavailable']),
+            'stock_status'  => 'out_of_stock',
+        ]);
+    }
+
+    /** @test */
     public function b4_an_open_box_title_on_an_existing_offer_rescan_maps_to_canonical_condition_and_ignores_the_product(): void
     {
         $this->requireMysql();

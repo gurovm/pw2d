@@ -205,6 +205,23 @@ class AuditLandingPageFreshnessTest extends TestCase
     }
 
     /** @test */
+    public function pick_ineligible_fires_when_the_best_offer_is_flagged_unavailable(): void
+    {
+        [, $page, $products] = $this->makeFreshCategoryAndPage('lp-audit-unavailable', 7);
+
+        // Same isolation trick as the high_price test above: 7 = MAX_PICKS, so the
+        // flagged product simply drops from re-selection without pulling in an 8th.
+        // `unavailable` is pick-excluding exactly like high_price (Spec 029,
+        // ListingHealth::PICK_EXCLUDING_FLAGS).
+        ProductOffer::where('product_id', $products->first()->id)->update(['listing_flags' => ['unavailable']]);
+
+        $reasons = (new AuditLandingPageFreshness())->execute($page);
+
+        $this->assertContains('pick_ineligible', $reasons);
+        $this->assertContains('selection_drift', $reasons, 'unavailable also excludes the product from re-selection');
+    }
+
+    /** @test */
     public function pick_ineligible_cascades_with_selection_drift_and_render_short_when_a_pick_is_ignored(): void
     {
         [, $page, $products] = $this->makeFreshCategoryAndPage('lp-audit-ignored');
