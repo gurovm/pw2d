@@ -1,6 +1,6 @@
 # Spec 029 — Extension Rescan v2: full-field refresh + listing-health detection
 
-**Status:** DRAFT (2026-08-09, amended 2026-08-10; `unavailable` listing-flag implemented 2026-08-12) · **Bundles:** F37 (verify-condition mode), F38 (refresh drops image/stock), Q1 (offer unique-constraint, CONFIRMED firing in prod), reviews_count extraction fix, cleaned-raw_title blindness fix (found 2026-08-09), **Amazon "High price" buy-box label detection (owner, 2026-08-10)**.
+**Status:** DRAFT (2026-08-09, amended 2026-08-10; `unavailable` listing-flag implemented 2026-08-12; non-Amazon availability detection, extension v1.3, 2026-08-14) · **Bundles:** F37 (verify-condition mode), F38 (refresh drops image/stock), Q1 (offer unique-constraint, CONFIRMED firing in prod), reviews_count extraction fix, cleaned-raw_title blindness fix (found 2026-08-09), **Amazon "High price" buy-box label detection (owner, 2026-08-10)**.
 
 > **Amendment 2026-08-10:** detection broadened from *condition* to *listing health*. Amazon's own
 > buy-box "High price" warning ("We have recently seen better prices on Amazon or from other
@@ -53,6 +53,46 @@
 - Condition: title parenthetical `(Renewed)`, the "Renewed" badge element, byline "Brand: Amazon Renewed" / "Visit the Amazon Renewed Store", "Refurbished"/"Open Box" markers. `new` only when the page affirmatively looks like a standard listing, else `unknown`.
 - Flags: the buy-box "High price" label (heading text "High price" adjacent to the "Learn more" disclosure in the buy-box column) → `high_price`; the availability block stating "Currently unavailable" (`#availability` is the classic anchor, exact-leaf-text scan of the buy-box column as DOM-churn fallback) → `unavailable` — a FLAG, never a condition. Keep selector logic in this one function; Amazon DOM churn is expected. Unavailable pages still extract normally (`#productTitle` exists; price null, stock `out_of_stock`, reviews as usual) and POST like any other page — never skipped client-side, so their `health_checked_at` advances and they stop heading the rescan list.
 
+**B1b. `detectStoreAvailability()` in content.js — non-Amazon availability (v1.3, 2026-08-14).**
+
+Motivating data: c2d has **116 rescannable non-Amazon offers** (86 wholelattelove.com, 30 clivecoffee.com).
+Those extractors sent no `condition` and no `listing_flags`, so `ListingHealthService::apply()` returned
+immediately: the offers refreshed price/title/image but never got `health_checked_at` stamped, and a
+sold-out or discontinued listing was never flagged — it could still be selected as a landing-page pick.
+The server side was already store-agnostic; only the extension needed to report.
+
+- One shared helper `detectStoreAvailability(doc, titleFound)` returns `{condition, listing_flags}` in the
+  same `ListingHealth` vocabulary as `detectListingHealth()`, wired into all three non-Amazon extractors
+  (`extractCliveCoffeeProduct`, `extractSeattleCoffeeGearProduct`, `extractWholeLatteLoveProduct`). Each
+  now also sends `stock_status` (`out_of_stock` when unavailable, else `in_stock`). Amazon path untouched.
+- **`condition` is only ever `new` or `unknown` — deliberate.** `new` whenever a product title was found:
+  these are authorised dealers selling new goods, so `new` is the honest report, and it is precisely what
+  lets the server stamp `health_checked_at` and CLEAR a stale `unavailable` flag when an item comes back
+  in stock. `unknown` when no title was found (partial/failed page) — never fabricate `new` for a page
+  that did not load; flags from such a page are withheld as untrusted. In practice the extractors already
+  return `null` without a title, so an unverified page is never POSTed at all.
+- **No condition detection (renewed/refurb/open-box) for these stores** — they don't sell that way and a
+  guess would be worse than silence. **No `high_price`** — that is Amazon's own buy-box label with no
+  first-party equivalent here.
+- **`unavailable` uses LAYERED detection**, since live-page selectors can't be verified by the builder and
+  a single brittle selector would rot silently. A POSITIVE match is always required — absence of evidence
+  means in stock. (a) JSON-LD `application/ld+json` `offers.availability` (recursive key walk, so `@graph`
+  / `offers[]` / nested `offers.offers[]` all work) — most reliable on Shopify-style stores and **decisive**:
+  if ANY variant offer is purchasable the product is not unavailable; (b) `<meta property="product:availability">`
+  / `og:availability`; (c) add-to-cart button state scoped to the product form, incl. a disabled ATC control
+  — but only when its label doesn't still read "Add to cart", so a not-yet-hydrated theme can't read as sold
+  out; (d) dedicated inventory elements + an exact-leaf-text scan, scoped so a related-products "Sold out"
+  badge can never false-positive. Word separators are `[\s_-]*` throughout (`OutOfStock`, `sold-out`,
+  `out_of_stock`).
+- Price on a sold-out page follows the Amazon precedent only partially: `scraped_price` is nulled **only**
+  when absent/placeholder (`<= 0`). A genuinely displayed price is preserved — Shopify stores normally keep
+  showing the real price while sold out, and nulling it would destroy usable data (and, per the 2026-08-12
+  incident, a null-priced flagged offer is the exact shape that broke pick eligibility).
+- **No popup.js / background.js change needed** (verified): both POST paths already forward whatever
+  `extractStoreProduct()` returns store-agnostically, already strip an `unknown` condition (029B-B3), and
+  already tally a non-Amazon `unavailable` response as `updated` (the server returns `refreshed`, not
+  `flagged_condition` — `unavailable` is offer-level and never sets `is_ignored`).
+
 **B2. Rescan mode in popup.** Select category → fetch `/api/extension/rescan-list` → background.js walks each URL in a tab with a 3–5s polite delay (reuse batch-mode pause/resume/progress UI) → content.js extracts `{raw title, price, image_url, stock, reviews_count, condition}` via `extractProductPageData()` + `detectCondition()` → POST to `ingest-offer` per offer. CAPTCHA/robot page (existing `checkForRobot()`) pauses the run.
 
 **B3. reviews_count 6th strategy.** Find a live URL where `extractReviewsCount()` returns 0 (88 known products), add the missing selector. Send `null` when genuinely absent.
@@ -65,7 +105,8 @@ Manual checklist — there is no JS test harness; `detectListingHealth()`, `cond
 and `extractReviewsCount()` are pure functions of a Document/element so they can get fixture tests later.
 
 1. **Load unpacked extension** (`chrome://extensions` → Developer mode → Load unpacked →
-   `chrome_extension/`). Confirm version shows **1.2** and no manifest errors.
+   `chrome_extension/`). Confirm version shows **1.3** and no manifest errors (no new permissions
+   were added in 1.3 — availability detection only reads the DOM of already-matched pages).
 2. **Regression — batch import still works:** open an Amazon SERP → Scan Page for Products →
    Start Batch Import on a test category. Confirm created/refreshed counts and no console errors
    in the popup or service worker.
@@ -92,7 +133,22 @@ and `extractReviewsCount()` are pure functions of a Document/element so they can
    `listing_flags = ["unavailable"]` + `stock_status = out_of_stock` + a fresh `health_checked_at`,
    and the product is still visible (`is_ignored = false`). Then rescan its category and confirm
    the page counts as **updated** (not skipped) in the summary.
-9. **Old-server degradation:** point the extension at an environment without Phase A and press
+9. **Non-Amazon availability (v1.3) — REQUIRED, the builder could not verify these selectors.**
+   No live Clive/WLL page was loadable during implementation; detection was validated only against
+   synthetic jsdom fixtures (64 assertions incl. every layer + the false-positive guards). Live
+   confirmation is this step. For **wholelattelove.com** and **clivecoffee.com**, pick one IN-STOCK
+   and one SOLD-OUT product each (4 pages total) and run **Import This Product** on each:
+   - In-stock page → offer gets `condition = new`, `listing_flags = []`, `stock_status = in_stock`,
+     and a fresh `health_checked_at`.
+   - Sold-out page → offer gets `listing_flags = ["unavailable"]`, `stock_status = out_of_stock`,
+     a fresh `health_checked_at`, product still visible (`is_ignored = false`), and the displayed
+     price preserved if the page still shows one.
+   - Then re-import the in-stock page (or rescan the category) and confirm a clean report **CLEARS**
+     a previously-set `unavailable` flag back to `[]` — the flag must flip both ways.
+   - If a sold-out page is NOT flagged, open DevTools on it and record which layer should have
+     fired (JSON-LD `offers.availability` / meta / ATC button / inventory text) — every selector
+     lives in the single `detectStoreAvailability()` function, so a fix is one edit.
+10. **Old-server degradation:** point the extension at an environment without Phase A and press
    Rescan — expect the clear error "This server does not support rescan yet", no crash.
 
 ## Phase C — Operation (owner)

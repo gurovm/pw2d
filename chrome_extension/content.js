@@ -196,6 +196,180 @@ function detectListingHealth(doc) {
     return health;
 }
 
+/**
+ * Detect listing health {condition, listing_flags} for the NON-AMAZON storefronts
+ * (Clive Coffee, Seattle Coffee Gear, Whole Latte Love) from a product-page
+ * Document — the sibling of detectListingHealth() above. Pure function of `doc`
+ * (+ an optional caller-supplied title hint), so it is testable against saved DOM
+ * fixtures. ALL selector/text logic for these stores lives in THIS one function.
+ *
+ * Vocabulary mirrors App\Support\ListingHealth exactly:
+ *   condition ∈ new | renewed | refurbished | open_box | used | unknown
+ *   listing_flags ⊆ high_price | unavailable
+ *
+ * DELIBERATE SCOPE (Spec 029 B1, 2026-08-14):
+ * - `condition` is only ever 'new' or 'unknown'. These are authorised dealers
+ *   selling new goods — they do not sell renewed/refurb/open-box, so guessing a
+ *   condition from their DOM would be noise, and silence is better than a guess.
+ *   Reporting 'new' is honest AND load-bearing: it is what lets
+ *   ListingHealthService stamp `health_checked_at` and CLEAR a previously-set
+ *   `unavailable` flag when an item comes back in stock. Sending nothing (today's
+ *   behaviour) makes apply() a no-op and the offer never gets stamped at all.
+ * - 'unknown' whenever no product title was found: the page is partial/failed, so
+ *   nothing on it is trustworthy — never fabricate 'new' for a page that did not
+ *   load. Flags are withheld too (the server distrusts flags on 'unknown', and
+ *   both POST paths strip the keys entirely — 029B-B3).
+ * - NO `high_price`: that flag is Amazon's own buy-box label. These stores have
+ *   no first-party equivalent, and inventing one from price comparison is not
+ *   this function's job.
+ *
+ * UNAVAILABLE — LAYERED detection. These selectors could not be verified against
+ * live Clive/WLL pages by the builder, so each layer stands alone: one theme
+ * change cannot blind the detector. A POSITIVE match is always required —
+ * absence of evidence means in stock, never 'unavailable'.
+ *   (a) JSON-LD `application/ld+json` offers.availability (schema.org) — the most
+ *       reliable signal on Shopify-style stores. DECISIVE when present: if ANY
+ *       variant offer is purchasable, the product is NOT unavailable.
+ *   (b) <meta property="product:availability"> / og:availability content.
+ *   (c) Add-to-cart button state, scoped to the product form area: sold-out label
+ *       text, or a disabled add-to-cart control whose label does not read like a
+ *       normal "Add to cart" (that guard is what keeps a not-yet-hydrated theme
+ *       from reading as sold out).
+ *   (d) Explicit inventory/availability text: dedicated inventory elements, then
+ *       an exact-leaf-text scan — same anti-false-positive discipline as the
+ *       Amazon path, so a related-products "Sold out" badge can never hit.
+ */
+function detectStoreAvailability(doc, titleFound) {
+    doc = doc || document;
+    const health = { condition: 'unknown', listing_flags: [] };
+    if (!doc.body) return health;
+
+    // ── Condition ────────────────────────────────────────────
+    // A product title is the one affirmative "this page actually loaded" signal.
+    // Callers pass what they already know; the selector union is the fallback so
+    // the function stays self-contained for fixture tests.
+    const hasTitle = (typeof titleFound === 'boolean') ? titleFound : !!doc.querySelector(
+        'media-gallery[data-product-title], h1.product__title, h1.font-display, h1.product-name, ' +
+        'h1.page-title, .product-single__title, .product__info-container h1, h1[itemprop="name"]'
+    );
+    if (!hasTitle) return health; // 'unknown', no flags — page unverified
+    health.condition = 'new';
+
+    // Shared vocabulary for layers (c) and (d).
+    // [\s_-]* as the word separator so every spelling these themes use is caught:
+    // "Sold out", "sold-out" (data attributes / class names), "OutOfStock",
+    // "out_of_stock". Same separator is used in layers (a) and (b) below.
+    const SOLD_OUT_TEXT = /sold[\s_-]*out|out[\s_-]*of[\s_-]*stock|notify me when|email when available|currently unavailable|temporarily unavailable|no longer available|discontinued/i;
+    const PURCHASABLE_TEXT = /add to (cart|bag|basket)|buy (it )?now|pre-?order|add to order/i;
+
+    const flagUnavailable = () => {
+        health.listing_flags.push('unavailable');
+        return health;
+    };
+
+    // ── (a) JSON-LD offers.availability ──────────────────────
+    // Recursive walk: availability can sit under @graph, offers[], or a nested
+    // offers.offers[] depending on the theme/app — key-name matching survives all
+    // of those shapes without hard-coding one.
+    const availabilityValues = [];
+    const collect = (node, depth) => {
+        if (!node || depth > 8 || typeof node !== 'object') return;
+        if (Array.isArray(node)) { node.forEach(n => collect(n, depth + 1)); return; }
+        for (const [key, value] of Object.entries(node)) {
+            if (key.toLowerCase() === 'availability') {
+                if (typeof value === 'string') availabilityValues.push(value);
+                else if (value && typeof value === 'object' && typeof value['@id'] === 'string') {
+                    availabilityValues.push(value['@id']);
+                }
+            } else {
+                collect(value, depth + 1);
+            }
+        }
+    };
+    doc.querySelectorAll('script[type="application/ld+json"]').forEach(node => {
+        try { collect(JSON.parse(node.textContent), 0); } catch (e) { /* malformed block — ignore */ }
+    });
+
+    if (availabilityValues.length) {
+        // schema.org tokens: InStock / OutOfStock / SoldOut / Discontinued /
+        // PreOrder / BackOrder / LimitedAvailability. \s* tolerates both
+        // "OutOfStock" and "out of stock" spellings.
+        const purchasable = availabilityValues.some(v => /in[\s_-]*stock|pre[\s_-]*order|pre[\s_-]*sale|back[\s_-]*order|limited[\s_-]*availability/i.test(v));
+        const soldOut = availabilityValues.some(v => /out[\s_-]*of[\s_-]*stock|sold[\s_-]*out|discontinued/i.test(v));
+        // Any buyable variant means the offer still exists — that beats a
+        // sold-out sibling variant. Only an all-sold-out product is unavailable.
+        if (purchasable) return health;
+        if (soldOut) return flagUnavailable();
+        // Neither token (e.g. InStoreOnly) — not decisive, fall through.
+    }
+
+    // ── (b) meta availability ────────────────────────────────
+    const metaValues = [];
+    doc.querySelectorAll(
+        'meta[property="product:availability"], meta[name="product:availability"], ' +
+        'meta[property="og:availability"], meta[name="og:availability"], meta[itemprop="availability"]'
+    ).forEach(el => {
+        const content = el.getAttribute('content');
+        if (content) metaValues.push(content);
+    });
+    if (metaValues.length) {
+        // "\bavailable\b" cannot match inside "unavailable" (no word boundary), so
+        // the purchasable test is safe to run against the same strings.
+        if (metaValues.some(v => /out[\s_-]*of[\s_-]*stock|sold[\s_-]*out|discontinued|^\s*oos\s*$/i.test(v))) return flagUnavailable();
+        if (metaValues.some(v => /in[\s_-]*stock|\bavailable\b|pre[\s_-]*order|back[\s_-]*order/i.test(v))) return health;
+    }
+
+    // ── Product form scope for layers (c) + (d) ──────────────
+    // Everything below is scoped: an unscoped scan would hit "Sold out" badges in
+    // related-product carousels. No scope found → skip both layers rather than
+    // risk a false 'unavailable'.
+    let scope = null;
+    for (const sel of [
+        'form[action*="/cart/add"]', 'product-form', '.product-form', '#product-form',
+        '[data-product-form]', '.product__info-container', '.product__info-wrapper',
+        '.product-single__meta', '.product__purchase', '[itemscope][itemtype*="Product"]',
+    ]) {
+        scope = doc.querySelector(sel);
+        if (scope) break;
+    }
+    if (!scope) return health;
+
+    // ── (c) Add-to-cart button state ─────────────────────────
+    for (const btn of scope.querySelectorAll('button, input[type="submit"], [data-add-to-cart], .product-form__submit, .add-to-cart')) {
+        const label = (btn.tagName === 'INPUT' ? (btn.getAttribute('value') || '') : btn.textContent || '').trim();
+        if (SOLD_OUT_TEXT.test(label)) return flagUnavailable();
+
+        const classes = btn.classList ? Array.from(btn.classList) : [];
+        const isDisabled = btn.hasAttribute('disabled')
+            || btn.getAttribute('aria-disabled') === 'true'
+            || classes.some(c => /disabled|sold-?out/i.test(c));
+        const isAddToCart = btn.getAttribute('name') === 'add'
+            || btn.hasAttribute('data-add-to-cart')
+            || btn.getAttribute('type') === 'submit'
+            || classes.some(c => /add-?to-?cart|product-form__submit|btn--add/i.test(c));
+        // A disabled ATC control counts, but only when its label does NOT still
+        // read "Add to cart" — a theme that renders disabled until JS hydrates
+        // keeps the normal label, and that must not be read as sold out.
+        if (isDisabled && isAddToCart && label && !PURCHASABLE_TEXT.test(label)) return flagUnavailable();
+    }
+
+    // ── (d) Explicit inventory / availability text ───────────
+    for (const el of scope.querySelectorAll('[data-inventory-status], [data-availability], .product__inventory, .product-form__inventory, .product-inventory, .inventory')) {
+        if (SOLD_OUT_TEXT.test(el.textContent || '')) return flagUnavailable();
+        const attr = el.getAttribute('data-inventory-status') || el.getAttribute('data-availability') || '';
+        if (SOLD_OUT_TEXT.test(attr)) return flagUnavailable();
+    }
+    for (const el of scope.querySelectorAll('span, div, p, strong, em, label, h2, h3, h4')) {
+        if (el.children.length > 0) continue;      // leaf nodes only
+        if (el.closest('select')) continue;        // variant <option> labels are not the page's state
+        if (/^(sold[\s_-]*out|out[\s_-]*of[\s_-]*stock|currently unavailable|temporarily unavailable|temporarily out of stock|no longer available|discontinued)[.!]?$/i.test((el.textContent || '').trim())) {
+            return flagUnavailable();
+        }
+    }
+
+    return health;
+}
+
 // ── SERP / Listing page helpers ───────────────────────────────
 
 function extractProductLinks() {
@@ -679,8 +853,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     } else if (request.action === 'RESCAN_EXTRACT') {
         // Spec 029 B2: full-field refresh extraction for the rescan walk.
-        // Amazon products carry condition/listing_flags (detectListingHealth is
-        // called inside extractAmazonProduct); other stores omit them.
+        // EVERY store now carries condition/listing_flags: Amazon via
+        // detectListingHealth() inside extractAmazonProduct(), the other three via
+        // detectStoreAvailability() (availability only — v1.3, 2026-08-14).
         if (checkForRobot()) { sendResponse({ success: false, robot: true }); return; }
         sendResponse(extractStoreProduct());
 
@@ -817,6 +992,15 @@ function extractCliveCoffeeProduct(url) {
         }
     }
 
+    // Listing health (Spec 029 B1, 2026-08-14) — availability only; see
+    // detectStoreAvailability() for the deliberate no-condition/no-high_price scope.
+    const health = detectStoreAvailability(document, true);
+    const unavailable = health.listing_flags.includes('unavailable');
+    // Amazon precedent (extractProductPageData): never ship a bogus number for a
+    // listing you cannot buy. But Shopify-style stores normally keep showing the
+    // real price when sold out, so only drop a missing/placeholder value.
+    if (unavailable && !(price > 0)) price = null;
+
     return {
         url,
         store_slug: 'clive-coffee',
@@ -824,8 +1008,11 @@ function extractCliveCoffeeProduct(url) {
         brand,
         scraped_price: price,
         image_url: image,
+        stock_status: unavailable ? 'out_of_stock' : 'in_stock',
         rating,
         reviews_count,
+        condition: health.condition,
+        listing_flags: health.listing_flags,
     };
 }
 
@@ -1003,6 +1190,11 @@ function extractSeattleCoffeeGearProduct(url) {
     const imgEl = document.querySelector('.product-image img, [itemprop="image"], .gallery-image img');
     if (imgEl) image = imgEl.getAttribute('src') || imgEl.getAttribute('data-src');
 
+    // Listing health (Spec 029 B1, 2026-08-14) — availability only.
+    const health = detectStoreAvailability(document, true);
+    const unavailable = health.listing_flags.includes('unavailable');
+    if (unavailable && !(price > 0)) price = null;
+
     return {
         url,
         store_slug: 'seattle-coffee-gear',
@@ -1010,8 +1202,11 @@ function extractSeattleCoffeeGearProduct(url) {
         brand,
         scraped_price: price,
         image_url: image,
+        stock_status: unavailable ? 'out_of_stock' : 'in_stock',
         rating: null,
         reviews_count: null,
+        condition: health.condition,
+        listing_flags: health.listing_flags,
     };
 }
 
@@ -1112,6 +1307,11 @@ function extractWholeLatteLoveProduct(url) {
     // Rating + reviews count (Yotpo, stamped, judge.me, etc.)
     const { rating, reviews_count } = extractWllRatingAndReviews(document);
 
+    // Listing health (Spec 029 B1, 2026-08-14) — availability only.
+    const health = detectStoreAvailability(document, true);
+    const unavailable = health.listing_flags.includes('unavailable');
+    if (unavailable && !(price > 0)) price = null;
+
     return {
         url,
         store_slug: 'whole-latte-love',
@@ -1119,8 +1319,11 @@ function extractWholeLatteLoveProduct(url) {
         brand,
         scraped_price: price,
         image_url: image,
+        stock_status: unavailable ? 'out_of_stock' : 'in_stock',
         rating,
         reviews_count,
+        condition: health.condition,
+        listing_flags: health.listing_flags,
     };
 }
 
