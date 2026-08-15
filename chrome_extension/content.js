@@ -200,21 +200,25 @@ function detectListingHealth(doc) {
  * Detect listing health {condition, listing_flags} for the NON-AMAZON storefronts
  * (Clive Coffee, Seattle Coffee Gear, Whole Latte Love) from a product-page
  * Document — the sibling of detectListingHealth() above. Pure function of `doc`
- * (+ an optional caller-supplied title hint), so it is testable against saved DOM
+ * (+ an optional caller-supplied title: the raw title string it already extracted,
+ * or a boolean "a title was/wasn't found"), so it is testable against saved DOM
  * fixtures. ALL selector/text logic for these stores lives in THIS one function.
  *
  * Vocabulary mirrors App\Support\ListingHealth exactly:
  *   condition ∈ new | renewed | refurbished | open_box | used | unknown
  *   listing_flags ⊆ high_price | unavailable
  *
- * DELIBERATE SCOPE (Spec 029 B1, 2026-08-14):
- * - `condition` is only ever 'new' or 'unknown'. These are authorised dealers
- *   selling new goods — they do not sell renewed/refurb/open-box, so guessing a
- *   condition from their DOM would be noise, and silence is better than a guess.
- *   Reporting 'new' is honest AND load-bearing: it is what lets
- *   ListingHealthService stamp `health_checked_at` and CLEAR a previously-set
- *   `unavailable` flag when an item comes back in stock. Sending nothing (today's
- *   behaviour) makes apply() a no-op and the offer never gets stamped at all.
+ * DELIBERATE SCOPE (Spec 029 B1/B1b; condition markers added in v1.4, 2026-08-15):
+ * - `condition` REFLECTS MARKERS FOUND ON THE PAGE. v1.3 reported a blanket 'new'
+ *   on the assumption that these authorised dealers sell only new goods — owner QA
+ *   disproved it: Whole Latte Love sells a refurbished line with "Refurbished" in
+ *   the product title itself ("Refurbished Lelit Anna Espresso Machine"). Reporting
+ *   'new' there is actively harmful: it tells the server the listing was verified
+ *   clean and CLEARS any prior condition flag.
+ * - 'new' is reported ONLY when a title was found AND no marker matched. That
+ *   report stays load-bearing: it is what lets ListingHealthService stamp
+ *   `health_checked_at` and clear a previously-set `unavailable` flag when an item
+ *   comes back in stock.
  * - 'unknown' whenever no product title was found: the page is partial/failed, so
  *   nothing on it is trustworthy — never fabricate 'new' for a page that did not
  *   load. Flags are withheld too (the server distrusts flags on 'unknown', and
@@ -244,18 +248,24 @@ function detectStoreAvailability(doc, titleFound) {
     const health = { condition: 'unknown', listing_flags: [] };
     if (!doc.body) return health;
 
-    // ── Condition ────────────────────────────────────────────
-    // A product title is the one affirmative "this page actually loaded" signal.
-    // Callers pass what they already know; the selector union is the fallback so
-    // the function stays self-contained for fixture tests.
-    const hasTitle = (typeof titleFound === 'boolean') ? titleFound : !!doc.querySelector(
-        'media-gallery[data-product-title], h1.product__title, h1.font-display, h1.product-name, ' +
-        'h1.page-title, .product-single__title, .product__info-container h1, h1[itemprop="name"]'
-    );
-    if (!hasTitle) return health; // 'unknown', no flags — page unverified
-    health.condition = 'new';
+    // ── Title ────────────────────────────────────────────────
+    // A product title is the one affirmative "this page actually loaded" signal,
+    // and (since v1.4) the primary condition-marker source. Callers pass the raw
+    // title they already extracted; the selector union is the fallback so the
+    // function stays self-contained for fixture tests. An explicit `false` from a
+    // caller is authoritative: the page did not load.
+    if (titleFound === false) return health; // 'unknown', no flags — page unverified
+    let titleText = (typeof titleFound === 'string') ? titleFound.trim() : '';
+    if (!titleText) {
+        const titleEl = doc.querySelector(
+            'media-gallery[data-product-title], h1.product__title, h1.font-display, h1.product-name, ' +
+            'h1.page-title, .product-single__title, .product__info-container h1, h1[itemprop="name"]'
+        );
+        if (titleEl) titleText = (titleEl.getAttribute('data-product-title') || titleEl.textContent || '').trim();
+    }
+    if (!titleText && titleFound !== true) return health; // 'unknown', no flags — page unverified
 
-    // Shared vocabulary for layers (c) and (d).
+    // Shared vocabulary for availability layers (c) and (d).
     // [\s_-]* as the word separator so every spelling these themes use is caught:
     // "Sold out", "sold-out" (data attributes / class names), "OutOfStock",
     // "out_of_stock". Same separator is used in layers (a) and (b) below.
@@ -267,19 +277,37 @@ function detectStoreAvailability(doc, titleFound) {
         return health;
     };
 
-    // ── (a) JSON-LD offers.availability ──────────────────────
-    // Recursive walk: availability can sit under @graph, offers[], or a nested
-    // offers.offers[] depending on the theme/app — key-name matching survives all
-    // of those shapes without hard-coding one.
+    // ── Product scope ────────────────────────────────────────
+    // The product form / info area. Used by the condition badge scan below AND by
+    // availability layers (c) + (d): an unscoped scan would hit a related-products
+    // carousel (a "Sold out" badge, a "Refurbished" sibling card). No scope found
+    // → those scans are skipped rather than risking a false positive.
+    let scope = null;
+    for (const sel of [
+        'form[action*="/cart/add"]', 'product-form', '.product-form', '#product-form',
+        '[data-product-form]', '.product__info-container', '.product__info-wrapper',
+        '.product-single__meta', '.product__purchase', '[itemscope][itemtype*="Product"]',
+    ]) {
+        scope = doc.querySelector(sel);
+        if (scope) break;
+    }
+
+    // ── Structured data (parsed once; feeds condition AND availability) ──
+    // Recursive walk: availability/itemCondition can sit under @graph, offers[],
+    // or a nested offers.offers[] depending on the theme/app — key-name matching
+    // survives all of those shapes without hard-coding one.
     const availabilityValues = [];
+    const ldConditionValues = [];
     const collect = (node, depth) => {
         if (!node || depth > 8 || typeof node !== 'object') return;
         if (Array.isArray(node)) { node.forEach(n => collect(n, depth + 1)); return; }
         for (const [key, value] of Object.entries(node)) {
-            if (key.toLowerCase() === 'availability') {
-                if (typeof value === 'string') availabilityValues.push(value);
+            const k = key.toLowerCase();
+            if (k === 'availability' || k === 'itemcondition') {
+                const bucket = (k === 'availability') ? availabilityValues : ldConditionValues;
+                if (typeof value === 'string') bucket.push(value);
                 else if (value && typeof value === 'object' && typeof value['@id'] === 'string') {
-                    availabilityValues.push(value['@id']);
+                    bucket.push(value['@id']);
                 }
             } else {
                 collect(value, depth + 1);
@@ -290,6 +318,76 @@ function detectStoreAvailability(doc, titleFound) {
         try { collect(JSON.parse(node.textContent), 0); } catch (e) { /* malformed block — ignore */ }
     });
 
+    // ── Condition (v1.4) ─────────────────────────────────────
+    // THE MARKER LIST lives in conditionMarkerFromText() above — the single shared
+    // list for the whole extension, mirroring App\Support\ProductConditionGuard
+    // ::TITLE_MARKERS naming and mapping into the App\Support\ListingHealth
+    // vocabulary exactly:
+    //     renewed              → 'renewed'
+    //     refurbish(ed|ment)   → 'refurbished'   (incl. "Certified Refurbished")
+    //     open box | open-box  → 'open_box'
+    //     pre-owned            → 'used'
+    //     used                 → 'used'          (guarded, see below)
+    // Conservative about the bare word "used" exactly as the Amazon path is: it
+    // only counts in a parenthetical ("(Used)", "(Certified Used)") or leading
+    // ("Used - Like New …") position, so "…can be used with the Bambino…" never
+    // marks a listing. "Refurbished" counts ANYWHERE in the title — Whole Latte
+    // Love PREFIXES its refurbished line ("Refurbished Lelit Anna Espresso
+    // Machine"), which is exactly what disproved the v1.3 "these dealers only sell
+    // new goods" assumption.
+    // Sources, in order of trust:
+    //   (1) the product title (primary — WLL puts the marker there)
+    //   (2) structured condition: schema.org `itemCondition`
+    //       (…/RefurbishedCondition | UsedCondition | DamagedCondition | NewCondition)
+    //       and <meta property="product:condition"> (OG product namespace:
+    //       new | refurbished | used). First-party and unambiguous, so a bare
+    //       "used" token here needs no positional guard.
+    //   (3) product-type / badge / breadcrumb text — secondary storefront signals
+    //       (a "Refurbished" collection breadcrumb, a product-type label). Badges
+    //       are scoped to the product area; a long blob is never treated as one.
+    let condition = conditionMarkerFromText(titleText);
+
+    if (!condition) {
+        const conditionValues = ldConditionValues.slice();
+        doc.querySelectorAll(
+            'meta[property="product:condition"], meta[name="product:condition"], ' +
+            'meta[property="og:condition"], meta[itemprop="itemCondition"]'
+        ).forEach(el => {
+            const content = el.getAttribute('content');
+            if (content) conditionValues.push(content);
+        });
+        for (const value of conditionValues) {
+            const v = String(value).toLowerCase();
+            if (/refurbish/.test(v))                { condition = 'refurbished'; break; }
+            if (/renewed/.test(v))                  { condition = 'renewed'; break; }
+            if (/open[\s_-]*box/.test(v))           { condition = 'open_box'; break; }
+            if (/used|pre-?owned|damaged/.test(v))  { condition = 'used'; break; }
+            // "new" / NewCondition → no marker; 'new' is the fall-through below.
+        }
+    }
+
+    if (!condition) {
+        const markerEls = [
+            ...(scope || doc).querySelectorAll(
+                '.product__type, .product-type, .product-single__type, [data-product-type], ' +
+                '.product__badge, .product-label, .badge'
+            ),
+            ...doc.querySelectorAll(
+                'nav[aria-label="breadcrumb"], nav[aria-label="Breadcrumb"], .breadcrumb, .breadcrumbs'
+            ),
+        ];
+        for (const el of markerEls) {
+            const text = (el.textContent || '').trim();
+            if (!text || text.length > 120) continue; // a mis-scoped blob is not a badge
+            const marker = conditionMarkerFromText(text);
+            if (marker) { condition = marker; break; }
+        }
+    }
+
+    // 'new' ONLY when a title was found and nothing marked the listing.
+    health.condition = condition || 'new';
+
+    // ── (a) JSON-LD offers.availability ──────────────────────
     if (availabilityValues.length) {
         // schema.org tokens: InStock / OutOfStock / SoldOut / Discontinued /
         // PreOrder / BackOrder / LimitedAvailability. \s* tolerates both
@@ -319,19 +417,9 @@ function detectStoreAvailability(doc, titleFound) {
         if (metaValues.some(v => /in[\s_-]*stock|\bavailable\b|pre[\s_-]*order|back[\s_-]*order/i.test(v))) return health;
     }
 
-    // ── Product form scope for layers (c) + (d) ──────────────
-    // Everything below is scoped: an unscoped scan would hit "Sold out" badges in
-    // related-product carousels. No scope found → skip both layers rather than
-    // risk a false 'unavailable'.
-    let scope = null;
-    for (const sel of [
-        'form[action*="/cart/add"]', 'product-form', '.product-form', '#product-form',
-        '[data-product-form]', '.product__info-container', '.product__info-wrapper',
-        '.product-single__meta', '.product__purchase', '[itemscope][itemtype*="Product"]',
-    ]) {
-        scope = doc.querySelector(sel);
-        if (scope) break;
-    }
+    // Layers (c) + (d) require the product scope resolved above — without it an
+    // unscoped scan would hit "Sold out" badges in related-product carousels, so
+    // both layers are skipped rather than risking a false 'unavailable'.
     if (!scope) return health;
 
     // ── (c) Add-to-cart button state ─────────────────────────
@@ -855,7 +943,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         // Spec 029 B2: full-field refresh extraction for the rescan walk.
         // EVERY store now carries condition/listing_flags: Amazon via
         // detectListingHealth() inside extractAmazonProduct(), the other three via
-        // detectStoreAvailability() (availability only — v1.3, 2026-08-14).
+        // detectStoreAvailability() (availability + condition markers — v1.4).
         if (checkForRobot()) { sendResponse({ success: false, robot: true }); return; }
         sendResponse(extractStoreProduct());
 
@@ -992,9 +1080,10 @@ function extractCliveCoffeeProduct(url) {
         }
     }
 
-    // Listing health (Spec 029 B1, 2026-08-14) — availability only; see
-    // detectStoreAvailability() for the deliberate no-condition/no-high_price scope.
-    const health = detectStoreAvailability(document, true);
+    // Listing health (Spec 029 B1/B1b) — availability + condition markers (v1.4);
+    // see detectStoreAvailability() for the deliberate no-high_price scope. The
+    // raw title is passed so the shared marker list runs against it.
+    const health = detectStoreAvailability(document, title);
     const unavailable = health.listing_flags.includes('unavailable');
     // Amazon precedent (extractProductPageData): never ship a bogus number for a
     // listing you cannot buy. But Shopify-style stores normally keep showing the
@@ -1190,8 +1279,8 @@ function extractSeattleCoffeeGearProduct(url) {
     const imgEl = document.querySelector('.product-image img, [itemprop="image"], .gallery-image img');
     if (imgEl) image = imgEl.getAttribute('src') || imgEl.getAttribute('data-src');
 
-    // Listing health (Spec 029 B1, 2026-08-14) — availability only.
-    const health = detectStoreAvailability(document, true);
+    // Listing health (Spec 029 B1/B1b) — availability + condition markers (v1.4).
+    const health = detectStoreAvailability(document, title);
     const unavailable = health.listing_flags.includes('unavailable');
     if (unavailable && !(price > 0)) price = null;
 
@@ -1307,8 +1396,10 @@ function extractWholeLatteLoveProduct(url) {
     // Rating + reviews count (Yotpo, stamped, judge.me, etc.)
     const { rating, reviews_count } = extractWllRatingAndReviews(document);
 
-    // Listing health (Spec 029 B1, 2026-08-14) — availability only.
-    const health = detectStoreAvailability(document, true);
+    // Listing health (Spec 029 B1/B1b) — availability + condition markers (v1.4).
+    // WLL prefixes its refurbished line ("Refurbished Lelit Anna Espresso
+    // Machine"), so the raw title is the marker source that matters most here.
+    const health = detectStoreAvailability(document, title);
     const unavailable = health.listing_flags.includes('unavailable');
     if (unavailable && !(price > 0)) price = null;
 

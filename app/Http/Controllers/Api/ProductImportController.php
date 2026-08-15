@@ -109,11 +109,12 @@ class ProductImportController extends Controller
             // Reviewer B2: a title marker is condition EVIDENCE for a listing we
             // already track — a rescan of an existing offer must heal (raw_title +
             // flag), never be silently skipped like a brand-new listing would be
-            // (see the guard in the `else` branch below). Coerce only when the
-            // payload didn't already supply an explicit `condition`.
-            // 029B-B4: titleCondition() (not titleMarker()) — apply() needs the
-            // canonical ListingHealth vocabulary, never a raw marker string.
-            $effectiveCondition = $condition ?? ProductConditionGuard::titleCondition($validated['title']);
+            // (see the guard in the `else` branch below).
+            // 029B-B4: canonical ListingHealth vocabulary, never a raw marker string.
+            // Fix 1 (2026-08-15): resolveEffectiveCondition() — a negative title
+            // marker beats an explicit payload `'new'`; an explicit negative payload
+            // condition and `'unknown'` are never overridden.
+            $effectiveCondition = ProductConditionGuard::resolveEffectiveCondition($condition, $validated['title']);
 
             // A1 (F38): image_url/stock_status only overwrite when the payload actually
             // supplies a non-null value — an omitted field must never blow away a
@@ -195,8 +196,11 @@ class ProductImportController extends Controller
 
         $listingOverride = $this->listingHealth->apply($existingOffer, $product, $effectiveCondition, $listingFlags, $validated['stock_status'] ?? null);
 
-        // Don't burn an AI evaluation on a listing we just flagged/ignored for condition.
-        if ($listingOverride !== 'flagged_condition') {
+        // Don't burn an AI evaluation on a listing we just ignored for condition.
+        // Fix 2: ACTION_FLAGGED_OFFER_CONDITION deliberately falls through to the
+        // dispatch below — the product stays visible (a clean offer survives
+        // elsewhere), so it should still get its normal AI pass.
+        if ($listingOverride !== ListingHealthService::ACTION_FLAGGED_CONDITION) {
             ProcessPendingProduct::dispatch($product->id, $category->id);
         }
 

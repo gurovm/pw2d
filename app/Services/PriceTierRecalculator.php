@@ -33,8 +33,13 @@ class PriceTierRecalculator
             return ['fixed' => 0, 'skipped' => 0];
         }
 
+        // Fix 3 (2026-08-15): `condition` + `listing_flags` must be selected — the
+        // `best_price` accessor now derives from `best_offer`, which excludes
+        // negative-condition/pick-excluding-flag offers based on those columns.
+        // Omitting them here would silently let a bad listing back into the tier
+        // calculation (an unselected column resolves as null/absent → looks clean).
         Product::where('category_id', $category->id)
-            ->with(['offers:id,product_id,scraped_price'])
+            ->with(['offers:id,product_id,scraped_price,condition,listing_flags'])
             ->chunkById(self::CHUNK_SIZE, function ($products) use ($category, $onUpdate, &$fixed, &$skipped) {
                 foreach ($products as $product) {
                     $bestPrice = $product->best_price;

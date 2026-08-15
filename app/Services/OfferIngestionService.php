@@ -69,11 +69,12 @@ class OfferIngestionService
             // Reviewer B2: a title marker is condition EVIDENCE for a listing we
             // already track — a rescan of an existing offer must heal (raw_title +
             // flag), never be silently skipped like a brand-new listing would be
-            // (see the create-new guard at the bottom of this method). Coerce only
-            // when the payload didn't already supply an explicit `condition`.
-            // 029B-B4: titleCondition() (not titleMarker()) — apply() needs the
-            // canonical ListingHealth vocabulary, never a raw marker string.
-            $effectiveCondition = $condition ?? ProductConditionGuard::titleCondition($data['raw_title']);
+            // (see the create-new guard at the bottom of this method).
+            // 029B-B4: canonical ListingHealth vocabulary, never a raw marker string.
+            // Fix 1 (2026-08-15): resolveEffectiveCondition() — a negative title
+            // marker beats an explicit payload `'new'` (see docblock); an explicit
+            // negative payload condition and `'unknown'` are never overridden.
+            $effectiveCondition = ProductConditionGuard::resolveEffectiveCondition($condition, $data['raw_title']);
 
             // A1 (F38): scraped_price + raw_title always refresh; image_url/stock_status
             // only overwrite when the payload actually supplies a non-null value — an
@@ -290,7 +291,11 @@ class OfferIngestionService
             $action = $override;
         }
 
-        if ($action !== 'flagged_condition' && $category->features->isNotEmpty()) {
+        // Fix 2: ACTION_FLAGGED_OFFER_CONDITION deliberately falls through to the
+        // dispatch below (can't actually occur here — a brand-new product's first
+        // offer has no sibling to be "clean" — but the check stays generic so the
+        // product-stays-visible case would always get its normal AI pass).
+        if ($action !== ListingHealthService::ACTION_FLAGGED_CONDITION && $category->features->isNotEmpty()) {
             ProcessPendingProduct::dispatch($product->id, $category->id);
         }
 

@@ -96,6 +96,47 @@ class ProductConditionGuard
         return self::MARKER_CONDITIONS[$marker] ?? 'used';
     }
 
+    /**
+     * Fix 1 (2026-08-15 live-QA hole): the single shared precedence rule every
+     * ingestion coercion site (OfferIngestionService, BatchImportController,
+     * ProductImportController) MUST use instead of re-implementing
+     * `$condition ?? ProductConditionGuard::titleCondition($title)` inline.
+     *
+     * That naive coalesce let an explicit payload `condition: 'new'` skip the
+     * title-marker guard entirely — a "Refurbished Lelit Anna…" listing sent with
+     * `condition: 'new'` (e.g. Whole Latte Love's refurbished line, which puts
+     * "Refurbished" in the title itself) would be stored as `new`, clearing any
+     * existing flag and stamping itself verified-clean. Worse than sending nothing.
+     *
+     * Precedence (strongest signal wins):
+     * 1. `$condition` already in {@see ListingHealth::NEGATIVE_CONDITIONS} — an
+     *    explicit DOM-verified negative condition always wins; the title marker
+     *    is redundant at that point.
+     * 2. `$condition` absent (null) — today's behavior: fall back to the title
+     *    marker (or null if the title is clean).
+     * 3. `$condition === 'new'` AND the title carries a negative marker — the
+     *    marker WINS. A weaker "looks new" claim never overrides a stronger
+     *    textual signal that the listing is not, in fact, new.
+     * 4. Anything else (`'unknown'`, or `'new'` with a clean title) — the payload
+     *    value is returned unchanged. `'unknown'` in particular keeps its
+     *    current stamp-only behavior in {@see \App\Services\ListingHealthService}
+     *    — the title is never consulted for it.
+     */
+    public static function resolveEffectiveCondition(?string $condition, ?string $title): ?string
+    {
+        $titleCondition = self::titleCondition($title);
+
+        if ($condition === null) {
+            return $titleCondition;
+        }
+
+        if ($condition === 'new' && $titleCondition !== null) {
+            return $titleCondition;
+        }
+
+        return $condition;
+    }
+
     public static function matchesTitle(?string $title): bool
     {
         return self::titleMarker($title) !== null;

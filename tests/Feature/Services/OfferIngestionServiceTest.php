@@ -641,6 +641,173 @@ class OfferIngestionServiceTest extends TestCase
         $this->assertTrue($product->fresh()->is_ignored);
     }
 
+    // =========================================================================
+    // Fix 1 & Fix 2 (2026-08-15 live-QA holes) — title-marker precedence, and
+    // offer-vs-product-level condition flagging for multi-store products.
+    // =========================================================================
+
+    /** @test */
+    public function fix1_a_refurbished_raw_title_wins_over_an_explicit_payload_new_and_ignores_the_products_only_offer(): void
+    {
+        Queue::fake();
+
+        $category = Category::factory()->create();
+        Feature::factory()->create(['category_id' => $category->id]);
+        $store   = Store::create(['name' => 'Whole Latte Love', 'slug' => 'whole-latte-love']);
+        $product = Product::factory()->create(['category_id' => $category->id, 'status' => null, 'is_ignored' => false]);
+        $offer   = ProductOffer::create([
+            'product_id' => $product->id,
+            'store_id'   => $store->id,
+            'url'        => 'https://example.com/product/1',
+            'raw_title'  => 'Delonghi ECAM22110SB Magnifica XS',
+        ]);
+
+        // The client wrongly reports 'new' — WLL's own refurbished line puts
+        // "Refurbished" literally in the title. The title marker must win.
+        $result = app(OfferIngestionService::class)->processIncomingOffer($this->basePayload([
+            'category_id' => $category->id,
+            'store_slug'  => 'whole-latte-love',
+            'raw_title'   => 'Refurbished Delonghi ECAM22110SB Magnifica XS',
+            'condition'   => 'new',
+        ]));
+
+        $this->assertSame('flagged_condition', $result['action']);
+
+        $offer->refresh();
+        $this->assertSame('refurbished', $offer->condition);
+        $this->assertTrue($product->fresh()->is_ignored, 'the only offer went bad — product must be ignored');
+    }
+
+    /** @test */
+    public function fix2_the_same_refurbished_title_flags_only_the_offer_when_a_second_clean_offer_survives(): void
+    {
+        Queue::fake();
+
+        $category = Category::factory()->create();
+        Feature::factory()->create(['category_id' => $category->id]);
+        $product = Product::factory()->create(['category_id' => $category->id, 'status' => null, 'is_ignored' => false]);
+
+        // Mirrors prod product 3500: a clean Amazon offer at $670...
+        $amazonStore = Store::create(['name' => 'Amazon', 'slug' => 'amazon']);
+        ProductOffer::create([
+            'product_id'    => $product->id,
+            'store_id'      => $amazonStore->id,
+            'url'           => 'https://amazon.com/dp/B000TEST01',
+            'raw_title'     => 'Delonghi ECAM22110SB Magnifica XS',
+            'scraped_price' => 670.00,
+            'condition'     => 'new',
+        ]);
+
+        // ...next to a refurbished Whole Latte Love offer being ingested now.
+        $wllStore = Store::create(['name' => 'Whole Latte Love', 'slug' => 'whole-latte-love']);
+        $wllOffer = ProductOffer::create([
+            'product_id' => $product->id,
+            'store_id'   => $wllStore->id,
+            'url'        => 'https://example.com/product/1',
+            'raw_title'  => 'Delonghi ECAM22110SB Magnifica XS',
+        ]);
+
+        $result = app(OfferIngestionService::class)->processIncomingOffer($this->basePayload([
+            'category_id' => $category->id,
+            'store_slug'  => 'whole-latte-love',
+            'raw_title'   => 'Refurbished Delonghi ECAM22110SB Magnifica XS',
+            'condition'   => 'new',
+        ]));
+
+        $this->assertSame('flagged_offer_condition', $result['action']);
+
+        $wllOffer->refresh();
+        $this->assertSame('refurbished', $wllOffer->condition);
+        $this->assertFalse($product->fresh()->is_ignored, 'a clean Amazon offer survives — product must stay visible');
+    }
+
+    /** @test */
+    public function fix1_an_explicit_negative_payload_condition_wins_over_a_different_title_marker(): void
+    {
+        Queue::fake();
+
+        $category = Category::factory()->create();
+        Feature::factory()->create(['category_id' => $category->id]);
+        $store   = Store::create(['name' => 'Example Store', 'slug' => 'example-store']);
+        $product = Product::factory()->create(['category_id' => $category->id, 'status' => null]);
+        $offer   = ProductOffer::create([
+            'product_id' => $product->id,
+            'store_id'   => $store->id,
+            'url'        => 'https://example.com/product/1',
+            'raw_title'  => 'Old Title',
+        ]);
+
+        app(OfferIngestionService::class)->processIncomingOffer($this->basePayload([
+            'category_id' => $category->id,
+            'raw_title'   => 'Sony WH-1000XM5 (Open Box)', // title marker says open_box
+            'condition'   => 'used', // explicit DOM-verified condition still wins
+        ]));
+
+        $offer->refresh();
+        $this->assertSame('used', $offer->condition, 'an explicit negative payload condition must win over a different title marker');
+    }
+
+    /** @test */
+    public function fix1_unknown_is_never_overridden_by_a_title_marker(): void
+    {
+        Queue::fake();
+
+        $category = Category::factory()->create();
+        Feature::factory()->create(['category_id' => $category->id]);
+        $store   = Store::create(['name' => 'Example Store', 'slug' => 'example-store']);
+        $product = Product::factory()->create(['category_id' => $category->id, 'status' => null]);
+        $offer   = ProductOffer::create([
+            'product_id' => $product->id,
+            'store_id'   => $store->id,
+            'url'        => 'https://example.com/product/1',
+            'raw_title'  => 'Old Title',
+        ]);
+
+        app(OfferIngestionService::class)->processIncomingOffer($this->basePayload([
+            'category_id' => $category->id,
+            'raw_title'   => 'Refurbished Jura E8 Espresso Machine',
+            'condition'   => 'unknown',
+        ]));
+
+        $offer->refresh();
+        $this->assertSame('unknown', $offer->condition, '"unknown" must never be overridden by a title marker');
+        $this->assertFalse($product->fresh()->is_ignored);
+    }
+
+    /** @test */
+    public function fix2_a_clean_rescan_that_clears_the_last_bad_condition_does_not_auto_un_ignore_but_logs_it(): void
+    {
+        Queue::fake();
+        Log::spy();
+
+        $category = Category::factory()->create();
+        Feature::factory()->create(['category_id' => $category->id]);
+        $store   = Store::create(['name' => 'Example Store', 'slug' => 'example-store']);
+        $product = Product::factory()->create(['category_id' => $category->id, 'status' => null, 'is_ignored' => true]);
+        $offer   = ProductOffer::create([
+            'product_id' => $product->id,
+            'store_id'   => $store->id,
+            'url'        => 'https://example.com/product/1',
+            'raw_title'  => 'Old Title',
+            'condition'  => 'refurbished',
+        ]);
+
+        app(OfferIngestionService::class)->processIncomingOffer($this->basePayload([
+            'category_id'   => $category->id,
+            'condition'     => 'new',
+            'listing_flags' => [],
+        ]));
+
+        $offer->refresh();
+        $this->assertSame('new', $offer->condition);
+        $this->assertTrue($product->fresh()->is_ignored, 'reversal stays a human decision — must not auto-un-ignore');
+
+        Log::shouldHaveReceived('notice')
+            ->withArgs(fn ($message, $context) => str_contains($message, 'remains ignored')
+                && ($context['product_id'] ?? null) === $product->id)
+            ->once();
+    }
+
     /** @test */
     public function s1_a_clean_report_clearing_a_previously_set_high_price_flag_dispatches_the_freshness_audit_job(): void
     {

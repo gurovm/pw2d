@@ -75,13 +75,15 @@ class BatchImportController extends Controller
                     // Reviewer B2: a title marker is condition EVIDENCE for a listing
                     // we already track — a rescan of an existing offer must heal (raw_
                     // title + flag), never be silently skipped like a brand-new listing
-                    // would be (see the guard in the `else` branch below). Coerce only
-                    // when the payload didn't already supply an explicit `condition`.
-                    // 029B-B4: titleCondition() (not titleMarker()) — apply() needs the
-                    // canonical ListingHealth vocabulary, never a raw marker string.
-                    // Computed BEFORE the dead-listing heuristic below so that heuristic
-                    // can tell a genuinely dead listing apart from a condition-flagged one.
-                    $effectiveCondition = $condition ?? ProductConditionGuard::titleCondition($p['title']);
+                    // would be (see the guard in the `else` branch below).
+                    // 029B-B4: canonical ListingHealth vocabulary, never a raw marker
+                    // string. Computed BEFORE the dead-listing heuristic below so that
+                    // heuristic can tell a genuinely dead listing apart from a
+                    // condition-flagged one.
+                    // Fix 1 (2026-08-15): resolveEffectiveCondition() — a negative title
+                    // marker beats an explicit payload `'new'`; an explicit negative
+                    // payload condition and `'unknown'` are never overridden.
+                    $effectiveCondition = ProductConditionGuard::resolveEffectiveCondition($condition, $p['title']);
 
                     // Dead-listing heuristic: a refresh with no price AND no condition/
                     // flag evidence at all is treated as delisted (is_ignored, counted
@@ -136,7 +138,12 @@ class BatchImportController extends Controller
 
                     if ($offer) {
                         $override = $this->listingHealth->apply($offer, $existing, $effectiveCondition, $listingFlags, $p['stock_status'] ?? null);
-                        if ($override === 'flagged_condition') {
+                        // Fix 2: both the product-level ignore AND the offer-only flag
+                        // (a clean offer survives elsewhere) count as "flagged" for the
+                        // response message — the distinction only matters for whether
+                        // the product got ignored, which the DB state already reflects.
+                        if ($override === ListingHealthService::ACTION_FLAGGED_CONDITION
+                            || $override === ListingHealthService::ACTION_FLAGGED_OFFER_CONDITION) {
                             $flagged++;
                         }
                     }
@@ -190,9 +197,17 @@ class BatchImportController extends Controller
                     );
 
                     $override = $this->listingHealth->apply($offer, $product, $condition, $listingFlags, $p['stock_status'] ?? null);
-                    if ($override === 'flagged_condition') {
+                    if ($override === ListingHealthService::ACTION_FLAGGED_CONDITION) {
+                        // Product-level ignore — don't burn an AI evaluation on it.
                         $flagged++;
                     } else {
+                        // Fix 2: ACTION_FLAGGED_OFFER_CONDITION can't actually occur here
+                        // (a brand-new product's first offer has no sibling offer to be
+                        // "clean"), but if it ever did the product stays visible and
+                        // should still get its AI pass like the null/other-flag cases.
+                        if ($override === ListingHealthService::ACTION_FLAGGED_OFFER_CONDITION) {
+                            $flagged++;
+                        }
                         ProcessPendingProduct::dispatch($product->id, $category->id);
                     }
 

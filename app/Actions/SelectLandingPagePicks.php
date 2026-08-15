@@ -50,7 +50,11 @@ class SelectLandingPagePicks
                 // could pick a different "best" offer than AuditLandingPageFreshness
                 // (which already eager-loads `offers.store`), risking flapping
                 // selection_drift/pick_ineligible verdicts.
-                'offers:id,product_id,store_id,scraped_price,image_url,raw_title,listing_flags',
+                // Fix 3 (2026-08-15): `condition` must be selected — Product::bestOffer
+                // (read via the `image_url` accessor's best-offer fallback below) now
+                // excludes NEGATIVE_CONDITIONS offers based on this column; an
+                // unselected column would resolve as null and silently look clean.
+                'offers:id,product_id,store_id,scraped_price,image_url,raw_title,listing_flags,condition',
                 'offers.store',
             ])
             ->get()

@@ -569,6 +569,92 @@ class BatchImportControllerTest extends TestCase
     }
 
     /** @test */
+    public function fix1_a_refurbished_title_wins_over_an_explicit_payload_new_and_ignores_the_products_only_offer(): void
+    {
+        $this->requireMysql();
+        Queue::fake();
+
+        $store = Store::create(['tenant_id' => $this->category->tenant_id, 'slug' => 'amazon', 'name' => 'Amazon']);
+        $existingProduct = Product::factory()->create(['category_id' => $this->category->id, 'status' => null, 'is_ignored' => false]);
+        $existingOffer = ProductOffer::create([
+            'tenant_id'  => $this->category->tenant_id,
+            'product_id' => $existingProduct->id,
+            'store_id'   => $store->id,
+            'url'        => 'https://www.amazon.com/dp/B0ABC12345',
+            'raw_title'  => 'Delonghi ECAM22110SB Magnifica XS',
+        ]);
+
+        // Client wrongly reports 'new' — the title marker must win.
+        $payload = $this->validPayload([
+            'products' => [
+                [
+                    'asin'      => 'B0ABC12345',
+                    'title'     => 'Refurbished Delonghi ECAM22110SB Magnifica XS',
+                    'price'     => 349.99,
+                    'condition' => 'new',
+                ],
+            ],
+        ]);
+
+        $response = $this->postJson('/api/products/batch-import', $payload);
+
+        $response->assertOk()->assertJson(['refreshed' => 1, 'flagged' => 1]);
+
+        $existingOffer->refresh();
+        $this->assertSame('refurbished', $existingOffer->condition);
+        $this->assertTrue($existingProduct->fresh()->is_ignored, 'the only offer went bad — product must be ignored');
+    }
+
+    /** @test */
+    public function fix2_a_negative_condition_on_one_offer_leaves_the_product_visible_when_another_offer_is_clean(): void
+    {
+        $this->requireMysql();
+        Queue::fake();
+
+        $existingProduct = Product::factory()->create(['category_id' => $this->category->id, 'status' => null, 'is_ignored' => false]);
+
+        // A clean, priced, non-Amazon offer that must survive this refresh.
+        $otherStore = Store::create(['tenant_id' => $this->category->tenant_id, 'slug' => 'whole-latte-love', 'name' => 'Whole Latte Love']);
+        ProductOffer::create([
+            'tenant_id'     => $this->category->tenant_id,
+            'product_id'    => $existingProduct->id,
+            'store_id'      => $otherStore->id,
+            'url'           => 'https://example.com/wll-offer',
+            'raw_title'     => 'Sony WH-1000XM5 Wireless Headphones',
+            'scraped_price' => 279.99,
+            'condition'     => 'new',
+        ]);
+
+        $amazonStore = Store::create(['tenant_id' => $this->category->tenant_id, 'slug' => 'amazon', 'name' => 'Amazon']);
+        $amazonOffer = ProductOffer::create([
+            'tenant_id'  => $this->category->tenant_id,
+            'product_id' => $existingProduct->id,
+            'store_id'   => $amazonStore->id,
+            'url'        => 'https://www.amazon.com/dp/B0ABC12345',
+            'raw_title'  => 'Old Product Name',
+        ]);
+
+        $payload = $this->validPayload([
+            'products' => [
+                [
+                    'asin'      => 'B0ABC12345',
+                    'title'     => 'Old Product Name',
+                    'price'     => 349.99,
+                    'condition' => 'refurbished',
+                ],
+            ],
+        ]);
+
+        $response = $this->postJson('/api/products/batch-import', $payload);
+
+        $response->assertOk()->assertJson(['refreshed' => 1, 'flagged' => 1]);
+
+        $amazonOffer->refresh();
+        $this->assertSame('refurbished', $amazonOffer->condition);
+        $this->assertFalse($existingProduct->fresh()->is_ignored, 'the WLL offer is still clean — product must stay visible');
+    }
+
+    /** @test */
     public function s2_a_rating_less_refresh_does_not_wipe_a_previously_known_rating(): void
     {
         $this->requireMysql();

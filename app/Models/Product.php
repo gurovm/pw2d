@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Casts\Attribute;
+use App\Support\ListingHealth;
 use Illuminate\Support\Facades\Storage;
 use Stancl\Tenancy\Database\Concerns\BelongsToTenant;
 
@@ -92,25 +93,40 @@ class Product extends Model
     }
 
     /**
-     * Lowest scraped price across all active offers.
+     * The best offer's price — derived from {@see bestOffer()} (Fix 3, 2026-08-15
+     * live-QA hole) rather than an independent raw `min('scraped_price')` across
+     * ALL offers. Before this fix, a cheaper refurbished/flagged offer could win
+     * the DISPLAYED price while `affiliate_url` (via bestOffer) linked to a
+     * different, more expensive clean offer — a price/link mismatch. Now both
+     * always describe the exact same offer.
      */
     protected function bestPrice(): Attribute
     {
         return Attribute::make(
-            get: fn () => $this->offers->min('scraped_price')
+            get: fn () => $this->best_offer?->scraped_price
         );
     }
 
     /**
      * The best offer: lowest price, with commission_rate/priority tiebreaker.
      * Requires offers to be eager-loaded with their store relationship.
+     *
+     * Fix 3 (2026-08-15 live-QA hole): excludes any offer whose `condition` is in
+     * {@see ListingHealth::NEGATIVE_CONDITIONS} (renewed/refurbished/open_box/used)
+     * or that carries a {@see ListingHealth::PICK_EXCLUDING_FLAGS} flag
+     * (high_price/unavailable), in addition to the existing null-price filter — a
+     * customer must never be linked to a bad listing just because it's cheaper.
+     * If every offer is excluded, `best_offer` is null exactly as it already was
+     * for an all-null-price product.
      */
     protected function bestOffer(): Attribute
     {
         return Attribute::make(
             get: function () {
                 return $this->offers
-                    ->filter(fn ($o) => $o->scraped_price !== null)
+                    ->filter(fn ($o) => $o->scraped_price !== null
+                        && !in_array($o->condition, ListingHealth::NEGATIVE_CONDITIONS, true)
+                        && array_intersect(ListingHealth::PICK_EXCLUDING_FLAGS, $o->listing_flags ?? []) === [])
                     ->sortBy([
                         ['scraped_price', 'asc'],
                         [fn ($a, $b) => ($b->store?->commission_rate ?? 0) <=> ($a->store?->commission_rate ?? 0)],

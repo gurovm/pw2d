@@ -404,6 +404,103 @@ class ProductImportControllerTest extends TestCase
     }
 
     /** @test */
+    public function fix1_a_refurbished_title_wins_over_an_explicit_payload_new_and_ignores_the_products_only_offer(): void
+    {
+        Queue::fake();
+
+        $existing = Product::factory()->create(['category_id' => $this->category->id, 'status' => null, 'is_ignored' => false]);
+        $store = Store::firstOrCreate(['slug' => 'amazon', 'tenant_id' => $existing->tenant_id], ['name' => 'Amazon']);
+        $offer = ProductOffer::create([
+            'product_id' => $existing->id,
+            'tenant_id'  => $existing->tenant_id,
+            'store_id'   => $store->id,
+            'url'        => 'https://www.amazon.com/dp/B0ABC12345',
+            'raw_title'  => 'Delonghi ECAM22110SB Magnifica XS',
+        ]);
+
+        // Client wrongly reports 'new' — WLL's own refurbished line puts
+        // "Refurbished" literally in the title. The title marker must win.
+        $response = $this->postJson('/api/product-import', $this->validPayload([
+            'title'     => 'Refurbished Delonghi ECAM22110SB Magnifica XS',
+            'condition' => 'new',
+        ]));
+
+        $response->assertOk()->assertJson(['success' => true, 'action' => 'flagged_condition']);
+
+        $offer->refresh();
+        $this->assertSame('refurbished', $offer->condition);
+        $this->assertTrue($existing->fresh()->is_ignored, 'the only offer went bad — product must be ignored');
+        // Don't burn an AI evaluation on a listing we just ignored for condition.
+        Queue::assertNotPushed(ProcessPendingProduct::class);
+    }
+
+    /** @test */
+    public function fix2_a_negative_condition_on_one_offer_leaves_the_product_visible_when_another_offer_is_clean(): void
+    {
+        Queue::fake();
+
+        $existing = Product::factory()->create(['category_id' => $this->category->id, 'status' => null, 'is_ignored' => false]);
+
+        // A clean, priced, non-Amazon offer that must survive this re-import.
+        $otherStore = Store::create(['tenant_id' => $existing->tenant_id, 'slug' => 'whole-latte-love', 'name' => 'Whole Latte Love']);
+        ProductOffer::create([
+            'product_id'    => $existing->id,
+            'tenant_id'     => $existing->tenant_id,
+            'store_id'      => $otherStore->id,
+            'url'           => 'https://example.com/wll-offer',
+            'raw_title'     => 'Sony WH-1000XM5 Wireless Headphones',
+            'scraped_price' => 279.99,
+            'condition'     => 'new',
+        ]);
+
+        $amazonStore = Store::firstOrCreate(['slug' => 'amazon', 'tenant_id' => $existing->tenant_id], ['name' => 'Amazon']);
+        $amazonOffer = ProductOffer::create([
+            'product_id' => $existing->id,
+            'tenant_id'  => $existing->tenant_id,
+            'store_id'   => $amazonStore->id,
+            'url'        => 'https://www.amazon.com/dp/B0ABC12345',
+            'raw_title'  => 'Old Name',
+        ]);
+
+        $response = $this->postJson('/api/product-import', $this->validPayload([
+            'condition' => 'refurbished',
+        ]));
+
+        $response->assertOk()->assertJson(['success' => true, 'action' => 'flagged_offer_condition']);
+
+        $amazonOffer->refresh();
+        $this->assertSame('refurbished', $amazonOffer->condition);
+        $this->assertFalse($existing->fresh()->is_ignored, 'the WLL offer is still clean — product must stay visible');
+        // Fix 2: the product stays visible, so it still gets its normal AI pass.
+        Queue::assertPushed(ProcessPendingProduct::class);
+    }
+
+    /** @test */
+    public function unknown_is_never_overridden_by_a_title_marker_on_rescan(): void
+    {
+        Queue::fake();
+
+        $existing = Product::factory()->create(['category_id' => $this->category->id, 'status' => null]);
+        $store = Store::firstOrCreate(['slug' => 'amazon', 'tenant_id' => $existing->tenant_id], ['name' => 'Amazon']);
+        $offer = ProductOffer::create([
+            'product_id' => $existing->id,
+            'tenant_id'  => $existing->tenant_id,
+            'store_id'   => $store->id,
+            'url'        => 'https://www.amazon.com/dp/B0ABC12345',
+            'raw_title'  => 'Old Name',
+        ]);
+
+        $this->postJson('/api/product-import', $this->validPayload([
+            'title'     => 'Refurbished Jura E8 Espresso Machine',
+            'condition' => 'unknown',
+        ]))->assertOk();
+
+        $offer->refresh();
+        $this->assertSame('unknown', $offer->condition, '"unknown" must never be overridden by a title marker');
+        $this->assertFalse($existing->fresh()->is_ignored);
+    }
+
+    /** @test */
     public function m1_a_reimport_of_an_ignored_product_is_skipped_and_never_un_ignores_it(): void
     {
         Queue::fake();
