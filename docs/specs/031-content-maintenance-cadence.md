@@ -33,6 +33,27 @@ Ignore rates run 35–70%, so pools only shrink without new imports. Smallest fi
 
 **Tier 3 — quarterly discovery, prioritised by pool size.** SERP batch import per category, starting with pools under 45 (grinders, kettles, cold-brew, super-auto). New products flow through the AI Bouncer, and if one would change a ranking the nightly audit raises `selection_drift` on its page — so the loop closes itself without manual checking.
 
+### First live run (2026-08-16) — two lessons
+
+**Always run `pw2d:landing-pages:audit` after a picks pass.** The extension names only guides
+carrying a *listing flag*; **price drift is invisible to it**. The first run named
+gaming-chat-headsets (HyperX Cloud III flagged `high_price`, $60→$80 — it was the Best Overall
+pick) but productivity-ergonomic-keyboards had *also* gone stale on a +31% move (Keychron K2 V3,
+$65→$85) and reading the popup alone would have missed it. The popup's numeric `flagged` counter
+is weaker still — it counts only product-level condition flags, so it showed "flagged 0" while a
+real flag existed. The guides line covered for it; the counter undercount remains a logged bug.
+
+**Two repair paths, chosen by cause:**
+
+| Cause | Response |
+|---|---|
+| Pick carries a listing flag (bad listing) | Full category rescan → regenerate → review → publish |
+| Price drift only, picks clean **and** selection unchanged | Surgical patch: rewrite the affected pick's copy, re-stamp all `est_price_snapshot`s, clear staleness |
+
+The surgical path must **assert stored picks still equal `SelectLandingPagePicks` output** and
+refuse if they differ — otherwise it would paper over a real selection change. Used successfully
+on the ergonomic page: one pick rewritten, seven snapshots re-stamped, no rescan and no re-author.
+
 ### The response rule (important)
 
 A Tier 1 pass **detects**; it does not authorise a rebuild. When a pick is flagged, the page must not be re-selected from an unverified pool — re-selection would just pick the next unchecked listing. Correct response: **full category rescan (Tier 2, out of turn) → regenerate → review → publish.** This is the lesson from the 2026-08-12 headsets page, where 4 of 7 picks were bad and re-selection kept landing on unverified rows.
