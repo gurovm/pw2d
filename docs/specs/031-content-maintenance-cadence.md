@@ -94,4 +94,6 @@ Run after both halves are deployed. The builder cannot do any of this: it needs 
 - [x] T1 (builder): server `scope=picks` + tests. Done 2026-08-16, see "T1 build notes" above.
 - [x] T2 (extension): picks mode in popup/background, version bump (1.4→1.5), spec QA step. Done 2026-08-16, see "Extension UI as built" above.
 - [x] **T1 follow-up (server, blocks the first live run):** add `category_id` to every `scope=picks` row — done same day, see "Contract addendum honoured" above (`picksScopeOffers()` eager-loads `product:id,category_id` and maps it alongside `landing_page_slug`). +1 regression test.
-- T3: after first live run, record actual duration in this spec so the cadence estimate is real rather than modelled.
+- [x] T3 — **real duration recorded (2026-08-16).** First live picks run: coffee2decide, 47 offers, **~7 min** (≈9s/offer, faster than the 10s modelled). Extrapolated: pw2d 35 offers ≈ 5 min, so **~12 min for both tenants** vs the 17 min estimated above.
+  - **The extension is tenant-scoped**, so a weekly pass is TWO runs (switch tenant in the popup between them), not one. The spec's "one walk across both tenants" wording was wrong; the work-list endpoint is correctly tenant-scoped and there is no cross-tenant mode.
+  - Verified live on prod: pw2d returns 35 pick offers across 5 guides, c2d 47 across 6 (super-auto 9 and semi-auto 10, because those picks carry multiple store listings). Every row has `category_id` and `landing_page_slug`.
