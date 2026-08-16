@@ -58,6 +58,34 @@ The surgical path must **assert stored picks still equal `SelectLandingPagePicks
 refuse if they differ — otherwise it would paper over a real selection change. Used successfully
 on the ergonomic page: one pick rewritten, seven snapshots re-stamped, no rescan and no re-author.
 
+### Tier 3 sequence: import → rescan → regenerate (2026-08-16)
+
+A SERP import brings products in with **search-tile data only** — price and title, never a
+product-page check. Newly imported products therefore show `health_checked_at = NULL`, and
+selecting picks from them would repeat the 2026-08-12 headsets mistake with fresh data instead of
+stale data. Always: **import (all searches for that category) → category rescan → regenerate.**
+Do not regenerate between searches; you would just rebuild twice.
+
+Proven on manual-coffee-grinders: two searches took the pool 33 → 58 buyable, and 5 of the 7
+newly-selected picks had never been health-checked until the follow-up rescan. That rescan came
+back completely clean, and the rebuilt page is a genuine upgrade (1Zpresso X-Ultra/J-Ultra and a
+Comandante MK3 entered; the old KINGrinder budget pick was replaced by a $50 aluminium Turin
+scoring 82 on build against its 55).
+
+**A top-up rescan RESETS that category's Tier-2 clock** — it *is* that month's sweep, so don't
+also do the scheduled one. It does not exempt the category from future sweeps: prices moved 9–40%
+within days during the rollout. Because of this, drive the Tier-2 rotation by **oldest
+`health_checked_at` first** rather than the fixed week-by-week list above; a topped-up category
+then falls to the back of the queue on its own.
+
+```sql
+SELECT c.slug, MIN(o.health_checked_at) AS oldest, COUNT(*) AS offers
+FROM product_offers o JOIN products p ON p.id = o.product_id
+JOIN categories c ON c.id = p.category_id
+WHERE p.is_ignored = 0 AND p.status IS NULL
+GROUP BY c.slug ORDER BY oldest ASC;
+```
+
 ### The response rule (important)
 
 A Tier 1 pass **detects**; it does not authorise a rebuild. When a pick is flagged, the page must not be re-selected from an unverified pool — re-selection would just pick the next unchecked listing. Correct response: **full category rescan (Tier 2, out of turn) → regenerate → review → publish.** This is the lesson from the 2026-08-12 headsets page, where 4 of 7 picks were bad and re-selection kept landing on unverified rows.
