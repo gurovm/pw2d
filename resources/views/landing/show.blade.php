@@ -30,7 +30,7 @@
     :canonicalUrl="$seo['canonical'] ?? null"
     :ogType="$seo['ogType'] ?? 'article'"
     :ogImage="$seo['ogImage'] ?? null"
-    :schemasJson="collect($seo['schemas'] ?? [])->map(fn ($schema) => json_encode($schema))->all()"
+    :schemasJson="\App\Support\SeoSchema::encodeSchemasForScriptTag($seo['schemas'] ?? [])"
 >
     <div class="bg-gradient-to-br from-gray-50 to-white min-h-screen">
         <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">

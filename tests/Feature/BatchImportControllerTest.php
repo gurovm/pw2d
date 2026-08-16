@@ -208,11 +208,21 @@ class BatchImportControllerTest extends TestCase
     }
 
     /** @test */
-    public function duplicate_asin_with_empty_price_marks_product_ignored(): void
+    public function duplicate_asin_with_empty_price_and_no_other_evidence_leaves_product_and_offer_untouched(): void
     {
         $this->requireMysql();
         Queue::fake();
 
+        // Regression: live incident 2026-08-16, product 3813 (1Zpresso K-Ultra) —
+        // the OLD "dead-listing heuristic" silently set is_ignored=true here on a
+        // healthy, $259, condition-new, that-morning-health-verified PREMIUM pick,
+        // on nothing but a missing SERP-tile price (a routine, weak, non-authoritative
+        // signal — sponsored placement / "see price in cart" / variant-priced parent /
+        // plain extraction miss). The asymmetry (product ignored, offer completely
+        // clean) was the diagnostic signature of the bug. Fix: a missing SERP price
+        // for an existing product with no other evidence now leaves BOTH the product
+        // and its offer completely untouched — the product-page listing-health path
+        // (condition/listing_flags/stock_status) is the sole owner of availability.
         $store = Store::create([
             'tenant_id' => $this->category->tenant_id,
             'slug'      => 'amazon',
@@ -220,49 +230,148 @@ class BatchImportControllerTest extends TestCase
         ]);
 
         $existingProduct = Product::factory()->create([
-            'category_id' => $this->category->id,
-            'status'      => null,
-            'is_ignored'  => false,
+            'category_id'   => $this->category->id,
+            'status'        => null,
+            'is_ignored'    => false,
+            'amazon_rating' => 4.8,
         ]);
 
+        $healthCheckedAt = now()->subHours(2);
         $existingOffer = ProductOffer::create([
-            'tenant_id'  => $this->category->tenant_id,
-            'product_id' => $existingProduct->id,
-            'store_id'   => $store->id,
-            'url'        => 'https://www.amazon.com/dp/B0ABC12345',
-            'raw_title'  => 'Some Product',
+            'tenant_id'         => $this->category->tenant_id,
+            'product_id'        => $existingProduct->id,
+            'store_id'          => $store->id,
+            'url'               => 'https://www.amazon.com/dp/B0ABC12345',
+            'raw_title'         => 'Some Product',
+            'scraped_price'     => 259.00,
+            'condition'         => 'new',
+            'health_checked_at' => $healthCheckedAt,
         ]);
 
         $payload = $this->validPayload([
             'products' => [
                 [
                     'asin'  => 'B0ABC12345',
-                    'title' => 'Some Product',
-                    'price' => null, // null price signals out-of-stock/removed listing
+                    'title' => 'Some Product (New Title From SERP)',
+                    'price' => null, // SERP tile omitted the price — weak/routine, not authoritative
                 ],
             ],
         ]);
 
-        // No condition, no title marker, no listing_flags — genuinely dead
-        // listing. This is the ONLY shape the heuristic still fires for
-        // (contrast with the negative-condition/flag regression tests above).
         $response = $this->postJson('/api/products/batch-import', $payload);
 
-        $response->assertOk()->assertJson(['refreshed' => 1, 'flagged' => 0]);
+        $response->assertOk()->assertJson(['refreshed' => 0, 'skipped' => 1, 'flagged' => 0]);
 
+        // Product is completely untouched — still visible.
         $this->assertDatabaseHas('products', [
-            'id'         => $existingProduct->id,
-            'is_ignored' => true,
+            'id'            => $existingProduct->id,
+            'is_ignored'    => false,
+            'amazon_rating' => 4.8,
         ]);
 
-        // The heuristic short-circuits with `continue` — the offer itself is
-        // never touched (no heal, no health stamp) for a plain dead listing.
+        // Offer is completely untouched — price, condition, raw_title, and health
+        // stamp all survive exactly as they were before this SERP row arrived.
         $offer = $existingOffer->fresh();
         $this->assertSame('Some Product', $offer->raw_title);
-        $this->assertNull($offer->condition);
-        $this->assertNull($offer->health_checked_at);
+        $this->assertEquals(259.00, $offer->scraped_price);
+        $this->assertSame('new', $offer->condition);
+        $this->assertEquals($healthCheckedAt->timestamp, $offer->health_checked_at->timestamp);
 
         Queue::assertNothingPushed();
+    }
+
+    /** @test */
+    public function duplicate_asin_with_empty_price_but_a_legitimate_price_still_refreshes_other_fields(): void
+    {
+        $this->requireMysql();
+        Queue::fake();
+
+        // Companion to the test above: a no-price SERP row must not become a
+        // blanket "do nothing" for existing products — a row that DOES carry
+        // corroborating condition/flag evidence still falls through to the
+        // normal refresh path and heals the offer (covered in depth by the
+        // existing "no_price_refresh_with_a_negative_condition..." and
+        // "...only_a_recognized_flag..." tests below). This test instead proves
+        // the untouched-path is narrowly scoped to price alone: a row that DOES
+        // carry a price still refreshes the offer/product normally, even when
+        // other optional fields are混omitted.
+        $store = Store::create(['tenant_id' => $this->category->tenant_id, 'slug' => 'amazon', 'name' => 'Amazon']);
+        $existingProduct = Product::factory()->create(['category_id' => $this->category->id, 'status' => null, 'is_ignored' => false]);
+        ProductOffer::create([
+            'tenant_id'     => $this->category->tenant_id,
+            'product_id'    => $existingProduct->id,
+            'store_id'      => $store->id,
+            'url'           => 'https://www.amazon.com/dp/B0ABC12345',
+            'raw_title'     => 'Old Title',
+            'scraped_price' => 199.99,
+        ]);
+
+        $payload = $this->validPayload([
+            'products' => [
+                ['asin' => 'B0ABC12345', 'title' => 'New Title From SERP', 'price' => 229.99],
+            ],
+        ]);
+
+        $response = $this->postJson('/api/products/batch-import', $payload);
+
+        $response->assertOk()->assertJson(['refreshed' => 1, 'skipped' => 0]);
+
+        $this->assertDatabaseHas('product_offers', [
+            'product_id'    => $existingProduct->id,
+            'raw_title'     => 'New Title From SERP',
+            'scraped_price' => 229.99,
+        ]);
+
+        Queue::assertPushed(RecalculateCategoryPriceTiers::class);
+    }
+
+    /** @test */
+    public function unavailable_flag_on_product_page_rescan_still_marks_the_offer_unpurchasable_replacing_the_removed_serp_heuristic(): void
+    {
+        $this->requireMysql();
+        Queue::fake();
+
+        // Proves the replacement mechanism: a genuinely unavailable listing is
+        // still caught — just via the authoritative product-page `unavailable`
+        // flag (Spec 029 listing-health), never via a SERP tile's missing price.
+        // ListingHealth::isPurchasable() (used by bestOffer/picks/compare) reads
+        // this exact shape as unpurchasable even though the product itself stays
+        // visible (Spec 029: flags are offer-level, point-in-time state).
+        $store = Store::create(['tenant_id' => $this->category->tenant_id, 'slug' => 'amazon', 'name' => 'Amazon']);
+        $existingProduct = Product::factory()->create(['category_id' => $this->category->id, 'status' => null, 'is_ignored' => false]);
+        $existingOffer = ProductOffer::create([
+            'tenant_id'     => $this->category->tenant_id,
+            'product_id'    => $existingProduct->id,
+            'store_id'      => $store->id,
+            'url'           => 'https://www.amazon.com/dp/B0ABC12345',
+            'raw_title'     => 'Some Product',
+            'scraped_price' => 259.00,
+            'condition'     => 'new',
+        ]);
+
+        $payload = $this->validPayload([
+            'products' => [
+                [
+                    'asin'          => 'B0ABC12345',
+                    'title'         => 'Some Product',
+                    'price'         => null,
+                    'condition'     => 'new',
+                    'listing_flags' => ['unavailable'],
+                ],
+            ],
+        ]);
+
+        $this->postJson('/api/products/batch-import', $payload)->assertOk()->assertJson(['refreshed' => 1]);
+
+        $offer = $existingOffer->fresh();
+        $this->assertSame(['unavailable'], $offer->listing_flags);
+        $this->assertSame('out_of_stock', $offer->stock_status);
+        $this->assertFalse(\App\Support\ListingHealth::isPurchasable($offer));
+
+        // Product-level: stays visible (a different, still-purchasable offer isn't
+        // required here — `unavailable` is offer-level per Spec 029, never
+        // product-level like the old SERP heuristic was).
+        $this->assertDatabaseHas('products', ['id' => $existingProduct->id, 'is_ignored' => false]);
     }
 
     // ────────────────────────────────────────────────────────────────────────

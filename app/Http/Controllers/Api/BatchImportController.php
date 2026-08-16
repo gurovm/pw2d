@@ -85,21 +85,29 @@ class BatchImportController extends Controller
                     // payload condition and `'unknown'` are never overridden.
                     $effectiveCondition = ProductConditionGuard::resolveEffectiveCondition($condition, $p['title']);
 
-                    // Dead-listing heuristic: a refresh with no price AND no condition/
-                    // flag evidence at all is treated as delisted (is_ignored, counted
-                    // `refreshed`, nothing else touched). Live bug (2026-08, product
-                    // 1744/B09Z6PM1PV): a no-price RENEWED re-listing used to hit this
-                    // same branch and get silently ignored with no condition stored, no
-                    // health_checked_at stamp, and no raw_title heal — the forensics
-                    // said nothing about why. A no-price report carrying a negative
-                    // condition (renewed/refurbished/open_box/used) or ANY recognized
-                    // listing flag is NOT a dead listing — it must fall through to the
-                    // normal refresh path below so the offer heals and
-                    // ListingHealthService::apply() records the real reason and counts
-                    // it as `flagged` instead.
+                    // 2026-08-16 live incident (product 3813, 1Zpresso K-Ultra): a
+                    // missing SERP-tile price is NOT authoritative evidence of
+                    // delisting — it's routine (sponsored placements, "see price in
+                    // cart", variant-priced parents, plain extraction misses). The old
+                    // "dead-listing heuristic" silently set is_ignored=true here on a
+                    // healthy, $259, condition-new, that-morning-health-verified
+                    // product on nothing but that absence, while leaving its offer
+                    // completely untouched — the asymmetry (product ignored, offer
+                    // clean) was the diagnostic signature. Spec 029's product-page
+                    // detection (condition/listing_flags/stock_status, ownership below
+                    // via ListingHealthService::apply() + ListingHealth::isPurchasable())
+                    // is a strictly stronger, DOM-verified signal and already owns
+                    // availability at the offer level — a SERP tile must never override
+                    // it. So: when there's no price AND no condition/flag evidence at
+                    // all, leave the product AND its offer completely untouched and just
+                    // log it, so a pattern (e.g. one ASIN/category consistently missing
+                    // its price on the SERP) is visible without ever writing anything.
                     if (empty($p['price']) && !in_array($effectiveCondition, ListingHealth::NEGATIVE_CONDITIONS, true) && empty($listingFlags)) {
-                        $existing->update(['is_ignored' => true]);
-                        $refreshed++;
+                        Log::info('BatchImport: SERP row for existing product had no price — leaving product/offer untouched, listing-health path owns availability', [
+                            'asin'        => $p['asin'],
+                            'category_id' => $category->id,
+                        ]);
+                        $skipped++;
                         continue;
                     }
 
@@ -235,7 +243,7 @@ class BatchImportController extends Controller
             'refreshed' => $refreshed,
             'skipped'   => $skipped,
             'flagged'   => $flagged,
-            'message'   => "Queued {$created} new product(s) for AI processing. Refreshed data for {$refreshed} existing product(s). Skipped {$skipped} condition-marked listing(s). Flagged {$flagged} listing(s) for condition.",
+            'message'   => "Queued {$created} new product(s) for AI processing. Refreshed data for {$refreshed} existing product(s). Skipped {$skipped} listing(s) (condition-marked, or a priced existing offer with no corroborating price/condition evidence on the SERP). Flagged {$flagged} listing(s) for condition.",
         ]);
     }
 }
