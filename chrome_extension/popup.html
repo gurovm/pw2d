@@ -144,11 +144,15 @@
             aria-label="Toggle settings">Settings</button>
     </div>
     <div id="settingsPanel" style="display: none; margin-top: 8px;">
-        <label for="tenantInput"
+        <!-- Populated from GET /api/extension/tenants (v1.6). Saves on change —
+             no Save button, so there is no way to leave a typed id unsaved. -->
+        <label for="tenantSelect"
             style="display:block; margin-bottom:5px; font-size:12px; font-weight:bold; color:#333;">Tenant ID</label>
-        <input type="text" id="tenantInput" placeholder="e.g. pw2d, coffee-decide..."
-            style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; margin-bottom:8px; box-sizing: border-box; font-size: 12px;">
-        <button id="saveTenantBtn" style="background: #6366f1; font-size: 12px; padding: 8px; margin-bottom: 12px;">Save Tenant ID</button>
+        <select id="tenantSelect"
+            style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; margin-bottom:4px; box-sizing: border-box; font-size: 12px;">
+            <option value="" disabled selected>Loading tenants...</option>
+        </select>
+        <div id="tenantHint" style="font-size:11px; color:#666; margin-bottom:12px;"></div>
 
         <label for="tokenInput"
             style="display:block; margin-bottom:5px; font-size:12px; font-weight:bold; color:#333;">API Token</label>

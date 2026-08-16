@@ -19,6 +19,12 @@ const categorySearch = document.getElementById('categorySearch'); // New element
 const scrapeBtn = document.getElementById('scrapeBtn');
 const statusDiv = document.getElementById('status');
 
+// Settings: tenant picker (v1.6). Replaced the free-text tenantInput +
+// saveTenantBtn pair — the owner picks from the server's own list instead of
+// looking exact ids up every time.
+const tenantSelect = document.getElementById('tenantSelect');
+const tenantHint = document.getElementById('tenantHint');
+
 // Batch Mode Elements — the live SERP batch runs entirely in-popup.
 // 029B-S1: the legacy background tab-walker (batchProgress/stop/resume/auto-next
 // wiring) was deleted along with background.js's dead START_BATCH flow.
@@ -60,17 +66,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             tokenInput.value = EXTENSION_TOKEN;
         }
 
-        const tenantInput = document.getElementById('tenantInput');
-        if (tenantInput && TENANT_ID) {
-            tenantInput.value = TENANT_ID;
-        }
-
         if (result.env && API_CONFIG[result.env]) {
             currentEnv = result.env;
             baseUrl = API_CONFIG[result.env];
         }
         if (envSelect) envSelect.value = currentEnv;
 
+        // Tenant list first: it only reads TENANT_ID, never writes it, so the
+        // category fetch below still uses whatever was already saved even if
+        // this call fails outright.
+        await fetchTenants();
         await fetchCategories();
         loadSavedCategory();
     });
@@ -92,7 +97,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             statusDiv.className = 'success';
             setTimeout(() => { if (statusDiv.textContent.includes('Switched')) statusDiv.textContent = ''; }, 3000);
 
-            // Fetch categories for new environment
+            // Fetch tenants + categories for new environment (each env has its
+            // own tenant table, so the list must be re-read, not reused).
+            await fetchTenants();
             categorySelect.innerHTML = '<option value="" disabled selected>Loading...</option>';
             await fetchCategories();
         });
@@ -600,27 +607,119 @@ if (saveTokenBtn) {
         const tokenInput = document.getElementById('tokenInput');
         const val = tokenInput ? tokenInput.value.trim() : '';
         EXTENSION_TOKEN = val;
-        chrome.storage.local.set({ extensionToken: val }, () => {
+        chrome.storage.local.set({ extensionToken: val }, async () => {
             statusDiv.textContent = 'API token saved.';
             statusDiv.className = 'success';
             setTimeout(() => { if (statusDiv.textContent === 'API token saved.') statusDiv.textContent = ''; }, 3000);
+
+            // The tenant list 403s until a valid token exists, so the popup-open
+            // attempt has usually already failed by now — retry it here.
+            await fetchTenants();
         });
     });
 }
 
-// Save Tenant ID
-const saveTenantBtn = document.getElementById('saveTenantBtn');
-if (saveTenantBtn) {
-    saveTenantBtn.addEventListener('click', () => {
-        const tenantInput = document.getElementById('tenantInput');
-        const val = tenantInput ? tenantInput.value.trim() : '';
+// ── Tenant picker (v1.6) ─────────────────────────────────────────────────────
+// Replaces the free-text Tenant ID input. TENANT_ID stays the single source of
+// truth for every X-Tenant-Id header in this file; the picker only ever assigns
+// to it from an explicit user choice.
+//
+// Hard rule throughout: a failed, empty or forbidden fetch NEVER clears the
+// saved tenantId. Losing the saved id would silently break every scrape while
+// offline or against an older server, which is strictly worse than showing a
+// stale list.
+
+/**
+ * Render the select from a (possibly empty) tenant list, preserving TENANT_ID.
+ * @param {Array<{id: string, name: string}>} tenants
+ * @param {string} hint Inline message under the select; '' clears it.
+ */
+function renderTenantOptions(tenants, hint) {
+    if (!tenantSelect) return;
+
+    tenantSelect.innerHTML = '';
+
+    const rows = Array.isArray(tenants) ? tenants.filter(t => t && t.id) : [];
+    const savedIsKnown = rows.some(t => String(t.id) === TENANT_ID);
+
+    if (!TENANT_ID) {
+        // Deliberately no auto-select of the first tenant: silently pointing
+        // imports at an arbitrary tenant is the one failure this UI must not
+        // introduce. Make the owner choose once.
+        const placeholder = new Option('Select a tenant...', '');
+        placeholder.disabled = true;
+        placeholder.selected = true;
+        tenantSelect.add(placeholder);
+    } else if (!savedIsKnown) {
+        // Saved id the server did not return — fetch failed, wrong environment,
+        // or the tenant was deleted. Keep it listed AND selected so the popup
+        // still reflects what the headers actually send.
+        tenantSelect.add(new Option(`${TENANT_ID} (saved)`, TENANT_ID, true, true));
+    }
+
+    // new Option() sets text as a text node, so tenant names cannot inject markup.
+    rows.forEach((tenant) => {
+        const id = String(tenant.id);
+        const label = tenant.name && tenant.name !== id ? `${tenant.name} (${id})` : id;
+        tenantSelect.add(new Option(label, id, false, id === TENANT_ID));
+    });
+
+    if (tenantHint) tenantHint.textContent = hint || '';
+}
+
+/**
+ * Load the tenant directory from the server. Quiet by design — before a token
+ * is saved this call is expected to fail, and that is a normal first-run state,
+ * not an error worth shouting about in the shared status line.
+ */
+async function fetchTenants() {
+    if (!tenantSelect) return;
+
+    if (!EXTENSION_TOKEN) {
+        renderTenantOptions([], 'Save your API token below to load the tenant list.');
+        return;
+    }
+
+    tenantSelect.innerHTML = '<option value="" disabled selected>Loading tenants...</option>';
+    if (tenantHint) tenantHint.textContent = '';
+
+    try {
+        // Token only — no X-Tenant-Id: this endpoint exists to discover ids
+        // before one is chosen, and is registered outside the tenancy middleware.
+        const response = await fetch(`${baseUrl}/api/extension/tenants`, {
+            headers: { 'X-Extension-Token': EXTENSION_TOKEN }
+        });
+
+        if (!response.ok) {
+            renderTenantOptions([], response.status === 403
+                ? 'Tenant list unavailable — check your API token.'
+                : `Tenant list unavailable (HTTP ${response.status}). Saved tenant still in use.`);
+            return;
+        }
+
+        const data = await response.json();
+        const tenants = Array.isArray(data.tenants) ? data.tenants : [];
+
+        renderTenantOptions(tenants, tenants.length ? '' : 'No tenants returned by this environment.');
+    } catch (error) {
+        // Offline, wrong env, or a server predating this route.
+        renderTenantOptions([], 'Tenant list unavailable — server unreachable. Saved tenant still in use.');
+    }
+}
+
+if (tenantSelect) {
+    tenantSelect.addEventListener('change', () => {
+        const val = tenantSelect.value;
+        if (!val || val === TENANT_ID) return;
+
         TENANT_ID = val;
         chrome.storage.local.set({ tenantId: val }, async () => {
-            statusDiv.textContent = 'Tenant ID saved.';
+            const msg = `Tenant set to ${val}.`;
+            statusDiv.textContent = msg;
             statusDiv.className = 'success';
-            setTimeout(() => { if (statusDiv.textContent === 'Tenant ID saved.') statusDiv.textContent = ''; }, 3000);
+            setTimeout(() => { if (statusDiv.textContent === msg) statusDiv.textContent = ''; }, 3000);
 
-            // Re-fetch categories for the new tenant
+            // Categories are tenant-scoped — the old list belongs to the old tenant.
             categorySelect.innerHTML = '<option value="" disabled selected>Loading...</option>';
             await fetchCategories();
         });

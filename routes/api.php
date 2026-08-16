@@ -3,12 +3,26 @@
 use App\Http\Controllers\Api\BatchImportController;
 use App\Http\Controllers\Api\OfferIngestionController;
 use App\Http\Controllers\Api\ProductImportController;
+use App\Http\Controllers\Api\TenantListController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
+
+// Tenant discovery — the ONE extension route that is deliberately NOT behind
+// InitializeTenancyFromPayload. Its whole purpose is to list the tenant ids the
+// extension will later send in X-Tenant-Id, so it necessarily runs before one is
+// chosen; that middleware 422s ("Tenant ID required.") when the header is absent.
+// Still gated by the extension token, and read-only. Same 60/min as its
+// read-only siblings below.
+Route::middleware([
+    'App\Http\Middleware\VerifyExtensionToken',
+    'throttle:60,1',
+])->group(function () {
+    Route::get('/extension/tenants', [TenantListController::class, 'index']);
+});
 
 // Chrome Extension Routes — protected by shared secret token, tenant-scoped, rate limited
 Route::middleware([
