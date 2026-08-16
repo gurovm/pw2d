@@ -8,6 +8,7 @@ use App\Models\Category;
 use App\Models\LandingPage;
 use App\Models\Product;
 use App\Models\Tenant;
+use App\Support\ListingHealth;
 use App\Support\ProductConditionGuard;
 use Illuminate\Console\Command;
 
@@ -142,11 +143,21 @@ class FlagConditionProducts extends Command
         // Landing-page-eligible products (same core gate as SelectLandingPagePicks:
         // processed, not ignored, has an ai_summary) — with offers eager-loaded so we
         // can pick a representative URL per product without N+1 queries.
+        // Perf M1 (2026-08-16 audit): `scraped_price` (+ the health columns) were
+        // missing, so estimated_price -> best_price -> best_offer's very first
+        // filter clause (`scraped_price !== null`) excluded every offer — the
+        // "Est. Price" column was unconditionally "N/A". `offers.store` is eager-
+        // loaded too since `store_id` is selected below (line ~183) and
+        // ListingHealth::isPurchasable() reads $offer->store for the is_active
+        // check — without it, that read would lazy-load a Store per offer.
         $eligible = Product::where('category_id', $category->id)
             ->where('is_ignored', false)
             ->whereNull('status')
             ->whereNotNull('ai_summary')
-            ->with('offers:id,product_id,store_id,url')
+            ->with([
+                'offers:id,product_id,store_id,url,scraped_price,' . implode(',', ListingHealth::OFFER_HEALTH_COLUMNS),
+                'offers.store:id,is_active',
+            ])
             ->get()
             ->keyBy('id');
 

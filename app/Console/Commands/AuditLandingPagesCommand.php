@@ -131,7 +131,14 @@ class AuditLandingPagesCommand extends Command
                         continue;
                     }
 
+                    // Perf H2 (2026-08-16 audit): 'offers.store' — estimated_price
+                    // (read a few lines below) now derives from best_offer, which
+                    // reads $offer->store for the commission/priority tiebreak.
+                    // With no eager load at all here, every offer of every pick
+                    // triggered its own Offer AND Store lazy-load (~160 queries for
+                    // 77 picks, pre-fix).
                     $products = Product::whereIn('id', $picks->pluck('product_id')->filter())
+                        ->with('offers.store')
                         ->get()
                         ->keyBy('id');
 

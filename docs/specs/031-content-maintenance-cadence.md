@@ -41,7 +41,11 @@ gaming-chat-headsets (HyperX Cloud III flagged `high_price`, $60→$80 — it wa
 pick) but productivity-ergonomic-keyboards had *also* gone stale on a +31% move (Keychron K2 V3,
 $65→$85) and reading the popup alone would have missed it. The popup's numeric `flagged` counter
 is weaker still — it counts only product-level condition flags, so it showed "flagged 0" while a
-real flag existed. The guides line covered for it; the counter undercount remains a logged bug.
+real flag existed. The guides line covered for it; the counter undercount is **fixed in v1.7**
+(action→bucket table below). The audit's sharper finding: the guides line only covered for it *by
+luck* — it shared the same `flagged_offer_condition` blind spot, so a multi-store pick would have
+gone unnamed too. Price drift remains invisible to the extension either way, so the
+`pw2d:landing-pages:audit` habit above still stands on its own.
 
 **Two repair paths, chosen by cause:**
 
@@ -76,7 +80,9 @@ A **Verify Live Picks** section sits directly under *Rescan Category* in the pop
 
 The walk itself is **parameterised, not forked** — `rescanRun.scope` (`'category' | 'picks'`) changes only the work-list URL (`?scope=picks` vs `?category_id=`), the wording, and the tally. Delay, watchdog, single reused worker tab, CAPTCHA auto-pause, generation-counter guards, idempotent advancement, and `chrome.storage` persistence are shared verbatim, so Pause/Resume/Stop and post-restart recovery behave identically in both modes.
 
-Flagged picks are reported by guide: each row's `landing_page_slug` is tallied into `results.flagged_guides` whenever the offer comes back with a condition verdict (`flagged_condition` / `skipped_condition`) or a `high_price` / `unavailable` listing flag, and the summary renders it as `flagged: gaming-chat-headsets, usb-mics` (with a count when a guide has more than one). That is deliberately broader than the `flagged` counter beside it, whose known undercount is an out-of-scope item above — the response rule keys off *any* bad-listing signal on a pick. The end-of-run line renders amber rather than green when any guide is named.
+Flagged picks are reported by guide: each row's `landing_page_slug` is tallied into `results.flagged_guides` whenever the offer comes back with a condition verdict or a `high_price` / `unavailable` listing flag, and the summary renders it as `flagged: gaming-chat-headsets, usb-mics` (with a count when a guide has more than one). That is deliberately broader than the `flagged` counter beside it — the response rule keys off *any* bad-listing signal on a pick. The end-of-run line renders amber rather than green when any guide is named.
+
+> **Superseded in v1.7.** As built in v1.5 the guide-naming set was `flagged_condition` / `skipped_condition` only, and the tally's `else` branch counted everything else as `updated`. Both had the same blind spot for `flagged_offer_condition`. See "Extension v1.7" below for the corrected mapping — the paragraph above describes the intent, the table below is the contract.
 
 **Contract addendum (required by T1).** `/api/extension/ingest-offer` requires `category_id`, and a picks run spans categories, so **every `scope=picks` row must carry its own `category_id`** in addition to `landing_page_slug`. The extension preflights this and refuses to start with a naming error rather than walking ~100 pages that would each 422.
 
@@ -95,11 +101,51 @@ Also (not spec'd explicitly, but required for internal consistency): `scope=pick
 
 Tests: `tests/Feature/RescanListControllerTest.php`, 14 new (19 total in the file), including one asserting every `scope=picks` row's `category_id` matches its own product's category (not just spot-checked). Full suite 580 passed/19 skipped → **594 passed/19 skipped**, no regressions.
 
+### Extension v1.7 — 2026-08-16 audit fixes (review B3/B4, security M3)
+
+Three extension-side defects found by the post-029b audit, all in the weekly picks path. Manifest 1.6 → **1.7**.
+
+**B4 — the action→bucket mapping is now a table, not an `else`.** `flagged_offer_condition` (Spec 029 §A2b: a bad condition flags the *offer* while the product survives on a clean sibling listing) was new, unlisted, and fell through `else results.updated++`. It also never reached `noteFlaggedGuide()`. So the exact multi-store case that fix exists for reported `updated N · flagged 0` with **no guide named** — the `flagged_guides` line that the response rule above depends on had the same blind spot as the numeric counter it was introduced to cover for. On the 2026-08-16 first live run only the guide line caught a bad pick; for a multi-store product it would not have.
+
+Every action string the three ingestion controllers and `OfferIngestionService` can return is now mapped explicitly, in `background.js::RESCAN_ACTION_BUCKET` (with a mirror for the SERP batch loop in `popup.js::SERP_ACTION_BUCKET`). **There is no "everything else is fine" default.**
+
+| Server action | Source | Tally bucket | Names its guide? |
+|---|---|---|---|
+| `refreshed` | `OfferIngestionService` — existing offer re-scraped | `updated` | no |
+| `created` | `OfferIngestionService` — new product created | `updated` | no |
+| `matched` | `OfferIngestionService` — AI-matched to an existing product | `updated` | no |
+| `queued_new` | `ProductImportController` — new product queued for AI | `updated` | no |
+| `queued_rescan` | `ProductImportController` — existing product refreshed | `updated` | no |
+| `flagged_condition` | bad condition, **no** clean sibling → product ignored | `flagged_condition` | **yes** |
+| `flagged_offer_condition` | bad condition, a clean sibling survives → offer excluded only | `flagged_condition` | **yes** |
+| `skipped_condition` | import refused outright, nothing written | `skipped` | **yes** |
+| `skipped_ignored` | `ProductImportController` — product already ignored | `skipped` | no |
+| *anything else* | a future/unknown server action | **`unknown_action`** | **yes** |
+
+Three deliberate calls in that table:
+
+- **`flagged_offer_condition` counts as flagged and names its guide.** The product is still visible, so it is tempting to treat it as benign — but the owner's response rule ("full category rescan of the named guide") is exactly what a store's listing going refurbished should trigger, whether or not a sibling saved the product.
+- **`skipped_condition` names a guide without being counted as flagged.** Nothing was written, so it is not a flag; it still means a live pick is pointing at a condition-marked listing.
+- **An unrecognised action gets its own bucket *and* names the guide.** Under-reporting is precisely what made B4 invisible for a week, so the fallback is deliberately noisy: a build that cannot classify a verdict says so rather than guessing "clean". `skipped_ignored` is the one bucket that does *not* name a guide — it reports a pre-existing ignore, not a new observation about the listing.
+
+**B3 — a detached pick no longer aborts the run.** `scope=picks` applies no category filter by design, so a pick whose product was detached by an AI sweep arrives with `category_id: null`. The v1.5 preflight refused to start the *entire* ~100-offer run over one such row, with an error text ("Update the server first") pointing at a server that was behaving as specified. The preflight now **skips those rows individually, counts them, and walks everything else**; the count is passed to the background run so it survives the popup closing and appears in the end-of-run summary as `3 skipped: no category`. It aborts only when **no** row carries a `category_id` — the genuinely-outdated-server case the check was written for. This is correct whether or not the server also stops emitting such rows.
+
+**Security M3 — navigation allowlist.** The walk drives a real tab to `offer.url`, a value that reached the DB from an ingestion payload; the server constrains neither scheme nor host, and this pass is an *unattended weekly walk of ~100 rows*. `background.js` now checks every URL before navigating: `https:` only, and host (after stripping a leading `www.`) in `amazon.com` / `clivecoffee.com` / `seattlecoffeegear.com` / `wholelattelove.com` — exactly the set `content.js::extractStoreProduct()` routes on, so a row outside it could never have been extracted anyway. Off-allowlist rows are counted as `blocked` and reported (`2 blocked: bad URL`), never silently dropped. The check is a single definition used by the shared `processNextRescan()`, so both walk modes are covered by construction and cannot drift.
+
+Note this excludes `amazon.co.uk` / `amazon.de`, which are in the manifest's `content_scripts` matches but have **no** entry in `extractStoreProduct()`'s extractor map — a row on those hosts would have failed extraction and been counted as an error. It is now counted as `blocked` instead, which is a more honest label for the same non-outcome. If a UK/DE extractor is ever added, add the host here in the same commit.
+
+**Summary line.** The four core buckets always render (a zero is information — `flagged 0` is what the owner reads to decide no follow-up is needed, so it has to be trustworthy). The three exception buckets render only when non-zero, so an ordinary clean run keeps its existing one-line shape:
+
+```
+updated 47 · flagged 0 · skipped 0 · errors 0
+updated 44 · flagged 1 · skipped 0 · errors 0 · 3 skipped: no category — flagged: gaming-chat-headsets
+```
+
 ### Owner QA — Verify Live Picks (T2, extension v1.5)
 
 Run after both halves are deployed. The builder cannot do any of this: it needs the real server, real Amazon/store pages, and a real tenant's picks.
 
-1. **Blocking pre-check.** Press **Verify Live Picks** with no category selected. If the popup says *"Server returned N pick(s) without category_id"*, the T1 follow-up below has not shipped — stop, fix the server, re-run. This preflight is the intended behaviour, not a bug.
+1. **Pre-check (revised in v1.7 — was "blocking").** Press **Verify Live Picks** with no category selected. The run now *starts* even if some rows lack a `category_id`, reporting e.g. `(3 skipped: no category)` in the start line and the final summary — those are detached picks, which is a real staleness finding worth following up in Filament, not a reason to lose the weekly pass. It refuses to start **only** if *no* row has a `category_id`, which means the T1 follow-up has not shipped: stop, fix the server, re-run.
 2. **Coverage.** The run should start with roughly **~100 offers** for pw2d + c2d combined, spanning **all 11 guides**, with no category ever selected. Spot-check that URLs from more than one category go by in the worker tab.
 3. **Pause/Resume.** Pause mid-run, close the popup, reopen it: the progress panel must come back showing *Verifying picks: x/y* and a Resume button. Resume and confirm the counter continues from the same offer (it re-does the current one — that is by design).
 4. **Flagged pick names its guide.** When any pick comes back flagged, the summary line must name the slug, e.g. `flagged: gaming-chat-headsets`. Per the response rule above, the correct follow-up is a **full category rescan of that guide's category**, not a re-selection.
@@ -108,7 +154,9 @@ Run after both halves are deployed. The builder cannot do any of this: it needs 
 
 ## Explicitly out of scope here (remains in `docs/tasks/todo.md`)
 
-`offer_id` targeting for duplicate rows, the Clive price-extraction gap, the popup flag-tally undercount, the `price_drift` threshold tuning, and a staleness worklist command. None block the cadence; all were logged during the rollout.
+`offer_id` targeting for duplicate rows, the Clive price-extraction gap, the `price_drift` threshold tuning, and a staleness worklist command. None block the cadence; all were logged during the rollout.
+
+~~the popup flag-tally undercount~~ — **fixed in extension v1.7**, see the action→bucket table above. It turned out not to be cosmetic: the same blind spot reached `flagged_guides`, which is the line the response rule actually keys off.
 
 ## Task breakdown
 

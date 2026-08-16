@@ -333,4 +333,132 @@ class ProductCompareTest extends TestCase
         $productComponent = Livewire::test(ProductCompare::class, ['product' => $product]);
         $productComponent->assertStatus(200);
     }
+
+    // =========================================================================
+    // Perf C1 / Review S1 (2026-08-16 audit): scoredProducts() must reason about
+    // the same (filtered) price the rendered card's CTA reads — a product whose
+    // only offer is priced but excluded (negative condition / pick-excluding
+    // flag) must never carry a non-null estimated_price into the scoring/ranking
+    // pass, since the rendered card's affiliate_url will be null for it.
+    // =========================================================================
+
+    /** @test */
+    public function a_product_whose_only_offer_carries_a_pick_excluding_flag_scores_with_no_price(): void
+    {
+        $category = Category::factory()->create(['slug' => 'espresso-machines']);
+        $brand = Brand::factory()->create();
+        Feature::factory()->create(['category_id' => $category->id]);
+
+        $product = Product::factory()->create([
+            'category_id' => $category->id,
+            'brand_id'    => $brand->id,
+            'slug'        => 'flagged-only-offer',
+        ]);
+
+        $store = \App\Models\Store::create([
+            'tenant_id'       => null,
+            'name'            => 'Amazon',
+            'slug'            => 'amazon-' . uniqid(),
+            'commission_rate' => 0,
+            'priority'        => 0,
+            'is_active'       => true,
+        ]);
+
+        \App\Models\ProductOffer::create([
+            'product_id'    => $product->id,
+            'store_id'      => $store->id,
+            'tenant_id'     => null,
+            'url'           => 'https://example.com/product/' . uniqid(),
+            'scraped_price' => 49.99,
+            'raw_title'     => 'Test Product',
+            'condition'     => 'new',
+            'listing_flags' => ['unavailable'],
+        ]);
+
+        $component = Livewire::test(ProductCompare::class, ['slug' => 'espresso-machines']);
+
+        $scored = $component->instance()->scoredProducts;
+        $entry  = $scored->firstWhere('id', $product->id);
+
+        $this->assertNotNull($entry, 'the product must still be scored (stays visible, only pick-ineligible)');
+        $this->assertNull(
+            $entry->estimated_price,
+            'a flag-excluded-only-offer product must score with no price, matching its null affiliate_url'
+        );
+
+        // The rendered card must agree: no affiliate link, no phantom price.
+        $visible = $component->instance()->visibleProducts->firstWhere('id', $product->id);
+        $this->assertNull($visible->affiliate_url);
+        $this->assertNull($visible->estimated_price);
+    }
+
+    /** @test */
+    public function the_price_slider_does_not_admit_a_product_solely_via_a_negative_condition_offer(): void
+    {
+        $category = Category::factory()->create(['slug' => 'espresso-machines-2']);
+        $brand = Brand::factory()->create();
+        Feature::factory()->create(['category_id' => $category->id]);
+
+        $store = \App\Models\Store::create([
+            'tenant_id'       => null,
+            'name'            => 'Whole Latte Love',
+            'slug'            => 'wll-' . uniqid(),
+            'commission_rate' => 0,
+            'priority'        => 0,
+            'is_active'       => true,
+        ]);
+
+        // A second, clean product priced at $200 — establishes maxPrice=200 at
+        // mount time, so the slider ($100) genuinely narrows the result set
+        // without needing a second ->set() call that would collide with the
+        // cache key (which is keyed on selectedPrice only, not maxPrice).
+        $cleanProduct = Product::factory()->create([
+            'category_id' => $category->id,
+            'brand_id'    => $brand->id,
+            'slug'        => 'clean-expensive-offer',
+        ]);
+        \App\Models\ProductOffer::create([
+            'product_id'    => $cleanProduct->id,
+            'store_id'      => $store->id,
+            'tenant_id'     => null,
+            'url'           => 'https://example.com/product/' . uniqid(),
+            'scraped_price' => 200.00,
+            'raw_title'     => 'Clean Product',
+            'condition'     => 'new',
+            'listing_flags' => [],
+        ]);
+
+        $product = Product::factory()->create([
+            'category_id' => $category->id,
+            'brand_id'    => $brand->id,
+            'slug'        => 'refurbished-only-offer',
+        ]);
+
+        // Cheap, but refurbished — must not qualify the product for a $100 slider.
+        \App\Models\ProductOffer::create([
+            'product_id'    => $product->id,
+            'store_id'      => $store->id,
+            'tenant_id'     => null,
+            'url'           => 'https://example.com/product/' . uniqid(),
+            'scraped_price' => 50.00,
+            'raw_title'     => 'Test Product',
+            'condition'     => 'refurbished',
+            'listing_flags' => [],
+        ]);
+
+        $component = Livewire::test(ProductCompare::class, ['slug' => 'espresso-machines-2'])
+            ->assertSet('maxPrice', 200)
+            ->set('selectedPrice', 100);
+
+        $scored = $component->instance()->scoredProducts;
+
+        $this->assertNull(
+            $scored->firstWhere('id', $cleanProduct->id),
+            'sanity check: the $200 clean product must be excluded by the $100 slider (proves the filter runs at all)'
+        );
+        $this->assertNull(
+            $scored->firstWhere('id', $product->id),
+            'a refurbished-only $50 offer must not admit the product through the $100 price slider'
+        );
+    }
 }

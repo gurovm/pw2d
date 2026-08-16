@@ -61,10 +61,21 @@ final class AuditLandingPageFreshness
             $reasons[] = 'render_short';
         }
 
-        $page->update([
+        // Perf H1 (2026-08-16 audit): `update()` always fires LandingPage::booted()'s
+        // `saved` hook, which forgets the page's 1h view-model cache AND the tenant
+        // sitemap cache — correct for a genuine draft->stale transition, wasteful
+        // for a no-op re-audit (the common case: nightly run over unchanged pages,
+        // or an instant-path audit mid picks-pass that confirms nothing changed).
+        // `updateQuietly()` still persists freshness_checked_at (so the command
+        // table / Filament badge stay honest) but skips the cache-busting hook.
+        $changed = ($page->stale_reasons ?? []) !== $reasons;
+
+        $attributes = [
             'stale_reasons'        => $reasons,
             'freshness_checked_at' => now(),
-        ]);
+        ];
+
+        $changed ? $page->update($attributes) : $page->updateQuietly($attributes);
 
         return $reasons;
     }
@@ -99,11 +110,10 @@ final class AuditLandingPageFreshness
     }
 
     /**
-     * True if ANY of the product's offers is simultaneously priced (`scraped_price`
-     * non-null and > 0), free of a negative condition (`condition` not in
-     * ListingHealth::NEGATIVE_CONDITIONS), and free of a pick-excluding listing flag
-     * (ListingHealth::PICK_EXCLUDING_FLAGS). Mirrors SelectLandingPagePicks's
-     * identical rule.
+     * True if ANY of the product's offers is purchasable — priced, free of a
+     * negative condition, and free of a pick-excluding listing flag (see
+     * {@see ListingHealth::isPurchasable()}). Mirrors SelectLandingPagePicks's
+     * identical rule (both now delegate to the same shared predicate, S2).
      *
      * Fixed 2026-08-12 (prod incident): the prior version inspected only the
      * product's `best_offer`, but `Product::bestOffer` itself excludes null-price
@@ -114,12 +124,7 @@ final class AuditLandingPageFreshness
      */
     private static function hasEligibleOffer(Product $product): bool
     {
-        return $product->offers->contains(
-            fn ($offer) => $offer->scraped_price !== null
-                && (float) $offer->scraped_price > 0
-                && !in_array($offer->condition, ListingHealth::NEGATIVE_CONDITIONS, true)
-                && array_intersect(ListingHealth::PICK_EXCLUDING_FLAGS, $offer->listing_flags ?? []) === []
-        );
+        return $product->offers->contains(fn ($offer) => ListingHealth::isPurchasable($offer));
     }
 
     /**

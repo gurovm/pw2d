@@ -118,15 +118,18 @@ class Product extends Model
      * customer must never be linked to a bad listing just because it's cheaper.
      * If every offer is excluded, `best_offer` is null exactly as it already was
      * for an all-null-price product.
+     *
+     * 2026-08-16 audit S2/S3: filter delegates to the single shared
+     * {@see ListingHealth::isPurchasable()} predicate — also fixes S3 (a
+     * `scraped_price = 0` offer no longer wins) and picks up the `is_active`
+     * store check for free wherever `offers.store` is eager-loaded.
      */
     protected function bestOffer(): Attribute
     {
         return Attribute::make(
             get: function () {
                 return $this->offers
-                    ->filter(fn ($o) => $o->scraped_price !== null
-                        && !in_array($o->condition, ListingHealth::NEGATIVE_CONDITIONS, true)
-                        && array_intersect(ListingHealth::PICK_EXCLUDING_FLAGS, $o->listing_flags ?? []) === [])
+                    ->filter(fn ($o) => ListingHealth::isPurchasable($o))
                     ->sortBy([
                         ['scraped_price', 'asc'],
                         [fn ($a, $b) => ($b->store?->commission_rate ?? 0) <=> ($a->store?->commission_rate ?? 0)],

@@ -18,9 +18,24 @@ class OfferIngestionController extends Controller
 {
     public function ingest(Request $request, OfferIngestionService $service): JsonResponse
     {
+        // Sec M1 (2026-08-16 audit): normalize to a list BEFORE validating — the
+        // L2 fix bounded array ELEMENT count, but `listing_flags.*` validates
+        // VALUES, not KEYS, so an associative payload `{"<huge string>":"high_price"}`
+        // still passed every rule and persisted the attacker-chosen key verbatim
+        // via the `array` cast round-trip. array_values() strips any non-list keys
+        // before the array/max/distinct/in rules ever see them.
+        if (is_array($flags = $request->input('listing_flags'))) {
+            $request->merge(['listing_flags' => array_values($flags)]);
+        }
+
         $validated = $request->validate([
             'url'                 => 'required|url|max:2000',
-            'store_slug'          => 'required|string|max:100',
+            // Security H1 (2026-08-16 audit): store_slug flows unvalidated into
+            // Str::title() -> Store.name -> JSON-LD offers.seller.name. A strict
+            // slug format closes the injection at the SOURCE (paired with the
+            // JSON_HEX_TAG encoding fix at the render sink — see SeoSchema::
+            // encodeSchemasForScriptTag()).
+            'store_slug'          => ['required', 'string', 'max:100', 'regex:/^[a-z0-9]+(?:-[a-z0-9]+)*$/'],
             'raw_title'           => 'required|string|min:3|max:500',
             'brand'               => 'nullable|string|max:100',
             'scraped_price'       => 'nullable|numeric|min:0',
@@ -30,9 +45,15 @@ class OfferIngestionController extends Controller
             'rating'              => 'nullable|numeric|min:0|max:5',
             'reviews_count'       => 'nullable|integer|min:0',
             'condition'           => ['nullable', Rule::in(ListingHealth::CONDITIONS)],
-            // Security L2: bound the array so a repeated-element payload can't bloat
-            // the listing_flags JSON column / later in_array() scans.
-            'listing_flags'       => 'nullable|array|max:5',
+            // Security L2 / Sec M1: bound the array so a repeated-element payload
+            // can't bloat the listing_flags JSON column / later in_array() scans,
+            // and require a genuine list (belt-and-braces on top of the
+            // array_values() normalization above).
+            'listing_flags'       => ['nullable', 'array', 'max:5', function ($attribute, $value, $fail) {
+                if (!array_is_list($value)) {
+                    $fail('The :attribute must be a list of flag strings.');
+                }
+            }],
             'listing_flags.*'     => ['distinct', 'string', Rule::in(ListingHealth::RECOGNIZED_FLAGS)],
         ]);
 

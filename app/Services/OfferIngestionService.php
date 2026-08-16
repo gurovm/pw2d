@@ -213,7 +213,12 @@ class OfferIngestionService
 
             // Update rating/reviews on the matched product if the scraper provided them
             // and they improve on what's stored. Only overwrites 0/null values.
-            $product = Product::with(['offers', 'category'])->find($matchedProductId);
+            // Perf H2 (2026-08-16 audit): 'offers.store' — best_price/best_offer
+            // (read a few lines below via priceTierFor()) now reads $offer->store
+            // for the commission/priority tiebreak; without this eager load, every
+            // offer on this product triggered its own Store lazy-load on this
+            // matched-offer ingest hot path.
+            $product = Product::with(['offers.store', 'category'])->find($matchedProductId);
             if ($product) {
                 $updates = [];
                 // A1: reviews_count always refreshes to the latest reported value —

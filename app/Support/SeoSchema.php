@@ -595,6 +595,40 @@ class SeoSchema
     }
 
     /**
+     * Safely encode an array of JSON-LD schema arrays for embedding inside a
+     * `<script type="application/ld+json">` block via Blade's `{!! !!}` (Security
+     * H1, 2026-08-16 audit). `offers.seller.name` (and any other schema field)
+     * can carry caller-supplied text that reached the database with no HTML/
+     * script-tag validation at the source (e.g. a Store name derived from an
+     * unvalidated `store_slug`) — `JSON_HEX_TAG` (+ AMP/APOS/QUOT) escapes
+     * `<`, `>`, `&`, `'`, `"` to `\uXXXX` sequences so a literal `</script>`
+     * can never appear in the output and break out of the script block,
+     * regardless of what upstream validation does or doesn't catch. This does
+     * NOT escape json_encode()'s own structural quotes (verified: PHP only
+     * hex-escapes quote/tag/amp/apos characters that appear as part of ENCODED
+     * string VALUES, never the `{"key":"value"}` delimiters it emits itself),
+     * so every existing consumer that decodes or substring-matches the schema
+     * JSON is unaffected.
+     *
+     * Every view that embeds schema JSON via `{!! !!}` MUST go through this
+     * method rather than calling `json_encode()` directly — see
+     * `app/Livewire/{ProductCompare,Home}.php` and `resources/views/landing/show.blade.php`.
+     *
+     * @param array<int, array<string, mixed>> $schemas
+     * @return array<int, string>
+     */
+    public static function encodeSchemasForScriptTag(array $schemas): array
+    {
+        return array_map(
+            fn (array $schema) => json_encode(
+                $schema,
+                JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT
+            ),
+            $schemas,
+        );
+    }
+
+    /**
      * Build a BreadcrumbList schema from an ordered list of [name, url] pairs.
      *
      * @param array<int, array{name: string, url: string}> $items

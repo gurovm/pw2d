@@ -45,6 +45,23 @@ const pauseRescanBtn = document.getElementById('pauseRescanBtn');
 const resumeRescanBtn = document.getElementById('resumeRescanBtn');
 const stopRescanBtn = document.getElementById('stopRescanBtn');
 
+// Server action → counter name for the in-popup SERP batch loop (audit B4).
+// Same nine actions and the same bucketing as background.js's
+// RESCAN_ACTION_BUCKET — see that table for the full rationale. Kept as a second
+// literal rather than shared because popup.js and background.js are separate
+// non-module scripts; if a third copy is ever needed, make them ES modules first.
+const SERP_ACTION_BUCKET = {
+    created: 'created',
+    matched: 'matched',
+    refreshed: 'refreshed',
+    queued_new: 'created',
+    queued_rescan: 'refreshed',
+    flagged_condition: 'flagged',
+    flagged_offer_condition: 'flagged',
+    skipped_condition: 'skipped',
+    skipped_ignored: 'skipped',
+};
+
 let scannedUrls = [];
 let scannedNextPageUrl = null;
 let extractedProducts = []; // Bulk SERP extraction results
@@ -239,7 +256,7 @@ if (startBatchBtn) {
             } else {
                 // Non-Amazon flow: send each product to ingest-offer API
                 statusDiv.textContent = `Ingesting ${extractedProducts.length} products...`;
-                let created = 0, matched = 0, refreshed = 0, flagged = 0, skipped = 0, failed = 0;
+                const tally = { created: 0, matched: 0, refreshed: 0, flagged: 0, skipped: 0, unknown: 0, failed: 0 };
 
                 for (const product of extractedProducts) {
                     try {
@@ -258,27 +275,33 @@ if (startBatchBtn) {
                         });
                         const data = await res.json();
                         if (data.success) {
-                            // 029B-S4: tally every action the server can return —
-                            // unknown/future actions land in `skipped` so the x/y
-                            // progress line always reaches the total.
-                            if (data.action === 'created') created++;
-                            else if (data.action === 'matched') matched++;
-                            else if (data.action === 'refreshed') refreshed++;
-                            else if (data.action === 'flagged_condition') flagged++;
-                            else skipped++; // skipped_condition + any future action
-                        } else { failed++; }
-                    } catch { failed++; }
+                            // 029B-S4 / audit B4: every action is bucketed by table.
+                            // An unrecognised one lands in its OWN `unknown` bucket —
+                            // it used to fall into `skipped`, which is how
+                            // `flagged_offer_condition` went unnoticed. The x/y
+                            // progress line still always reaches the total.
+                            const bucket = SERP_ACTION_BUCKET[data.action];
+                            if (bucket) {
+                                tally[bucket]++;
+                            } else {
+                                console.warn('Batch: unrecognised server action', data.action);
+                                tally.unknown++;
+                            }
+                        } else { tally.failed++; }
+                    } catch { tally.failed++; }
 
-                    statusDiv.textContent = `Ingesting... ${created + matched + refreshed + flagged + skipped + failed}/${extractedProducts.length}`;
+                    const done = Object.values(tally).reduce((a, b) => a + b, 0);
+                    statusDiv.textContent = `Ingesting... ${done}/${extractedProducts.length}`;
                 }
 
                 const parts = [];
-                if (created > 0)   parts.push(`${created} new queued for AI`);
-                if (matched > 0)   parts.push(`${matched} matched to existing`);
-                if (refreshed > 0) parts.push(`${refreshed} prices refreshed`);
-                if (flagged > 0)   parts.push(`${flagged} flagged for condition`);
-                if (skipped > 0)   parts.push(`${skipped} skipped`);
-                if (failed > 0)    parts.push(`${failed} failed`);
+                if (tally.created > 0)   parts.push(`${tally.created} new queued for AI`);
+                if (tally.matched > 0)   parts.push(`${tally.matched} matched to existing`);
+                if (tally.refreshed > 0) parts.push(`${tally.refreshed} prices refreshed`);
+                if (tally.flagged > 0)   parts.push(`${tally.flagged} flagged for condition`);
+                if (tally.skipped > 0)   parts.push(`${tally.skipped} skipped`);
+                if (tally.unknown > 0)   parts.push(`${tally.unknown} unknown action`);
+                if (tally.failed > 0)    parts.push(`${tally.failed} failed`);
                 statusDiv.textContent = parts.join(', ') + '. Done!';
                 statusDiv.className = 'success';
                 batchControls.style.display = 'none';
@@ -354,30 +377,52 @@ async function beginRescanRun(scope) {
             return;
         }
 
-        // 031-T2 preflight: /api/extension/ingest-offer REQUIRES category_id, and a
-        // picks run spans categories, so every row must carry its own. Fail here
-        // rather than walking ~100 pages that would each 422 (~17 min wasted).
+        // 031-T2 preflight, revised per the 2026-08-16 audit (B3).
+        //
+        // /api/extension/ingest-offer REQUIRES category_id, and a picks run spans
+        // categories, so a row without one could only 422. But a pick whose product
+        // was detached by an AI sweep legitimately has `category_id: null`, and that
+        // is a first-class staleness reason this very pass exists to catch — so ONE
+        // such row must not cost the owner the whole ~100-offer weekly walk.
+        //
+        // Skip those rows, count them, report them; abort only when NOTHING is
+        // usable, which is the genuinely-outdated-server case the check was written
+        // for. Correct whether or not the server also stops emitting such rows.
+        let workList = offers;
+        let noCategoryCount = 0;
+
         if (picks) {
-            const missing = offers.filter((o) => !o.category_id).length;
-            if (missing > 0) {
-                showError(`Server returned ${missing} pick(s) without category_id — the picks list must include it. Update the server first.`);
+            workList = offers.filter((o) => o.category_id);
+            noCategoryCount = offers.length - workList.length;
+
+            if (workList.length === 0) {
+                showError(`Server returned ${offers.length} pick(s), none with a category_id — the picks list must include it. Update the server first.`);
                 startBtn.disabled = false;
                 return;
             }
         }
 
         chrome.runtime.sendMessage(
-            { action: 'START_RESCAN', offers, scope, categoryId: picks ? null : selectedCategoryId },
+            {
+                action: 'START_RESCAN',
+                offers: workList,
+                scope,
+                categoryId: picks ? null : selectedCategoryId,
+                noCategoryCount,
+            },
             (resp) => {
                 if (!resp || !resp.success) {
                     showError(resp?.message || (picks ? 'Could not start picks verification.' : 'Could not start rescan.'));
                     startBtn.disabled = false;
                     return;
                 }
-                showRescanProgress(0, offers.length, null, false, scope);
+                showRescanProgress(0, workList.length, null, false, scope);
+                const skipNote = noCategoryCount > 0
+                    ? ` (${noCategoryCount} skipped: no category)`
+                    : '';
                 statusDiv.textContent = picks
-                    ? `Verifying ${offers.length} live pick(s) across all guides...`
-                    : `Rescanning ${offers.length} offer(s)...`;
+                    ? `Verifying ${workList.length} live pick(s) across all guides${skipNote}...`
+                    : `Rescanning ${workList.length} offer(s)...`;
                 statusDiv.className = '';
             }
         );
@@ -454,9 +499,28 @@ function resetRescanUI() {
     }
 }
 
+// The four core buckets always render (a zero is information: "flagged 0" is the
+// line the owner reads to decide no follow-up is needed, so it must be trustworthy
+// — see audit B4). The exception buckets render only when non-zero, so an ordinary
+// clean run keeps the one-line shape it has always had.
 function formatRescanResults(r) {
     if (!r) return '';
-    return `updated ${r.updated} · flagged ${r.flagged_condition} · skipped ${r.skipped} · errors ${r.errors}`;
+
+    const parts = [
+        `updated ${r.updated ?? 0}`,
+        `flagged ${r.flagged_condition ?? 0}`,
+        `skipped ${r.skipped ?? 0}`,
+        `errors ${r.errors ?? 0}`,
+    ];
+
+    // Audit B3 — detached picks dropped before the walk started.
+    if (r.no_category > 0) parts.push(`${r.no_category} skipped: no category`);
+    // Security M3 — rows refused because their URL is not one of the four stores.
+    if (r.blocked > 0) parts.push(`${r.blocked} blocked: bad URL`);
+    // Audit B4 — the server answered with an action this build does not know.
+    if (r.unknown_action > 0) parts.push(`${r.unknown_action} unknown action`);
+
+    return parts.join(' · ');
 }
 
 // 031-T2: end-of-run line for either mode, with any flagged guides appended.
@@ -819,6 +883,11 @@ scrapeBtn.addEventListener('click', async () => {
                 const result = await apiResponse.json();
 
                 if (apiResponse.ok && result.success) {
+                    // Audit B4/N1: one label per action string the server can
+                    // return — the same nine covered by background.js's
+                    // RESCAN_ACTION_BUCKET table. An unlisted action falls back to
+                    // the raw string below, which is ugly on purpose: it is visibly
+                    // wrong rather than quietly mislabelled.
                     const actionLabels = {
                         'created': 'Queued for AI',
                         'matched': 'Matched to existing product',
@@ -826,6 +895,7 @@ scrapeBtn.addEventListener('click', async () => {
                         'queued_new': 'Queued for AI',
                         'queued_rescan': 'Price refreshed',
                         'flagged_condition': 'Flagged: non-new condition — product ignored',
+                        'flagged_offer_condition': 'Flagged: non-new condition on this listing — offer excluded, product kept (another store is clean)',
                         'skipped_condition': 'Skipped: condition-marked listing',
                         'skipped_ignored': 'Skipped: product is ignored — un-ignore in Filament first',
                     };

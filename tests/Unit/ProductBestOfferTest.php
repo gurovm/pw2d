@@ -321,4 +321,92 @@ class ProductBestOfferTest extends TestCase
         $this->assertEquals('670.00', (string) $product->best_price);
         $this->assertSame($cleanOffer->affiliate_url, $product->affiliate_url);
     }
+
+    // =========================================================================
+    // S3 (2026-08-16 audit): scraped_price = 0 must never win best_offer — the
+    // three other "purchasable" predicates already required > 0.
+    // =========================================================================
+
+    /** @test */
+    public function a_zero_priced_offer_is_never_returned_as_best_even_when_it_is_the_only_offer(): void
+    {
+        $product = $this->makeProduct();
+        $store   = $this->makeStore();
+
+        $this->makeOffer($product, $store, 0.00, condition: 'new');
+
+        $product->load('offers.store');
+
+        $this->assertNull($product->best_offer, 'a $0.00 offer must never win best_offer');
+        $this->assertNull($product->best_price);
+    }
+
+    /** @test */
+    public function a_zero_priced_offer_loses_to_a_genuinely_priced_offer(): void
+    {
+        $product     = $this->makeProduct();
+        $zeroStore   = $this->makeStore();
+        $pricedStore = $this->makeStore();
+
+        $this->makeOffer($product, $zeroStore, 0.00, condition: 'new');
+        $pricedOffer = $this->makeOffer($product, $pricedStore, 49.99, condition: 'new');
+
+        $product->load('offers.store');
+
+        $this->assertSame($pricedOffer->id, $product->best_offer?->id);
+    }
+
+    // =========================================================================
+    // Sec M2 (2026-08-16 audit): an inactive store's offer must not win
+    // best_offer when `offers.store` is eager-loaded (the ProductCompare/
+    // SelectLandingPagePicks/AuditLandingPageFreshness eager-load shape).
+    // =========================================================================
+
+    /** @test */
+    public function an_inactive_stores_offer_is_excluded_when_store_is_eager_loaded(): void
+    {
+        $product        = $this->makeProduct();
+        $activeStore    = $this->makeStore();
+        $inactiveStore  = Store::create([
+            'tenant_id'       => null,
+            'name'            => 'Inactive Store ' . uniqid(),
+            'slug'            => 'inactive-store-' . uniqid(),
+            'commission_rate' => 0,
+            'priority'        => 0,
+            'is_active'       => false,
+        ]);
+
+        $activeOffer = $this->makeOffer($product, $activeStore, 100.00, condition: 'new');
+        $this->makeOffer($product, $inactiveStore, 10.00, condition: 'new');
+
+        $product->load('offers.store');
+
+        $this->assertSame($activeOffer->id, $product->best_offer?->id, 'the inactive store offer must never win, even cheaper');
+    }
+
+    /** @test */
+    public function store_active_state_is_ignored_when_store_is_not_eager_loaded(): void
+    {
+        // Documented behavior (ListingHealth::isPurchasable docblock): when the
+        // caller's eager load omits `store`/`store_id` (e.g. ProductCompare's
+        // scoredProducts, PriceTierRecalculator), the is_active check is safely
+        // skipped rather than triggering a per-offer lazy load.
+        $product       = $this->makeProduct();
+        $inactiveStore = Store::create([
+            'tenant_id'       => null,
+            'name'            => 'Inactive Store ' . uniqid(),
+            'slug'            => 'inactive-store-' . uniqid(),
+            'commission_rate' => 0,
+            'priority'        => 0,
+            'is_active'       => false,
+        ]);
+
+        $offer = $this->makeOffer($product, $inactiveStore, 10.00, condition: 'new');
+
+        // No offers.store eager load and no store_id in the select — mirrors the
+        // narrow selects that deliberately omit store.
+        $product->load(['offers' => fn ($q) => $q->select(['id', 'product_id', 'scraped_price', 'condition', 'listing_flags'])]);
+
+        $this->assertSame($offer->id, $product->best_offer?->id);
+    }
 }

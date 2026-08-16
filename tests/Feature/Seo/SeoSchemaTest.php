@@ -1373,4 +1373,83 @@ class SeoSchemaTest extends TestCase
             'Zero-review ListItem must contain exactly @type, position, url'
         );
     }
+
+    // =========================================================================
+    // Security H1 (2026-08-16 audit): encodeSchemasForScriptTag() must neutralize
+    // a </script> breakout attempt while leaving the JSON structurally valid.
+    // =========================================================================
+
+    /** @test */
+    public function encode_schemas_for_script_tag_neutralizes_a_script_breakout_attempt(): void
+    {
+        // Mirrors the attack: a caller-supplied value (e.g. a Store name reaching
+        // offers.seller.name) containing a literal </script> tag.
+        $malicious = [
+            '@type' => 'Product',
+            'offers' => [
+                '@type'  => 'Offer',
+                'seller' => ['@type' => 'Organization', 'name' => '</script><img src=x onerror=alert(1)>'],
+            ],
+        ];
+
+        [$encoded] = SeoSchema::encodeSchemasForScriptTag([$malicious]);
+
+        $this->assertStringNotContainsString('</script>', $encoded, 'a literal </script> must never survive encoding');
+        $this->assertStringNotContainsString('<img', $encoded);
+
+        // The encoded string must still be valid, round-trippable JSON — the
+        // fix must not corrupt legitimate schema data.
+        $decoded = json_decode($encoded, true);
+        $this->assertSame($malicious, $decoded);
+    }
+
+    /** @test */
+    public function encode_schemas_for_script_tag_does_not_escape_its_own_structural_quotes(): void
+    {
+        $schema = ['@type' => 'ItemList', 'name' => 'Best Espresso Machines'];
+
+        [$encoded] = SeoSchema::encodeSchemasForScriptTag([$schema]);
+
+        // Structural delimiters must remain literal quotes — existing HTTP tests
+        // (e.g. CompareContentDepthTest) substring-match on '"@type":"ItemList"'.
+        $this->assertStringContainsString('"@type":"ItemList"', $encoded);
+    }
+
+    /** @test */
+    public function a_malicious_store_name_cannot_break_out_of_the_script_tag_on_a_rendered_product_page(): void
+    {
+        $category = Category::factory()->create(['name' => 'Espresso Machines', 'slug' => 'espresso-machines-h1-xss']);
+        $brand    = Brand::factory()->create();
+        $product  = Product::factory()->create([
+            'category_id' => $category->id,
+            'brand_id'    => $brand->id,
+            'slug'        => 'h1-xss-product',
+        ]);
+
+        $store = Store::create([
+            'tenant_id' => tenant('id'),
+            // A store name reaching this point (e.g. created directly via
+            // Filament, bypassing the ingestion-side store_slug regex) must
+            // still be neutralized at the render sink.
+            'name'      => '</script><script>alert(document.cookie)</script>',
+            'slug'      => 'h1-xss-store',
+        ]);
+
+        ProductOffer::create([
+            'product_id'    => $product->id,
+            'store_id'      => $store->id,
+            'url'           => 'https://example.com/h1-xss-product',
+            'raw_title'     => 'H1 XSS Product',
+            'scraped_price' => 99.99,
+            'condition'     => 'new',
+        ]);
+
+        $html = $this->get('/compare/espresso-machines-h1-xss')->getContent();
+
+        $this->assertStringNotContainsString(
+            '</script><script>alert(document.cookie)</script>',
+            $html,
+            'the malicious store name must never appear as a literal, unescaped </script> break-out in the page HTML'
+        );
+    }
 }

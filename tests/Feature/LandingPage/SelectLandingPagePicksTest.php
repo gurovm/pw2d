@@ -460,6 +460,86 @@ class SelectLandingPagePicksTest extends TestCase
     }
 
     // =========================================================================
+    // B2 / M3 (2026-08-16 audit): condition-column exclusion — the offer's
+    // DOM-verified `condition` is checked even when the title/ai_summary are
+    // clean (extension v1.4 non-title condition sources: schema.org
+    // itemCondition, meta tag, badge, Amazon's "#bylineInfo" Renewed byline).
+    // =========================================================================
+
+    /** @test */
+    public function it_excludes_a_product_whose_only_priced_offer_has_a_negative_condition_even_with_a_clean_title(): void
+    {
+        $category = Category::factory()->create(['slug' => 'lp-picks-negative-condition']);
+        $feature  = Feature::factory()->create(['category_id' => $category->id, 'is_higher_better' => true, 'unit' => null]);
+
+        // Would otherwise win "Best Overall" by a wide margin. Its raw_title AND
+        // ai_summary are perfectly clean (hasConditionMarker() would miss it) —
+        // only the DOM-verified `condition` column carries the signal.
+        $renewed = $this->makeEligibleProduct($category, 'lp-picks-negative-condition-renewed');
+        $this->setScore($renewed, $feature, 99);
+        ProductOffer::where('product_id', $renewed->id)->update(['condition' => 'renewed']);
+
+        $eligibleIds = [];
+        foreach (range(1, 5) as $i) {
+            $p = $this->makeEligibleProduct($category, "lp-picks-negative-condition-clean-{$i}");
+            $this->setScore($p, $feature, 50 + $i);
+            $eligibleIds[] = $p->id;
+        }
+
+        $picks     = (new SelectLandingPagePicks())->execute($category);
+        $pickedIds = collect($picks)->pluck('product_id')->all();
+
+        $this->assertNotContains($renewed->id, $pickedIds, 'A product whose only priced offer has a negative condition must be excluded, even with a clean title/summary');
+        $this->assertCount(5, $pickedIds, 'The 5 clean products fill the picks instead');
+        sort($eligibleIds);
+        $sortedPicked = $pickedIds;
+        sort($sortedPicked);
+        $this->assertSame($eligibleIds, $sortedPicked);
+    }
+
+    /**
+     * B2's core regression: every returned pick must resolve to a non-null
+     * best_offer — a pick_ineligible/no-CTA card must never be selectable in
+     * the first place, regardless of WHICH exclusion rule is responsible.
+     */
+    /** @test */
+    public function every_returned_pick_has_a_non_null_best_offer(): void
+    {
+        $category = Category::factory()->create(['slug' => 'lp-picks-non-null-best-offer']);
+        $feature  = Feature::factory()->create(['category_id' => $category->id, 'is_higher_better' => true, 'unit' => null]);
+
+        // A multi-store product where the CHEAPEST/best-scoring offer is clean but
+        // a sibling offer is renewed — irrelevant to eligibility (only needs ONE
+        // eligible offer), included to prove the assertion is meaningful.
+        $multiStore = $this->makeEligibleProduct($category, 'lp-picks-non-null-best-offer-multi');
+        $this->setScore($multiStore, $feature, 80);
+        ProductOffer::create([
+            'product_id'    => $multiStore->id,
+            'store_id'      => null,
+            'url'           => 'https://example.com/lp-picks-non-null-best-offer-multi-alt',
+            'raw_title'     => $multiStore->name,
+            'scraped_price' => 40,
+            'condition'     => 'refurbished',
+        ]);
+
+        foreach (range(1, 4) as $i) {
+            $p = $this->makeEligibleProduct($category, "lp-picks-non-null-best-offer-{$i}");
+            $this->setScore($p, $feature, 50 + $i);
+        }
+
+        $products = \App\Models\Product::whereIn('id', collect((new SelectLandingPagePicks())->execute($category))->pluck('product_id'))
+            ->with(['offers.store'])
+            ->get();
+
+        foreach ($products as $product) {
+            $this->assertNotNull(
+                $product->best_offer,
+                "pick product #{$product->id} ({$product->name}) must have a non-null best_offer"
+            );
+        }
+    }
+
+    // =========================================================================
     // Null-price + flagged blind spot (prod incident, 2026-08-12 fix)
     // =========================================================================
 

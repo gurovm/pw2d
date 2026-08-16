@@ -15,6 +15,17 @@ class ProductImportRequest extends FormRequest
         return true; // Token middleware handles auth
     }
 
+    /**
+     * Sec M1 (2026-08-16 audit): normalize `listing_flags` to a list BEFORE
+     * validating — see BatchImportRequest's docblock for the full rationale.
+     */
+    protected function prepareForValidation(): void
+    {
+        if (is_array($flags = $this->input('listing_flags'))) {
+            $this->merge(['listing_flags' => array_values($flags)]);
+        }
+    }
+
     public function rules(): array
     {
         return [
@@ -27,9 +38,15 @@ class ProductImportRequest extends FormRequest
             'image_url'       => 'nullable|url|max:1000',
             'stock_status'    => 'nullable|string|max:50',
             'condition'       => ['nullable', Rule::in(ListingHealth::CONDITIONS)],
-            // Security L2: bound the array so a repeated-element payload can't bloat
-            // the listing_flags JSON column / later in_array() scans.
-            'listing_flags'   => 'nullable|array|max:5',
+            // Security L2 / Sec M1: bound the array so a repeated-element payload
+            // can't bloat the listing_flags JSON column / later in_array() scans,
+            // and require a genuine list (belt-and-braces on top of the
+            // prepareForValidation() normalization above).
+            'listing_flags'   => ['nullable', 'array', 'max:5', function ($attribute, $value, $fail) {
+                if (!array_is_list($value)) {
+                    $fail('The :attribute must be a list of flag strings.');
+                }
+            }],
             'listing_flags.*' => ['distinct', 'string', Rule::in(ListingHealth::RECOGNIZED_FLAGS)],
         ];
     }

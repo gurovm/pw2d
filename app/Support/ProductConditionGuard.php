@@ -25,7 +25,6 @@ class ProductConditionGuard
         'renewed',
         'refurbish',
         'open box',
-        'open-box',
         'pre-owned',
         'used',
     ];
@@ -34,8 +33,33 @@ class ProductConditionGuard
         'renewed',
         'refurbish',
         'open box',
-        'open-box',
         'pre-owned',
+    ];
+
+    /**
+     * B1 (2026-08-16 audit, LANDMINE): anchored regex per marker, replacing the
+     * naive `str_contains()` substring scan. The bare marker `'used'` is a
+     * substring of ordinary English words ("fo**cused**", "h**oused**",
+     * "**unused**", "aro**used**") — before this fix, `resolveEffectiveCondition()`
+     * branch 3 let ANY of those false-positive-match a title and override an
+     * explicit, DOM-verified `condition: 'new'`, silently storing
+     * `condition='used'` on the next rescan and (for a single-offer product)
+     * ignoring it outright.
+     *
+     * Ported from the extension's already-correct positional guard
+     * (`chrome_extension/content.js::conditionMarkerFromText`, 029B-S3): a bare
+     * "used" only counts in a parenthetical ("(Used)", "(Certified Used)") or
+     * leading position ("Used - Like New", "Used Blue Yeti Mic"). Mid-title verb
+     * phrasing never matches. Every other marker keeps its original (unanchored,
+     * for 'refurbish') or word-boundary ('renewed', 'pre-owned') substring
+     * behavior — those were never ambiguous.
+     */
+    private const MARKER_PATTERNS = [
+        'renewed'   => '/\brenewed\b/',
+        'refurbish' => '/refurbish/',
+        'open box'  => '/open[\s-]?box/',
+        'pre-owned' => '/\bpre-?owned\b/',
+        'used'      => '/(?:\(\s*(?:certified\s+)?used\b[^)]*\))|(?:^\s*used\b)/',
     ];
 
     /**
@@ -159,7 +183,9 @@ class ProductConditionGuard
         $lower = mb_strtolower($haystack);
 
         foreach ($markers as $marker) {
-            if (str_contains($lower, $marker)) {
+            $pattern = self::MARKER_PATTERNS[$marker] ?? null;
+
+            if ($pattern !== null && preg_match($pattern, $lower) === 1) {
                 return $marker;
             }
         }

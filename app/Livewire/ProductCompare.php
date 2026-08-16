@@ -11,6 +11,7 @@ use App\Models\ProductOffer;
 use App\Models\SearchLog;
 use App\Services\AiService;
 use App\Services\ProductScoringService;
+use App\Support\ListingHealth;
 use App\Support\SamplePrompts;
 use App\Support\SeoSchema;
 use Illuminate\Support\Facades\Cache;
@@ -172,7 +173,11 @@ class ProductCompare extends Component
         // Cache raw product data as plain arrays (not Eloquent models).
         // Eloquent unserialize for 2000+ objects takes ~90ms; plain arrays take ~5ms.
         // Scoring still runs fresh (weights change), but the DB round-trip is skipped.
-        $cacheKey = tenant_cache_key("products:cat{$this->category->id}:b{$this->filterBrand}:p{$this->selectedPrice}");
+        //
+        // Perf C1 / Review S1 (2026-08-16 audit): cache key bumped to v2 — the
+        // query/mapping below changed shape, so a pre-fix v1 entry (still holding
+        // the old unfiltered 'best_price') must never be served post-deploy.
+        $cacheKey = tenant_cache_key("products:v2:cat{$this->category->id}:b{$this->filterBrand}:p{$this->selectedPrice}");
         $rawData = Cache::remember($cacheKey, 90, function () {
             return Product::where('category_id', $this->category->id)
                 ->where('is_ignored', false)
@@ -180,17 +185,36 @@ class ProductCompare extends Component
                 ->select(['id', 'brand_id', 'amazon_rating', 'price_tier'])
                 ->with([
                     'featureValues:id,product_id,feature_id,raw_value',
-                    'offers:id,product_id,scraped_price',
+                    // Perf C1 / Review S1: condition + listing_flags must be selected —
+                    // 'best_price' below now reads the $p->best_price ACCESSOR (was a
+                    // raw, unfiltered ->min('scraped_price')), which excludes
+                    // NEGATIVE_CONDITIONS/PICK_EXCLUDING_FLAGS offers based on these
+                    // columns. Without them the card's price/rank/tier badge could
+                    // describe a listing that renders with no "Check Current Price"
+                    // CTA at all (affiliate_url resolves through the SAME filtered
+                    // best_offer already). `store_id` deliberately omitted — the
+                    // commission/priority tiebreak is irrelevant to a price-only
+                    // decision and would cost a Store query per offer (see Perf H2).
+                    'offers:id,product_id,scraped_price,' . implode(',', ListingHealth::OFFER_HEALTH_COLUMNS),
                 ])
                 ->when($this->filterBrand, fn($q) => $q->where('brand_id', $this->filterBrand))
-                ->when($this->selectedPrice < $this->maxPrice, fn($q) => $q->whereHas('offers', fn($oq) => $oq->where('scraped_price', '<=', $this->selectedPrice)))
+                ->when($this->selectedPrice < $this->maxPrice, fn($q) => $q->whereHas('offers', fn($oq) => $oq
+                    ->where('scraped_price', '<=', $this->selectedPrice)
+                    // Mirror the same NEGATIVE_CONDITIONS exclusion the accessor
+                    // applies — a bad-condition offer must not qualify a product for
+                    // the price slider just because it's the cheapest. `whereNull`
+                    // keeps a never-DOM-checked (`condition IS NULL`) offer eligible,
+                    // matching isPurchasable()'s PHP `in_array(null, [...]) === false`
+                    // behavior. The listing_flags JSON check isn't sargable here and
+                    // is deliberately left to the PHP-side best_price filter instead.
+                    ->where(fn ($cq) => $cq->whereNull('condition')->orWhereNotIn('condition', ListingHealth::NEGATIVE_CONDITIONS))))
                 ->get()
                 ->map(fn($p) => [
                     'id'             => $p->id,
                     'brand_id'       => $p->brand_id,
                     'amazon_rating'  => $p->amazon_rating,
                     'price_tier'     => $p->price_tier,
-                    'best_price'     => $p->offers->min('scraped_price'),
+                    'best_price'     => $p->best_price,
                     'fvs'            => $p->featureValues
                         ->map(fn($fv) => ['feature_id' => (int)$fv->feature_id, 'raw_value' => (float)$fv->raw_value])
                         ->toArray(),
@@ -718,10 +742,11 @@ class ProductCompare extends Component
                 'canonicalUrl'    => $seo['canonical'],
                 'ogType'          => $seo['ogType'],
                 'ogImage'         => $seo['ogImage'],
-                'schemasJson'     => array_map(
-                    fn (array $s) => json_encode($s, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
-                    $seo['schemas'],
-                ),
+                // Security H1 (2026-08-16 audit): SeoSchema::encodeSchemasForScriptTag()
+                // hex-escapes </script>-breaking characters — see its docblock. Was
+                // json_encode(..., JSON_UNESCAPED_SLASHES | ...), which is exactly
+                // what let a literal `</script>` survive un-escaped.
+                'schemasJson'     => SeoSchema::encodeSchemasForScriptTag($seo['schemas']),
             ]);
     }
 }

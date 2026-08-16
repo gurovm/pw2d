@@ -102,4 +102,74 @@ class ProductConditionGuardTest extends TestCase
 
         $this->assertSame('unknown', $result, '"unknown" must never be overridden by a title marker');
     }
+
+    // =========================================================================
+    // B1 (2026-08-16 audit, LANDMINE): bare "used" is a substring of ordinary
+    // English words. Before the fix, str_contains() matched every one of these
+    // titles — combined with resolveEffectiveCondition() branch 3, an incoming
+    // condition:'new' would have been silently overridden by 'used'.
+    // =========================================================================
+
+    /**
+     * @test
+     * @dataProvider usedFalsePositiveTitleProvider
+     */
+    public function bare_used_false_positives_never_match_a_title(string $title): void
+    {
+        $this->assertNull(
+            ProductConditionGuard::titleMarker($title),
+            "\"{$title}\" must not be treated as a condition marker"
+        );
+
+        // The landmine scenario: an explicit DOM-verified 'new' must survive.
+        $this->assertSame(
+            'new',
+            ProductConditionGuard::resolveEffectiveCondition('new', $title),
+            "an explicit 'new' condition must not be overridden by \"{$title}\""
+        );
+    }
+
+    public static function usedFalsePositiveTitleProvider(): array
+    {
+        return [
+            'focused'  => ['Blue Yeti USB Microphone with focused cardioid pickup'],
+            'housed'   => ['Compact amp housed in a rugged aluminum enclosure'],
+            'unused'   => ['Brand new, unused, in original packaging'],
+            'paused'   => ['Playback is automatically paused when idle'],
+            'aroused'  => ['Curiosity aroused by the sleek matte finish'],
+        ];
+    }
+
+    /**
+     * @test
+     * @dataProvider usedTruePositiveTitleProvider
+     */
+    public function bare_used_true_positives_still_match(string $title): void
+    {
+        $this->assertSame('used', ProductConditionGuard::titleMarker($title));
+        $this->assertSame('used', ProductConditionGuard::titleCondition($title));
+    }
+
+    public static function usedTruePositiveTitleProvider(): array
+    {
+        return [
+            'parenthetical'      => ['Blue Yeti USB Microphone (Used)'],
+            'certified parenthetical' => ['Blue Yeti USB Microphone (Certified Used)'],
+            'leading with dash'  => ['Used - Like New Blue Yeti USB Microphone'],
+            'leading plain'      => ['Used Blue Yeti USB Microphone, Blackout Edition'],
+        ];
+    }
+
+    /** @test */
+    public function mid_title_renewed_still_matches(): void
+    {
+        $title = 'Blue Yeti USB Microphone (Renewed) for Gaming, Streaming';
+
+        $this->assertSame('renewed', ProductConditionGuard::titleMarker($title));
+        $this->assertSame(
+            'renewed',
+            ProductConditionGuard::resolveEffectiveCondition('new', $title),
+            'a genuine mid-title Renewed marker must still win over an explicit new'
+        );
+    }
 }

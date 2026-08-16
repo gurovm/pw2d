@@ -15,6 +15,7 @@ use App\Models\ProductOffer;
 use App\Models\Tenant;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
 
 /**
@@ -25,9 +26,15 @@ use Tests\TestCase;
  * SAME is_ignored/category filters) and `render_short` (LandingPageController's
  * render filter is a strict subset of the select filter) — that overlap is
  * inherent to the domain, not a test gap. Where a sub-trigger truly can be
- * isolated (the offer `condition`/`high_price` columns, which SelectLandingPagePicks
- * partially or fully ignores; price drift; a pure selection swap), the test
- * asserts the EXACT reasons array.
+ * isolated (price drift; a pure selection swap), the test asserts the EXACT
+ * reasons array.
+ *
+ * B2 / M3 (2026-08-16 audit): `SelectLandingPagePicks::hasEligibleOffer()` now
+ * shares the same `ListingHealth::isPurchasable()` predicate as
+ * `AuditLandingPageFreshness::hasEligibleOffer()` (condition + flags both
+ * checked by both), so a negative-condition best offer ALSO cascades into
+ * `selection_drift` — before this fix Select silently kept re-picking a
+ * now-ineligible product forever, which is exactly the bug B2 closed.
  */
 class AuditLandingPageFreshnessTest extends TestCase
 {
@@ -170,21 +177,77 @@ class AuditLandingPageFreshnessTest extends TestCase
     }
 
     // =========================================================================
+    // Perf H1 (2026-08-16 audit): a no-op re-audit must not bust the page's
+    // public view-model cache or the tenant sitemap cache.
+    // =========================================================================
+
+    /** @test */
+    public function a_no_op_reaudit_does_not_forget_the_page_cache_or_sitemap_cache(): void
+    {
+        [, $page] = $this->makeFreshCategoryAndPage('lp-audit-cache-noop');
+
+        // First audit: genuinely fresh -> [] === [] (stale_reasons defaults to
+        // null on a brand-new page's factory row, so seed it explicitly first
+        // to establish the "already audited, still fresh" baseline).
+        (new AuditLandingPageFreshness())->execute($page);
+        $page = $page->fresh();
+
+        Cache::put($page->cacheKey(), 'cached-view-model', 3600);
+        $sitemapKey = 't' . $page->tenant_id . ':sitemap:xml';
+        Cache::put($sitemapKey, 'cached-sitemap-xml', 600);
+
+        // Second audit: nothing changed (stale_reasons stays []).
+        $reasons = (new AuditLandingPageFreshness())->execute($page->fresh());
+
+        $this->assertSame([], $reasons);
+        $this->assertSame('cached-view-model', Cache::get($page->cacheKey()), 'a no-op re-audit must not forget the view-model cache');
+        $this->assertSame('cached-sitemap-xml', Cache::get($sitemapKey), 'a no-op re-audit must not forget the sitemap cache');
+
+        // freshness_checked_at must still advance — updateQuietly() persists it.
+        $this->assertNotNull($page->fresh()->freshness_checked_at);
+    }
+
+    /** @test */
+    public function a_genuine_stale_transition_still_busts_the_page_cache(): void
+    {
+        [, $page, $products] = $this->makeFreshCategoryAndPage('lp-audit-cache-bust');
+
+        (new AuditLandingPageFreshness())->execute($page);
+        $page = $page->fresh();
+
+        Cache::put($page->cacheKey(), 'cached-view-model', 3600);
+
+        // Genuine change: is_ignored flip -> pick_ineligible + selection_drift + render_short.
+        $products->first()->update(['is_ignored' => true]);
+
+        $reasons = (new AuditLandingPageFreshness())->execute($page->fresh());
+
+        $this->assertNotEmpty($reasons);
+        $this->assertNull(Cache::get($page->cacheKey()), 'a genuine stale transition must still bust the view-model cache');
+    }
+
+    // =========================================================================
     // pick_ineligible
     // =========================================================================
 
     /** @test */
-    public function pick_ineligible_fires_in_isolation_when_the_best_offer_has_a_negative_condition(): void
+    public function pick_ineligible_cascades_with_selection_drift_when_the_best_offer_has_a_negative_condition(): void
     {
         [, $page, $products] = $this->makeFreshCategoryAndPage('lp-audit-condition');
 
-        // SelectLandingPagePicks does NOT read the `condition` column (only text
-        // markers + high_price), so this does not shift selection/render.
+        // B2 / M3 (2026-08-16 audit): SelectLandingPagePicks::hasEligibleOffer()
+        // now reads the `condition` column too (shared ListingHealth::isPurchasable()
+        // predicate) — a `renewed` best offer removes the product from BOTH the
+        // rendered page's eligibility (pick_ineligible) AND re-selection
+        // (selection_drift, since the 5-product category drops below MIN_PICKS
+        // once this one is excluded). Before the fix this could not be isolated:
+        // Select silently kept re-picking the now-ineligible product forever.
         ProductOffer::where('product_id', $products->first()->id)->update(['condition' => 'renewed']);
 
         $reasons = (new AuditLandingPageFreshness())->execute($page);
 
-        $this->assertSame(['pick_ineligible'], $reasons);
+        $this->assertContains('pick_ineligible', $reasons);
+        $this->assertContains('selection_drift', $reasons, 'a negative condition also excludes the product from re-selection');
     }
 
     /** @test */

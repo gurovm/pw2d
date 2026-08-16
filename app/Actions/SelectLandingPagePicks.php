@@ -54,7 +54,9 @@ class SelectLandingPagePicks
                 // (read via the `image_url` accessor's best-offer fallback below) now
                 // excludes NEGATIVE_CONDITIONS offers based on this column; an
                 // unselected column would resolve as null and silently look clean.
-                'offers:id,product_id,store_id,scraped_price,image_url,raw_title,listing_flags,condition',
+                // S2 (2026-08-16): uses ListingHealth::OFFER_HEALTH_COLUMNS so a future
+                // health column added there is picked up here automatically.
+                'offers:id,product_id,store_id,scraped_price,image_url,raw_title,' . implode(',', ListingHealth::OFFER_HEALTH_COLUMNS),
                 'offers.store',
             ])
             ->get()
@@ -233,11 +235,13 @@ class SelectLandingPagePicks
     }
 
     /**
-     * True if ANY of the product's offers is simultaneously priced (`scraped_price`
-     * non-null and > 0) and free of any pick-excluding listing flag (`high_price`,
-     * `unavailable` — see ListingHealth::PICK_EXCLUDING_FLAGS). Condition-marker
-     * exclusion (renewed/refurbished/open box/pre-owned/used) is checked separately,
-     * at the product level, by hasConditionMarker() above.
+     * True if ANY of the product's offers is purchasable — priced, free of a
+     * negative condition, and free of a pick-excluding listing flag (see
+     * {@see ListingHealth::isPurchasable()}). Condition-MARKER exclusion
+     * (renewed/refurbished/open box/pre-owned/used text in raw_title/ai_summary)
+     * is checked separately, at the product level, by hasConditionMarker() above
+     * — that's a weaker, text-based signal this DOM-verified `condition` column
+     * check doesn't replace.
      *
      * Fixed 2026-08-12 (prod incident): the prior version only inspected the
      * product's `best_offer`, but `Product::bestOffer` itself excludes null-price
@@ -248,14 +252,19 @@ class SelectLandingPagePicks
      * ranked #1 "Best Overall" on a live landing page with no purchasable offer.
      * Checking every offer directly means the flag check can never be skipped by
      * best-offer absence: a pick the reader can't buy is not a pick.
+     *
+     * B2 / M3 (2026-08-16 audit): this was the only one of the four "is this
+     * offer purchasable" copies that omitted the `NEGATIVE_CONDITIONS` check —
+     * a product whose sole eligible offer was `condition: 'renewed'` (clean
+     * title, so hasConditionMarker() missed it — extension v1.4 added non-title
+     * condition sources) was selectable as a pick, rendered with no price/CTA,
+     * and left the page permanently `pick_ineligible` (Select and Audit
+     * disagreed). Now delegates to the shared predicate so all four call sites
+     * can never drift again.
      */
     private static function hasEligibleOffer(Product $product): bool
     {
-        return $product->offers->contains(
-            fn ($offer) => $offer->scraped_price !== null
-                && (float) $offer->scraped_price > 0
-                && array_intersect(ListingHealth::PICK_EXCLUDING_FLAGS, $offer->listing_flags ?? []) === []
-        );
+        return $product->offers->contains(fn ($offer) => ListingHealth::isPurchasable($offer));
     }
 
     /**

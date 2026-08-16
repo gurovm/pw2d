@@ -20,6 +20,42 @@ let baseUrl = API_CONFIG.local;
 let EXTENSION_TOKEN = '';
 let TENANT_ID = '';
 
+// ─────────────────────────────────────────────────────────────
+// Navigation allowlist (2026-08-16 security audit M3)
+//
+// The walk drives a real browser tab to `offer.url`, a value that reached the DB
+// from an ingestion payload — the server validates it as a URL but constrains
+// neither scheme nor host. Spec 031 turns that into an UNATTENDED weekly walk of
+// ~100 rows, so the extension must not trust its own server here.
+//
+// The list is exactly the set `content.js::extractStoreProduct()` routes on
+// (matched after stripping a leading `www.`). A row outside it could never have
+// been extracted in the first place, so refusing to navigate loses nothing:
+// off-allowlist rows are counted as `blocked` and reported, never silently
+// dropped. Exact host match — `notamazon.com` and `amazon.com.evil.test` both
+// fail, which a `endsWith`/`includes` test would not.
+//
+// ONE definition serves BOTH walk modes: the check lives in processNextRescan(),
+// which category and picks runs share verbatim (scope only picks the work list).
+// ─────────────────────────────────────────────────────────────
+const RESCAN_ALLOWED_HOSTS = [
+    'amazon.com',
+    'clivecoffee.com',
+    'seattlecoffeegear.com',
+    'wholelattelove.com',
+];
+
+function isWalkableUrl(rawUrl) {
+    let parsed;
+    try {
+        parsed = new URL(rawUrl);
+    } catch {
+        return false; // not a URL at all
+    }
+    if (parsed.protocol !== 'https:') return false; // no http/ftp/file/ws/…
+    return RESCAN_ALLOWED_HOSTS.includes(parsed.hostname.toLowerCase().replace(/^www\./, ''));
+}
+
 // ----- Rescan Mode State (Spec 029 B2, extended by Spec 031 T2) -----
 // Persisted to chrome.storage.local ('rescanRun') after every step so Resume
 // works after the popup closes or the service worker restarts.
@@ -39,12 +75,89 @@ let rescanRun = {
     offers: [],           // [{offer_id, product_id, url, asin, last_scanned_at, category_id?, landing_page_slug?}]
     index: 0,
     tabId: null,          // reused worker tab (never persisted)
-    // flagged_guides: {slug: count} — 031-T2, populated in picks mode only (category
-    // rows carry no slug). Names the guide behind each flagged pick so the owner
-    // knows which category to rescan in full (the spec's response rule).
-    results: { updated: 0, flagged_condition: 0, skipped: 0, errors: 0, flagged_guides: {} },
+    results: emptyRescanResults(),
 };
 let rescanTimer = null;
+
+// ─────────────────────────────────────────────────────────────
+// Tally buckets. Every bucket is reported; nothing is ever folded into another.
+//
+//   updated           the server wrote what we sent, nothing wrong with the listing
+//   flagged_condition a bad-listing verdict (product-level OR offer-level)
+//   skipped           the server deliberately declined to write
+//   unknown_action    success:true with an action string this build does not know
+//   errors            transport/extraction failure, or success:false
+//   blocked           refused to navigate: off-allowlist URL (security M3)
+//   no_category       dropped before the walk started: no category_id (audit B3)
+//   flagged_guides    {slug: count} — picks mode only (category rows carry no slug).
+//                     Names the guide behind each flagged pick so the owner knows
+//                     which category to rescan in full (Spec 031's response rule).
+// ─────────────────────────────────────────────────────────────
+function emptyRescanResults() {
+    return {
+        updated: 0,
+        flagged_condition: 0,
+        skipped: 0,
+        unknown_action: 0,
+        errors: 0,
+        blocked: 0,
+        no_category: 0,
+        flagged_guides: {},
+    };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Server action → tally bucket (2026-08-16 audit B4).
+//
+// EVERY action string the three ingestion controllers + OfferIngestionService can
+// return is listed explicitly. There is deliberately no "everything else is fine"
+// default: an unlisted action lands in `unknown_action` and is logged, because the
+// bug this table replaces was exactly that — `flagged_offer_condition` was new,
+// fell through an `else`, and was reported to the owner as a clean `updated`.
+//
+//   refreshed               OfferIngestionService — existing offer re-scraped     → updated
+//   created                 OfferIngestionService — new product created           → updated
+//   matched                 OfferIngestionService — AI-matched to an existing one → updated
+//   queued_new              ProductImportController — new product queued for AI   → updated
+//   queued_rescan           ProductImportController — existing product refreshed  → updated
+//   flagged_condition       bad condition, NO clean sibling → product ignored     → flagged_condition
+//   flagged_offer_condition bad condition, a clean sibling survives → offer only  → flagged_condition
+//   skipped_condition       import refused outright, nothing written              → skipped
+//   skipped_ignored         ProductImportController — product already ignored     → skipped
+//
+// `flagged_offer_condition` is the multi-store case Spec 029 §A2b exists for: the
+// product stays visible because another store's listing is clean, so it MUST still
+// count as flagged and MUST still name its guide — otherwise the exact scenario
+// the fix was written for reports "flagged 0" with no guide named, and the weekly
+// routine's response rule never fires.
+//
+// The rescan walk only ever POSTs to /api/extension/ingest-offer, so in practice
+// it sees the first eight; the ProductImportController pair is listed so this
+// table is the single answer to "what can `action` be" for the whole extension.
+// ─────────────────────────────────────────────────────────────
+const RESCAN_ACTION_BUCKET = {
+    refreshed: 'updated',
+    created: 'updated',
+    matched: 'updated',
+    queued_new: 'updated',
+    queued_rescan: 'updated',
+    flagged_condition: 'flagged_condition',
+    flagged_offer_condition: 'flagged_condition',
+    skipped_condition: 'skipped',
+    skipped_ignored: 'skipped',
+};
+
+// Actions that are a bad-listing signal on a pick and must therefore name the
+// guide. Broader than the `flagged_condition` bucket by one: `skipped_condition`
+// writes nothing (so it is not "flagged") but still means the owner is looking at
+// a condition-marked listing on a live pick — the response rule keys off ANY
+// bad-listing signal. `skipped_ignored` is NOT here: it reports a pre-existing
+// ignore, not a new observation about the listing.
+const RESCAN_GUIDE_NAMING_ACTIONS = [
+    'flagged_condition',
+    'flagged_offer_condition',
+    'skipped_condition',
+];
 
 // 029B-B1: exactly ONE page-load listener + watchdog may be armed at a time, and
 // both must be cancellable on pause/stop — module-level refs make that possible.
@@ -74,6 +187,10 @@ chrome.storage.local.get(['env', 'extensionToken', 'tenantId', 'rescanRun'], (re
             tabId: null,
             paused: true,
             pausedReason: result.rescanRun.pausedReason || 'worker_restart',
+            // A run persisted by an older build has fewer counters than this one.
+            // Merging over the full default set keeps every `results.x++` a number
+            // instead of NaN after an upgrade mid-run.
+            results: { ...emptyRescanResults(), ...(result.rescanRun.results || {}) },
         };
     }
 });
@@ -103,7 +220,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             sendResponse({ success: false, message: `A ${runLabel()} is already running.` });
             return true;
         }
-        startRescan(request.offers, request.categoryId, request.scope);
+        startRescan(request.offers, request.categoryId, request.scope, request.noCategoryCount);
         sendResponse({ success: true });
     } else if (request.action === "PAUSE_RESCAN") {
         pauseRescan('user');
@@ -141,7 +258,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // branch on scope — popup.js decides which list to fetch, this file walks it.
 // ─────────────────────────────────────────────────────────────
 
-function startRescan(offers, categoryId, scope) {
+function startRescan(offers, categoryId, scope, noCategoryCount) {
+    const results = emptyRescanResults();
+    // Audit B3: rows the popup dropped before starting (no category_id — they could
+    // only 422 at ingest-offer). Seeded here so the count survives the popup being
+    // closed and still shows up in the end-of-run summary.
+    results.no_category = Number(noCategoryCount) || 0;
+
     rescanRun = {
         active: true,
         paused: false,
@@ -151,7 +274,7 @@ function startRescan(offers, categoryId, scope) {
         offers: offers || [],
         index: 0,
         tabId: null,
-        results: { updated: 0, flagged_condition: 0, skipped: 0, errors: 0, flagged_guides: {} },
+        results,
     };
     persistRescan();
     processNextRescan();
@@ -167,8 +290,7 @@ function runLabel(capitalised = false) {
 // 031-T2: record which guide a flagged pick belongs to. Category-mode rows carry
 // no `landing_page_slug`, so this is a no-op there — no branching required.
 // Deliberately broader than `results.flagged_condition`: the owner's response rule
-// keys off ANY bad-listing signal (condition, high_price, unavailable), and that
-// counter's known undercount is an explicitly deferred item in Spec 031.
+// keys off ANY bad-listing signal (condition verdict, high_price, unavailable).
 function noteFlaggedGuide(offer) {
     const slug = offer && offer.landing_page_slug;
     if (!slug) return;
@@ -237,6 +359,18 @@ async function processNextRescan() {
     }
 
     const offer = rescanRun.offers[rescanRun.index];
+
+    // Security M3 — check BEFORE any chrome.tabs call. Both walk modes reach this
+    // line, so one gate covers the category rescan and the unattended weekly picks
+    // walk alike. A poisoned or simply stale row must never steer the owner's
+    // browser off the four stores the extension can actually read.
+    if (!isWalkableUrl(offer.url)) {
+        console.warn('Rescan: refusing to navigate to off-allowlist URL', offer.url);
+        rescanRun.results.blocked++;
+        advanceRescan(attempt);
+        return;
+    }
+
     broadcastRescan(rescanRun.scope === 'picks'
         ? `Verifying pick ${rescanRun.index + 1}/${rescanRun.offers.length}...`
         : `Rescanning ${rescanRun.index + 1}/${rescanRun.offers.length}...`);
@@ -380,9 +514,16 @@ async function handleRescanExtract(offer, response, attempt) {
         if (attempt !== rescanAttempt) return;
 
         if (res.ok && data.success) {
-            if (data.action === 'flagged_condition') rescanRun.results.flagged_condition++;
-            else if (data.action === 'skipped_condition') rescanRun.results.skipped++;
-            else rescanRun.results.updated++; // refreshed | matched | created
+            // Audit B4: table lookup, never an `else` fallthrough. An action this
+            // build has not been taught is counted separately and logged, so a new
+            // server-side action can no longer masquerade as a clean `updated`.
+            const bucket = RESCAN_ACTION_BUCKET[data.action];
+            if (bucket) {
+                rescanRun.results[bucket]++;
+            } else {
+                console.warn('Rescan: unrecognised server action', data.action, offer.url);
+                rescanRun.results.unknown_action++;
+            }
 
             // 031-T2: name the guide behind a bad pick. Condition verdicts come from
             // the server's action; high_price/unavailable come from the DOM we just
@@ -390,9 +531,13 @@ async function handleRescanExtract(offer, response, attempt) {
             // Read from `payload`, NOT `product`: on an unverified page (029B-B3
             // 'unknown' condition) the flags were deliberately not reported, so they
             // are not an observation and must not name a guide either.
+            //
+            // Audit B4: an unrecognised action names the guide too. If this build
+            // cannot classify the verdict, the safe reading is "something happened
+            // to this pick" — under-reporting is what made B4 invisible.
             const flags = Array.isArray(payload.listing_flags) ? payload.listing_flags : [];
-            if (data.action === 'flagged_condition'
-                || data.action === 'skipped_condition'
+            if (RESCAN_GUIDE_NAMING_ACTIONS.includes(data.action)
+                || !bucket
                 || flags.includes('high_price')
                 || flags.includes('unavailable')) {
                 noteFlaggedGuide(offer);

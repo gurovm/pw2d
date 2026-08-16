@@ -6,6 +6,7 @@ use App\Filament\Resources\ProductResource\Pages;
 use App\Filament\Resources\ProductResource\RelationManagers;
 use App\Jobs\RescanProductFeatures;
 use App\Models\Product;
+use App\Support\ListingHealth;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -124,7 +125,13 @@ class ProductResource extends Resource
             ->paginationPageOptions([10, 25, 50, 100])
             ->modifyQueryUsing(fn (Builder $query) => $query
                 ->select(['id', 'tenant_id', 'name', 'brand_id', 'category_id', 'image_path', 'is_ignored', 'amazon_rating', 'amazon_reviews_count', 'created_at'])
-                ->with(['brand:id,name,tenant_id', 'category:id,name,tenant_id', 'offers:id,product_id,scraped_price'])
+                // Perf M2 (2026-08-16 audit): condition/listing_flags must be
+                // selected — the 'best_price' column below now reads the FILTERED
+                // best_price accessor instead of a raw ->min(), so the admin list
+                // must agree with the public site. `store_id` deliberately omitted
+                // (the commission/priority tiebreak is irrelevant to a displayed
+                // price and would cost a Store query per offer — see Perf H2).
+                ->with(['brand:id,name,tenant_id', 'category:id,name,tenant_id', 'offers:id,product_id,scraped_price,' . implode(',', ListingHealth::OFFER_HEALTH_COLUMNS)])
             )
             ->columns([
                 Tables\Columns\ImageColumn::make('image_path')
@@ -154,7 +161,14 @@ class ProductResource extends Resource
                     ->sortable(query: fn (Builder $query, string $direction) => $query
                         ->withMin('offers', 'scraped_price')
                         ->orderBy('offers_min_scraped_price', $direction))
-                    ->getStateUsing(fn (Product $record) => $record->offers->min('scraped_price'))
+                    // Perf M2 (2026-08-16 audit): use the FILTERED best_price
+                    // accessor (was a raw, unfiltered ->min()) so this column
+                    // agrees with the public site's price. Sort order (above)
+                    // intentionally stays on the raw SQL min — sorting by the
+                    // filtered price isn't sargable without duplicating the
+                    // exclusion logic in SQL, and this is an admin list column,
+                    // not a customer-facing price.
+                    ->getStateUsing(fn (Product $record) => $record->best_price)
                     ->placeholder('—'),
 
                 Tables\Columns\IconColumn::make('is_ignored')

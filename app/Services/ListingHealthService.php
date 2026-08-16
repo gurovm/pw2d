@@ -210,21 +210,19 @@ class ListingHealthService
      * `offers` relation some callers eager-load before this offer's own update()
      * above lands) so a just-created/just-refreshed offer is always reflected.
      *
-     * Mirrors SelectLandingPagePicks::hasEligibleOffer() /
-     * AuditLandingPageFreshness::hasEligibleOffer() — kept as a separate copy
-     * here (rather than extracted to ListingHealth) since those two already
-     * layer an additional condition-marker/raw_title check this one doesn't need.
+     * 2026-08-16 audit S2: delegates to {@see ListingHealth::isPurchasable()} —
+     * the single shared predicate also used by Product::bestOffer,
+     * SelectLandingPagePicks, and AuditLandingPageFreshness. `store_id` +
+     * `offers.store` are loaded here (unlike the leaner selects elsewhere) so
+     * the predicate's `is_active` check actually applies for this rare,
+     * negative-condition-branch-only query.
      */
     private function hasCleanOffer(Product $product): bool
     {
         return $product->offers()
-            ->get(['id', 'scraped_price', 'condition', 'listing_flags'])
-            ->contains(
-                fn (ProductOffer $o) => $o->scraped_price !== null
-                    && (float) $o->scraped_price > 0
-                    && !in_array($o->condition, ListingHealth::NEGATIVE_CONDITIONS, true)
-                    && array_intersect(ListingHealth::PICK_EXCLUDING_FLAGS, $o->listing_flags ?? []) === []
-            );
+            ->with('store:id,is_active')
+            ->get(['id', 'store_id', 'scraped_price', 'condition', 'listing_flags'])
+            ->contains(fn (ProductOffer $o) => ListingHealth::isPurchasable($o));
     }
 
     /**

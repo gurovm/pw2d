@@ -79,10 +79,11 @@ class Home extends Component
             'canonicalUrl'    => $seo['canonical'],
             'ogType'          => $seo['ogType'],
             'ogImage'         => $seo['ogImage'],
-            'schemasJson'     => array_map(
-                fn (array $s) => json_encode($s, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
-                $seo['schemas'],
-            ),
+            // Security H1 (2026-08-16 audit): see SeoSchema::encodeSchemasForScriptTag()
+            // docblock — hex-escapes </script>-breaking characters instead of the old
+            // JSON_UNESCAPED_SLASHES encoding, which is exactly what let a literal
+            // </script> survive un-escaped.
+            'schemasJson'     => SeoSchema::encodeSchemasForScriptTag($seo['schemas']),
         ]);
     }
 }

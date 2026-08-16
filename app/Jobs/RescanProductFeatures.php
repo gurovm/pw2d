@@ -39,7 +39,11 @@ class RescanProductFeatures implements ShouldQueue
 
     public function handle(): void
     {
-        $product  = Product::with('offers')->find($this->productId);
+        // Perf H2 (2026-08-16 audit): 'offers.store' — best_price (read a few
+        // lines below) now reads $offer->store for the commission/priority
+        // tiebreak; without this eager load, every offer on this product
+        // triggered its own Store lazy-load.
+        $product  = Product::with('offers.store')->find($this->productId);
         $category = Category::with('features')->find($this->categoryId);
 
         if (!$product || !$category || $category->features->isEmpty()) {

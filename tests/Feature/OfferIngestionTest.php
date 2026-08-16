@@ -204,4 +204,90 @@ class OfferIngestionTest extends TestCase
             'name' => 'Whole Latte Love',
         ]);
     }
+
+    // =========================================================================
+    // Security H1 (2026-08-16 audit): store_slug format — the JSON-LD XSS sink
+    // is fixed at the render layer (SeoSchema::encodeSchemasForScriptTag), but
+    // the payload itself must also be rejected at the source.
+    // =========================================================================
+
+    /** @test */
+    public function a_store_slug_containing_html_is_rejected(): void
+    {
+        $this->postJson('/api/extension/ingest-offer', $this->validPayload([
+            'store_slug' => '</script><img src=x onerror=alert(1)>',
+        ]))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['store_slug']);
+    }
+
+    /** @test */
+    public function a_store_slug_with_uppercase_or_underscores_is_rejected(): void
+    {
+        $this->postJson('/api/extension/ingest-offer', $this->validPayload([
+            'store_slug' => 'Whole_Latte_Love',
+        ]))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['store_slug']);
+    }
+
+    /** @test */
+    public function a_well_formed_hyphenated_store_slug_is_still_accepted(): void
+    {
+        Queue::fake();
+
+        $this->postJson('/api/extension/ingest-offer', $this->validPayload([
+            'store_slug' => 'whole-latte-love-2',
+        ]))
+            ->assertOk();
+    }
+
+    // =========================================================================
+    // Sec M1 (2026-08-16 audit): listing_flags must be a genuine list — an
+    // associative payload could otherwise persist an attacker-chosen KEY
+    // verbatim (the prior L2 fix only bounded VALUE count, not key content).
+    // =========================================================================
+
+    /** @test */
+    public function an_associative_listing_flags_payload_is_normalized_and_the_attacker_key_never_persists(): void
+    {
+        Queue::fake();
+
+        $store   = Store::create(['name' => 'Clive Coffee', 'slug' => 'clive-coffee']);
+        $product = Product::factory()->create(['category_id' => $this->category->id, 'status' => null, 'is_ignored' => false]);
+        ProductOffer::create([
+            'product_id' => $product->id,
+            'store_id'   => $store->id,
+            'url'        => 'https://clivecoffee.com/products/lelit-bianca-v3',
+            'raw_title'  => 'Lelit Bianca V3',
+        ]);
+
+        $attackerKey = str_repeat('x', 2000);
+
+        $response = $this->postJson('/api/extension/ingest-offer', $this->validPayload([
+            'condition'     => 'new',
+            'listing_flags' => [$attackerKey => 'high_price'],
+        ]));
+
+        // prepareForValidation()'s array_values() strips the key BEFORE the
+        // validator (and later the DB write) ever sees it — the request is a
+        // normal, valid update, not a 422. The attacker-controlled string must
+        // never reach the stored row.
+        $response->assertOk();
+
+        $offer = ProductOffer::where('product_id', $product->id)->first();
+        $this->assertSame(['high_price'], $offer->listing_flags);
+        $this->assertStringNotContainsString($attackerKey, json_encode($offer->listing_flags));
+    }
+
+    /** @test */
+    public function a_genuine_list_of_listing_flags_still_validates(): void
+    {
+        Queue::fake();
+
+        $this->postJson('/api/extension/ingest-offer', $this->validPayload([
+            'listing_flags' => ['high_price', 'unavailable'],
+        ]))
+            ->assertOk();
+    }
 }

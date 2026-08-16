@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Models\Category;
 use App\Models\Product;
+use App\Support\ListingHealth;
 
 /**
  * Recalculates `products.price_tier` from each category's `budget_max`/`midrange_max`
@@ -38,8 +39,10 @@ class PriceTierRecalculator
         // negative-condition/pick-excluding-flag offers based on those columns.
         // Omitting them here would silently let a bad listing back into the tier
         // calculation (an unselected column resolves as null/absent → looks clean).
+        // S2 (2026-08-16): ListingHealth::OFFER_HEALTH_COLUMNS keeps this in sync
+        // with the shared isPurchasable() predicate automatically.
         Product::where('category_id', $category->id)
-            ->with(['offers:id,product_id,scraped_price,condition,listing_flags'])
+            ->with(['offers:id,product_id,scraped_price,' . implode(',', ListingHealth::OFFER_HEALTH_COLUMNS)])
             ->chunkById(self::CHUNK_SIZE, function ($products) use ($category, $onUpdate, &$fixed, &$skipped) {
                 foreach ($products as $product) {
                     $bestPrice = $product->best_price;

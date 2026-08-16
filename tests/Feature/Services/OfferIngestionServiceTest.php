@@ -286,6 +286,73 @@ class OfferIngestionServiceTest extends TestCase
         ]);
     }
 
+    /**
+     * Perf H2 (2026-08-16 audit): the matched-offer branch reads $product->best_price
+     * (via priceTierFor()), which now derives from best_offer's commission/priority
+     * tiebreak — that reads $offer->store. Before the fix, `Product::with(['offers','category'])`
+     * omitted 'offers.store', so EVERY offer on the product triggered its own Store
+     * lazy-load query. With N offers pre-existing, the fix must keep the `stores`
+     * table query count flat (one batched eager load), not O(N).
+     */
+    /** @test */
+    public function perf_h2_matched_branch_does_not_lazy_load_a_store_per_offer(): void
+    {
+        Queue::fake();
+
+        $category = Category::factory()->create();
+        Feature::factory()->create(['category_id' => $category->id]);
+        $brand   = \App\Models\Brand::factory()->create(['name' => 'Lelit']);
+        $product = Product::factory()->create([
+            'category_id' => $category->id,
+            'brand_id'    => $brand->id,
+            'name'        => 'Lelit Bianca V3',
+            'status'      => null,
+        ]);
+
+        \App\Models\AiMatchingDecision::create([
+            'scraped_raw_name'    => 'Lelit Bianca V3 Dual Boiler Espresso Machine',
+            'existing_product_id' => $product->id,
+            'is_match'            => true,
+        ]);
+
+        // 3 pre-existing offers from 3 DIFFERENT stores — the O(N) lazy-load
+        // shape this fix closes.
+        foreach (range(1, 3) as $i) {
+            $store = Store::create(['name' => "Store {$i}", 'slug' => "perf-h2-store-{$i}"]);
+            ProductOffer::create([
+                'product_id'    => $product->id,
+                'store_id'      => $store->id,
+                'url'           => "https://example.com/product/existing-{$i}",
+                'raw_title'     => 'Lelit Bianca V3',
+                'scraped_price' => 100 + $i,
+            ]);
+        }
+
+        $storeQueryCount = 0;
+        \Illuminate\Support\Facades\DB::listen(function ($query) use (&$storeQueryCount) {
+            if (str_contains($query->sql, '"stores"') || str_contains($query->sql, '`stores`')) {
+                $storeQueryCount++;
+            }
+        });
+
+        // A brand-new store for the incoming offer itself.
+        app(OfferIngestionService::class)->processIncomingOffer($this->basePayload([
+            'category_id' => $category->id,
+            'url'         => 'https://example.com/product/new-store-offer',
+            'brand'       => 'Lelit',
+            'store_slug'  => 'perf-h2-new-store',
+        ]));
+
+        // 1 (firstOrCreate lookup) + 1 (firstOrCreate's insert, if new) + 1
+        // (the batched offers.store eager load) is the flat, N-independent
+        // shape — never one query per pre-existing offer.
+        $this->assertLessThanOrEqual(
+            4,
+            $storeQueryCount,
+            "expected a flat, offer-count-independent number of `stores` queries, got {$storeQueryCount}"
+        );
+    }
+
     /** @test */
     public function security_m2_a_poisoned_ai_match_cache_pointing_at_another_tenants_product_is_never_attached(): void
     {

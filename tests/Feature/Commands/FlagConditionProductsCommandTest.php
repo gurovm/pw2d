@@ -221,4 +221,45 @@ class FlagConditionProductsCommandTest extends TestCase
 
         $this->assertSame(Command::FAILURE, $exitCode);
     }
+
+    /**
+     * Perf M1 (2026-08-16 audit): the offers eager load in printUrls() omitted
+     * `scraped_price`, so estimated_price -> best_price -> best_offer's very
+     * first filter clause (`scraped_price !== null`) excluded every offer and
+     * the "Est. Price" column was unconditionally "N/A".
+     */
+    /** @test */
+    public function urls_option_prints_the_actual_estimated_price_not_na(): void
+    {
+        $category = Category::factory()->create(['slug' => 'fcp-price-category']);
+
+        $product = Product::factory()->create([
+            'category_id' => $category->id,
+            'slug'        => 'fcp-price-product',
+            'ai_summary'  => 'A perfectly clean summary.',
+            'is_ignored'  => false,
+            'status'      => null,
+        ]);
+        ProductOffer::create([
+            'product_id'    => $product->id,
+            'url'           => 'https://www.amazon.com/dp/B0PRICETEST1',
+            'raw_title'     => $product->name,
+            'scraped_price' => 199.99,
+            'condition'     => 'new',
+        ]);
+
+        tenancy()->end();
+
+        $exitCode = Artisan::call('pw2d:flag-condition-products', [
+            'tenant'     => 'fcp-tenant',
+            '--urls'     => true,
+            '--category' => 'fcp-price-category',
+        ]);
+        $output = Artisan::output();
+
+        $this->assertSame(Command::SUCCESS, $exitCode);
+        // 199.99 rounds to the nearest $10 bucket via Product::estimatedPrice().
+        $this->assertStringContainsString('$200', $output);
+        $this->assertStringNotContainsString('N/A', $output);
+    }
 }
