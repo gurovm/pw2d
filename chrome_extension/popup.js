@@ -27,11 +27,14 @@ const batchControls = document.getElementById('batchControls');
 const foundCountSpan = document.getElementById('foundCount');
 const startBatchBtn = document.getElementById('startBatchBtn');
 
-// Rescan Mode Elements (Spec 029 B2)
+// Rescan Mode Elements (Spec 029 B2; picks scope Spec 031 T2 shares this UI)
 const startRescanBtn = document.getElementById('startRescanBtn');
+const startPicksBtn = document.getElementById('startPicksBtn');
 const rescanProgress = document.getElementById('rescanProgress');
+const rescanLabelSpan = document.getElementById('rescanLabel');
 const rescanCountSpan = document.getElementById('rescanCount');
 const rescanSummarySpan = document.getElementById('rescanSummary');
+const rescanGuidesSpan = document.getElementById('rescanGuides');
 const pauseRescanBtn = document.getElementById('pauseRescanBtn');
 const resumeRescanBtn = document.getElementById('resumeRescanBtn');
 const stopRescanBtn = document.getElementById('stopRescanBtn');
@@ -99,11 +102,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     chrome.runtime.sendMessage({ action: "GET_STATUS" }, (response) => {
         if (response && response.rescan && response.rescan.active) {
             const r = response.rescan;
-            showRescanProgress(r.processed, r.total, r.results, r.paused);
+            showRescanProgress(r.processed, r.total, r.results, r.paused, r.scope);
             if (r.paused) {
+                const noun = r.scope === 'picks' ? 'Picks verification' : 'Rescan';
                 statusDiv.textContent = r.pausedReason === 'captcha'
-                    ? 'Rescan paused — solve the captcha in the tab, then press Resume.'
-                    : 'Rescan paused. Press Resume to continue.';
+                    ? `${noun} paused — solve the captcha in the tab, then press Resume.`
+                    : `${noun} paused. Press Resume to continue.`;
                 statusDiv.className = r.pausedReason === 'captcha' ? 'error' : '';
             }
         }
@@ -160,12 +164,16 @@ if (startBatchBtn) {
 
         // 029B-S1: batch↔rescan mutual exclusion — never run the live SERP batch
         // while a rescan walk is driving the API (and possibly this same server).
-        const rescanActive = await new Promise((resolve) => {
+        // 031-T2: a picks run is the same background run object, so this one check
+        // covers both modes; the message just names the one that is running.
+        const runState = await new Promise((resolve) => {
             chrome.runtime.sendMessage({ action: 'GET_STATUS' }, (res) =>
-                resolve(!!(res && res.rescan && res.rescan.active)));
+                resolve(res && res.rescan && res.rescan.active ? res.rescan : null));
         });
-        if (rescanActive) {
-            showError('A rescan is running — stop it first.');
+        if (runState) {
+            showError(runState.scope === 'picks'
+                ? 'Picks verification is running — stop it first.'
+                : 'A rescan is running — stop it first.');
             return;
         }
 
@@ -279,73 +287,105 @@ if (startBatchBtn) {
     });
 }
 
-// ── Rescan Mode (Spec 029 B2) ────────────────────────────────
+// ── Rescan Mode (Spec 029 B2) + Picks Mode (Spec 031 T2) ─────
+//
+// 031-T2: both modes are the SAME flow — fetch a work list from
+// /api/extension/rescan-list, hand it to background.js, watch the shared progress
+// UI. Only the query string, the wording, and (for picks) a category_id preflight
+// differ, so this is parameterised by `scope` rather than forked.
 
-// Start Rescan — fetch the category's work list, hand it to background.js
-if (startRescanBtn) {
-    startRescanBtn.addEventListener('click', async () => {
-        if (!selectedCategoryId) {
-            showError('Please select a category first.');
+async function beginRescanRun(scope) {
+    const picks = scope === 'picks';
+    const startBtn = picks ? startPicksBtn : startRescanBtn;
+
+    // Picks mode is category-wide by design — no selector to satisfy.
+    if (!picks && !selectedCategoryId) {
+        showError('Please select a category first.');
+        return;
+    }
+
+    // 029B-S1: batch↔rescan mutual exclusion — the live SERP batch runs in
+    // this popup, so its in-flight flag is the authoritative batch state.
+    if (serpBatchRunning) {
+        showError('A batch import is running — wait for it to finish first.');
+        return;
+    }
+
+    statusDiv.textContent = picks ? 'Fetching live picks...' : 'Fetching rescan list...';
+    statusDiv.className = '';
+    startBtn.disabled = true;
+
+    const query = picks ? 'scope=picks' : `category_id=${encodeURIComponent(selectedCategoryId)}`;
+
+    try {
+        const res = await fetch(`${baseUrl}/api/extension/rescan-list?${query}`, {
+            headers: {
+                'X-Extension-Token': EXTENSION_TOKEN,
+                'X-Tenant-Id': TENANT_ID,
+            },
+        });
+
+        if (res.status === 404) {
+            showError(picks
+                ? 'This server does not support picks mode yet — deploy Spec 031 first.'
+                : 'This server does not support rescan yet — deploy Spec 029 Phase A first.');
+            startBtn.disabled = false;
             return;
         }
 
-        // 029B-S1: batch↔rescan mutual exclusion — the live SERP batch runs in
-        // this popup, so its in-flight flag is the authoritative batch state.
-        if (serpBatchRunning) {
-            showError('A batch import is running — wait for it to finish first.');
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+            showError('API Error: ' + (data.message || data.error || `HTTP ${res.status}`));
+            startBtn.disabled = false;
             return;
         }
 
-        statusDiv.textContent = 'Fetching rescan list...';
-        statusDiv.className = '';
-        startRescanBtn.disabled = true;
+        const offers = data.offers || [];
+        if (offers.length === 0) {
+            showError(picks ? 'No live picks to verify.' : 'No offers to rescan in this category.');
+            startBtn.disabled = false;
+            return;
+        }
 
-        try {
-            const res = await fetch(`${baseUrl}/api/extension/rescan-list?category_id=${selectedCategoryId}`, {
-                headers: {
-                    'X-Extension-Token': EXTENSION_TOKEN,
-                    'X-Tenant-Id': TENANT_ID,
-                },
-            });
-
-            if (res.status === 404) {
-                showError('This server does not support rescan yet — deploy Spec 029 Phase A first.');
-                startRescanBtn.disabled = false;
+        // 031-T2 preflight: /api/extension/ingest-offer REQUIRES category_id, and a
+        // picks run spans categories, so every row must carry its own. Fail here
+        // rather than walking ~100 pages that would each 422 (~17 min wasted).
+        if (picks) {
+            const missing = offers.filter((o) => !o.category_id).length;
+            if (missing > 0) {
+                showError(`Server returned ${missing} pick(s) without category_id — the picks list must include it. Update the server first.`);
+                startBtn.disabled = false;
                 return;
             }
+        }
 
-            const data = await res.json();
-            if (!res.ok || !data.success) {
-                showError('API Error: ' + (data.message || data.error || `HTTP ${res.status}`));
-                startRescanBtn.disabled = false;
-                return;
-            }
-
-            const offers = data.offers || [];
-            if (offers.length === 0) {
-                showError('No offers to rescan in this category.');
-                startRescanBtn.disabled = false;
-                return;
-            }
-
-            chrome.runtime.sendMessage(
-                { action: 'START_RESCAN', offers, categoryId: selectedCategoryId },
-                (resp) => {
-                    if (!resp || !resp.success) {
-                        showError(resp?.message || 'Could not start rescan.');
-                        startRescanBtn.disabled = false;
-                        return;
-                    }
-                    showRescanProgress(0, offers.length, null, false);
-                    statusDiv.textContent = `Rescanning ${offers.length} offer(s)...`;
-                    statusDiv.className = '';
+        chrome.runtime.sendMessage(
+            { action: 'START_RESCAN', offers, scope, categoryId: picks ? null : selectedCategoryId },
+            (resp) => {
+                if (!resp || !resp.success) {
+                    showError(resp?.message || (picks ? 'Could not start picks verification.' : 'Could not start rescan.'));
+                    startBtn.disabled = false;
+                    return;
                 }
-            );
-        } catch (e) {
-            showError('Network Error: ' + e.message);
-            startRescanBtn.disabled = false;
-        }
-    });
+                showRescanProgress(0, offers.length, null, false, scope);
+                statusDiv.textContent = picks
+                    ? `Verifying ${offers.length} live pick(s) across all guides...`
+                    : `Rescanning ${offers.length} offer(s)...`;
+                statusDiv.className = '';
+            }
+        );
+    } catch (e) {
+        showError('Network Error: ' + e.message);
+        startBtn.disabled = false;
+    }
+}
+
+if (startRescanBtn) {
+    startRescanBtn.addEventListener('click', () => beginRescanRun('category'));
+}
+
+if (startPicksBtn) {
+    startPicksBtn.addEventListener('click', () => beginRescanRun('picks'));
 }
 
 if (pauseRescanBtn) {
@@ -353,7 +393,7 @@ if (pauseRescanBtn) {
         chrome.runtime.sendMessage({ action: 'PAUSE_RESCAN' }, () => {
             pauseRescanBtn.style.display = 'none';
             resumeRescanBtn.style.display = 'block';
-            statusDiv.textContent = 'Rescan paused.';
+            statusDiv.textContent = 'Paused.';
             statusDiv.className = '';
         });
     });
@@ -364,7 +404,7 @@ if (resumeRescanBtn) {
         chrome.runtime.sendMessage({ action: 'RESUME_RESCAN' }, () => {
             resumeRescanBtn.style.display = 'none';
             pauseRescanBtn.style.display = 'block';
-            statusDiv.textContent = 'Resuming rescan...';
+            statusDiv.textContent = 'Resuming...';
             statusDiv.className = '';
         });
     });
@@ -374,30 +414,59 @@ if (stopRescanBtn) {
     stopRescanBtn.addEventListener('click', () => {
         chrome.runtime.sendMessage({ action: 'STOP_RESCAN' }, (resp) => {
             resetRescanUI();
-            statusDiv.textContent = 'Rescan stopped. ' + formatRescanResults(resp?.results);
-            statusDiv.className = '';
+            const guides = formatFlaggedGuides(resp?.results);
+            statusDiv.textContent = 'Stopped. ' + formatRescanResults(resp?.results)
+                + (guides ? ' — ' + guides : '');
+            statusDiv.className = guides ? 'warn' : '';
         });
     });
 }
 
-function showRescanProgress(processed, total, results, paused) {
+// 031-T2: one progress panel for both modes — `scope` only re-labels it, and BOTH
+// start buttons hide while any run is active (a second run can never be started).
+function showRescanProgress(processed, total, results, paused, scope) {
     rescanProgress.style.display = 'block';
     startRescanBtn.style.display = 'none';
+    if (startPicksBtn) startPicksBtn.style.display = 'none';
+    if (rescanLabelSpan) rescanLabelSpan.textContent = scope === 'picks' ? 'Verifying picks' : 'Rescanning';
     rescanCountSpan.textContent = `${processed}/${total}`;
     rescanSummarySpan.textContent = formatRescanResults(results);
+    if (rescanGuidesSpan) rescanGuidesSpan.textContent = formatFlaggedGuides(results);
     pauseRescanBtn.style.display = paused ? 'none' : 'block';
     resumeRescanBtn.style.display = paused ? 'block' : 'none';
 }
 
 function resetRescanUI() {
     rescanProgress.style.display = 'none';
+    if (rescanGuidesSpan) rescanGuidesSpan.textContent = '';
     startRescanBtn.style.display = 'block';
     startRescanBtn.disabled = false;
+    if (startPicksBtn) {
+        startPicksBtn.style.display = 'block';
+        startPicksBtn.disabled = false;
+    }
 }
 
 function formatRescanResults(r) {
     if (!r) return '';
     return `updated ${r.updated} · flagged ${r.flagged_condition} · skipped ${r.skipped} · errors ${r.errors}`;
+}
+
+// 031-T2: end-of-run line for either mode, with any flagged guides appended.
+function runCompleteText(scope, results) {
+    const head = scope === 'picks' ? 'Picks verification complete: ' : 'Rescan complete: ';
+    const guides = formatFlaggedGuides(results);
+    return head + formatRescanResults(results) + (guides ? ' — ' + guides : '');
+}
+
+// 031-T2: name the guides behind flagged picks — the owner's next action is a full
+// rescan of exactly those categories, so the slug is the actionable part.
+function formatFlaggedGuides(r) {
+    const guides = r && r.flagged_guides;
+    if (!guides) return '';
+    const slugs = Object.keys(guides);
+    if (slugs.length === 0) return '';
+    return 'flagged: ' + slugs.map((s) => (guides[s] > 1 ? `${s} (${guides[s]})` : s)).join(', ');
 }
 
 // Listen for Progress Updates from Background (rescan only — 029B-S1: the
@@ -406,11 +475,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === "RESCAN_PROGRESS") {
         if (request.done) {
             resetRescanUI();
-            statusDiv.textContent = 'Rescan complete: ' + formatRescanResults(request.results);
-            statusDiv.className = 'success';
+            statusDiv.textContent = runCompleteText(request.scope, request.results);
+            // Flagged picks are not a clean "success" — they demand a full rescan
+            // of the named guide (Spec 031 response rule).
+            statusDiv.className = formatFlaggedGuides(request.results) ? 'warn' : 'success';
             return;
         }
-        showRescanProgress(request.processed, request.total, request.results, request.paused);
+        showRescanProgress(request.processed, request.total, request.results, request.paused, request.scope);
         if (request.message) {
             statusDiv.textContent = request.message;
             statusDiv.className = (request.paused && request.pausedReason === 'captcha') ? 'error' : '';

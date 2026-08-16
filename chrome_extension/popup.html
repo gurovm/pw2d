@@ -38,6 +38,10 @@
         .success {
             color: #10b981;
         }
+
+        .warn {
+            color: #b45309;
+        }
     </style>
 </head>
 
@@ -108,15 +112,25 @@
 
     <button id="startRescanBtn" style="background: #f59e0b;">Rescan Selected Category</button>
 
+    <!-- Picks-only rescan (Spec 031 T2) — deliberately has NO category selector:
+         one run covers every live pick on every guide. -->
+    <h4 style="margin: 14px 0 4px 0; color: #333;">Verify Live Picks</h4>
+    <div style="font-size: 12px; color: #666; margin-bottom: 8px;">
+        Weekly check of every pick on every guide — no category needed.
+    </div>
+
+    <button id="startPicksBtn" style="background: #8b5cf6;">Verify Live Picks</button>
+
+    <!-- Shared progress UI — driven by whichever mode is running (Spec 031 T2) -->
     <div id="rescanProgress" style="display: none;">
         <div style="font-size: 13px; margin: 8px 0 5px 0;">
-            Rescanning: <span id="rescanCount">0/0</span>
+            <span id="rescanLabel">Rescanning</span>: <span id="rescanCount">0/0</span>
         </div>
-        <div id="rescanSummary" style="font-size: 12px; color: #666; margin-bottom: 8px;"></div>
-        <button id="pauseRescanBtn" style="background: #6366f1; margin-bottom: 8px;">Pause Rescan</button>
-        <button id="resumeRescanBtn" style="display: none; background: #10b981; margin-bottom: 8px;">Resume
-            Rescan</button>
-        <button id="stopRescanBtn" style="background: #ef4444;">Stop Rescan</button>
+        <div id="rescanSummary" style="font-size: 12px; color: #666; margin-bottom: 4px;"></div>
+        <div id="rescanGuides" style="font-size: 12px; color: #b45309; margin-bottom: 8px;"></div>
+        <button id="pauseRescanBtn" style="background: #6366f1; margin-bottom: 8px;">Pause</button>
+        <button id="resumeRescanBtn" style="display: none; background: #10b981; margin-bottom: 8px;">Resume</button>
+        <button id="stopRescanBtn" style="background: #ef4444;">Stop</button>
     </div>
 
     <div id="status"></div>

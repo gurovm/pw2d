@@ -1,4 +1,4 @@
-// Background Service Worker — Rescan Mode (Spec 029 B2)
+// Background Service Worker — Rescan Mode (Spec 029 B2; picks scope Spec 031 T2)
 //
 // 029B-S1: the legacy tab-walking batch importer (START_BATCH / SCRAPE_COMPLETE /
 // RESUME_BATCH and friends) was removed — the live SERP batch flow runs entirely
@@ -7,6 +7,9 @@
 // validation. Batch↔rescan mutual exclusion now lives in popup.js, which is the
 // only place either flow can be started: it checks rescan state (GET_STATUS)
 // before starting a batch, and its own in-flight batch flag before START_RESCAN.
+// 031-T2: the picks walk is the SAME run object, so it inherits both directions of
+// that exclusion (batch⇄rescan and batch⇄picks) and is mutually exclusive with a
+// category rescan too — START_RESCAN refuses whenever a run is already active.
 
 const API_CONFIG = {
     local: 'http://127.0.0.1:8003',
@@ -17,18 +20,29 @@ let baseUrl = API_CONFIG.local;
 let EXTENSION_TOKEN = '';
 let TENANT_ID = '';
 
-// ----- Rescan Mode State (Spec 029 B2) -----
+// ----- Rescan Mode State (Spec 029 B2, extended by Spec 031 T2) -----
 // Persisted to chrome.storage.local ('rescanRun') after every step so Resume
 // works after the popup closes or the service worker restarts.
+//
+// 031-T2: ONE walk serves both modes. `scope` only changes where the work list
+// came from and how the run is labelled/tallied — every mechanism below (delay,
+// watchdog, reused worker tab, CAPTCHA auto-pause, generation counter,
+// idempotent advance, persistence) is shared verbatim. Because both modes share
+// this single state object they are also mutually exclusive for free: START_RESCAN
+// refuses while `active`, and popup.js reads `active` before starting a batch.
 let rescanRun = {
     active: false,
     paused: false,
     pausedReason: null,   // 'user' | 'captcha' | 'worker_restart'
-    categoryId: null,
-    offers: [],           // [{offer_id, product_id, url, asin, last_scanned_at}]
+    scope: 'category',    // 'category' (one category's offers) | 'picks' (live picks, all categories)
+    categoryId: null,     // category mode only — picks rows carry their own category_id
+    offers: [],           // [{offer_id, product_id, url, asin, last_scanned_at, category_id?, landing_page_slug?}]
     index: 0,
     tabId: null,          // reused worker tab (never persisted)
-    results: { updated: 0, flagged_condition: 0, skipped: 0, errors: 0 },
+    // flagged_guides: {slug: count} — 031-T2, populated in picks mode only (category
+    // rows carry no slug). Names the guide behind each flagged pick so the owner
+    // knows which category to rescan in full (the spec's response rule).
+    results: { updated: 0, flagged_condition: 0, skipped: 0, errors: 0, flagged_guides: {} },
 };
 let rescanTimer = null;
 
@@ -86,10 +100,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         return true;
     } else if (request.action === "START_RESCAN") {
         if (rescanRun.active) {
-            sendResponse({ success: false, message: "A rescan is already running." });
+            sendResponse({ success: false, message: `A ${runLabel()} is already running.` });
             return true;
         }
-        startRescan(request.offers, request.categoryId);
+        startRescan(request.offers, request.categoryId, request.scope);
         sendResponse({ success: true });
     } else if (request.action === "PAUSE_RESCAN") {
         pauseRescan('user');
@@ -107,6 +121,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 active: rescanRun.active,
                 paused: rescanRun.paused,
                 pausedReason: rescanRun.pausedReason,
+                scope: rescanRun.scope,
                 processed: rescanRun.index,
                 total: rescanRun.offers.length,
                 results: rescanRun.results,
@@ -117,24 +132,48 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 // ─────────────────────────────────────────────────────────────
-// Rescan Mode (Spec 029 B2) — walk a category's stored offer URLs,
-// re-extract full data + listing health, POST refresh payloads to
-// /api/extension/ingest-offer with a 3–5s polite delay between URLs.
+// Rescan Mode (Spec 029 B2) — walk stored offer URLs, re-extract full data +
+// listing health, POST refresh payloads to /api/extension/ingest-offer with a
+// 3–5s polite delay between URLs.
+//
+// 031-T2: the work list is either one category's offers (scope 'category') or
+// every live pick across all guides (scope 'picks'). The walk itself does not
+// branch on scope — popup.js decides which list to fetch, this file walks it.
 // ─────────────────────────────────────────────────────────────
 
-function startRescan(offers, categoryId) {
+function startRescan(offers, categoryId, scope) {
     rescanRun = {
         active: true,
         paused: false,
         pausedReason: null,
-        categoryId,
+        scope: scope === 'picks' ? 'picks' : 'category',
+        categoryId: categoryId || null,
         offers: offers || [],
         index: 0,
         tabId: null,
-        results: { updated: 0, flagged_condition: 0, skipped: 0, errors: 0 },
+        results: { updated: 0, flagged_condition: 0, skipped: 0, errors: 0, flagged_guides: {} },
     };
     persistRescan();
     processNextRescan();
+}
+
+// 031-T2: user-facing noun for the active run. Only affects wording — a picks run
+// is the same walk over a different work list.
+function runLabel(capitalised = false) {
+    if (rescanRun.scope === 'picks') return capitalised ? 'Picks verification' : 'picks verification';
+    return capitalised ? 'Rescan' : 'rescan';
+}
+
+// 031-T2: record which guide a flagged pick belongs to. Category-mode rows carry
+// no `landing_page_slug`, so this is a no-op there — no branching required.
+// Deliberately broader than `results.flagged_condition`: the owner's response rule
+// keys off ANY bad-listing signal (condition, high_price, unavailable), and that
+// counter's known undercount is an explicitly deferred item in Spec 031.
+function noteFlaggedGuide(offer) {
+    const slug = offer && offer.landing_page_slug;
+    if (!slug) return;
+    if (!rescanRun.results.flagged_guides) rescanRun.results.flagged_guides = {};
+    rescanRun.results.flagged_guides[slug] = (rescanRun.results.flagged_guides[slug] || 0) + 1;
 }
 
 // 029B-B1: cancel the armed page-load listener + watchdog together. Called on
@@ -161,7 +200,7 @@ function pauseRescan(reason) {
     persistRescan();
     broadcastRescan(reason === 'captcha'
         ? "Paused — solve the captcha in the tab, then press Resume."
-        : "Rescan paused.");
+        : `${runLabel(true)} paused.`);
 }
 
 function resumeRescan() {
@@ -169,7 +208,7 @@ function resumeRescan() {
     rescanRun.paused = false;
     rescanRun.pausedReason = null;
     persistRescan();
-    broadcastRescan("Resuming rescan...");
+    broadcastRescan(`Resuming ${runLabel()}...`);
     processNextRescan();
 }
 
@@ -198,7 +237,9 @@ async function processNextRescan() {
     }
 
     const offer = rescanRun.offers[rescanRun.index];
-    broadcastRescan(`Rescanning ${rescanRun.index + 1}/${rescanRun.offers.length}...`);
+    broadcastRescan(rescanRun.scope === 'picks'
+        ? `Verifying pick ${rescanRun.index + 1}/${rescanRun.offers.length}...`
+        : `Rescanning ${rescanRun.index + 1}/${rescanRun.offers.length}...`);
 
     try {
         // Reuse a single background worker tab; create it on first use
@@ -308,7 +349,9 @@ async function handleRescanExtract(offer, response, attempt) {
         stock_status: product.stock_status ?? null,
         rating: product.rating ?? null,
         reviews_count: product.reviews_count ?? null, // null = unknown, never 0
-        category_id: rescanRun.categoryId,
+        // 031-T2: ingest-offer REQUIRES category_id. Category mode has one for the
+        // whole run; a picks run spans categories, so each row carries its own.
+        category_id: offer.category_id ?? rescanRun.categoryId,
     };
     // Amazon pages carry DOM-verified listing health (Spec 029 B1).
     // 029B-B3: 'unknown' means the page could NOT be verified — omit the keys
@@ -340,6 +383,20 @@ async function handleRescanExtract(offer, response, attempt) {
             if (data.action === 'flagged_condition') rescanRun.results.flagged_condition++;
             else if (data.action === 'skipped_condition') rescanRun.results.skipped++;
             else rescanRun.results.updated++; // refreshed | matched | created
+
+            // 031-T2: name the guide behind a bad pick. Condition verdicts come from
+            // the server's action; high_price/unavailable come from the DOM we just
+            // read (the server stores those flags without changing `action`).
+            // Read from `payload`, NOT `product`: on an unverified page (029B-B3
+            // 'unknown' condition) the flags were deliberately not reported, so they
+            // are not an observation and must not name a guide either.
+            const flags = Array.isArray(payload.listing_flags) ? payload.listing_flags : [];
+            if (data.action === 'flagged_condition'
+                || data.action === 'skipped_condition'
+                || flags.includes('high_price')
+                || flags.includes('unavailable')) {
+                noteFlaggedGuide(offer);
+            }
         } else {
             console.error("Rescan: API rejected refresh:", data, offer.url);
             rescanRun.results.errors++;
@@ -374,6 +431,7 @@ function advanceRescan(attempt) {
 function finishRescan() {
     const summary = { ...rescanRun.results };
     const total = rescanRun.offers.length;
+    const scope = rescanRun.scope;
     rescanRun.active = false;
     rescanRun.paused = false;
     closeRescanTab();
@@ -381,6 +439,7 @@ function finishRescan() {
     chrome.runtime.sendMessage({
         action: "RESCAN_PROGRESS",
         done: true,
+        scope,
         processed: total,
         total: total,
         results: summary,
@@ -403,6 +462,7 @@ function persistRescan() {
 function broadcastRescan(msg) {
     chrome.runtime.sendMessage({
         action: "RESCAN_PROGRESS",
+        scope: rescanRun.scope,
         processed: rescanRun.index,
         total: rescanRun.offers.length,
         results: rescanRun.results,
