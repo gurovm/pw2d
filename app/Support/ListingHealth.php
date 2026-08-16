@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support;
 
 use App\Models\ProductOffer;
+use Illuminate\Database\Eloquent\Builder;
 
 /**
  * Single shared definition of Spec 029 §A2 listing-health vocabulary — the DOM-detected
@@ -101,5 +102,43 @@ final class ListingHealth
         }
 
         return true;
+    }
+
+    /**
+     * SQL-level twin of {@see isPurchasable()} — mirrors its three offer-level
+     * conditions (priced, condition not negative, no pick-excluding flag) as
+     * query constraints so a "does this product have ANY purchasable offer"
+     * check can run as a `whereHas('offers', ...)` instead of loading every
+     * offer into PHP first. Deliberately does NOT reproduce the `store.is_active`
+     * check (a join the callers of this predicate haven't needed) — kept as a
+     * pure three-condition mirror per the 2026-08-16 "hide unbuyable products"
+     * task; a caller needing the store check can eager-load `offers.store`
+     * and filter in PHP as `Product::bestOffer` already does.
+     *
+     * `listing_flags` NULL-safety: `whereJsonDoesntContain()` compiles to
+     * `NOT (JSON_CONTAINS(...))` on MySQL, which evaluates to NULL (excluded
+     * by WHERE) when the column itself is NULL — so a clean, never-flagged
+     * offer (`listing_flags IS NULL`) would be wrongly excluded without the
+     * explicit `whereNull('listing_flags')->orWhere(...)` wrapper below.
+     * Verified against both the MySQL and SQLite (json_each) grammars.
+     *
+     * @param  Builder<ProductOffer> $query  A query already scoped to the
+     *   `product_offers` table (e.g. the closure passed to `whereHas('offers', ...)`).
+     * @return Builder<ProductOffer> The same builder, for chaining.
+     */
+    public static function applyPurchasableOfferQuery(Builder $query): Builder
+    {
+        return $query
+            ->where('scraped_price', '>', 0)
+            ->where(fn (Builder $cq) => $cq
+                ->whereNull('condition')
+                ->orWhereNotIn('condition', self::NEGATIVE_CONDITIONS))
+            ->where(fn (Builder $fq) => $fq
+                ->whereNull('listing_flags')
+                ->orWhere(function (Builder $sub) {
+                    foreach (self::PICK_EXCLUDING_FLAGS as $flag) {
+                        $sub->whereJsonDoesntContain('listing_flags', $flag);
+                    }
+                }));
     }
 }

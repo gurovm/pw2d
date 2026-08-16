@@ -261,10 +261,46 @@ super-auto 2, pour-over 2.
 Landing pages are unaffected — `SelectLandingPagePicks` excludes them. This is compare-page-only, and the
 2026-08-16 audit's C1 fix corrected price/scoring consistency but deliberately did not change visibility.
 
-- [ ] **DECIDE (owner): how should compare pages treat an unbuyable product?** Options: (a) exclude from the
-  grid like landing picks do; (b) keep for information but render an explicit "no current offer" state instead
-  of a missing button; (c) rank them last. Compare pages are informational while landing pages recommend, so
-  (b) may be the honest answer — but a silently absent button is the worst of the three. *[Frontend, Product]*
+- [x] **DECIDE (owner): how should compare pages treat an unbuyable product?** **Resolved 2026-08-16 — owner:
+  "hide products with no offer — the main target is to make the user click the button."** Option (a) shipped.
+  **Built:** `ListingHealth::applyPurchasableOfferQuery()` — a SQL-level twin of `isPurchasable()`'s three
+  conditions (price > 0, condition not in `NEGATIVE_CONDITIONS`, no `PICK_EXCLUDING_FLAGS`; the `listing_flags`
+  JSON check turned out to be sargable via `whereJsonDoesntContain()` + a `whereNull` guard for MySQL/SQLite
+  NULL-safety — verified on both grammars). Applied as `whereHas('offers', ...)` (filtered in SQL, not
+  loaded-then-discarded) to:
+  - `ProductCompare::scoredProducts()` — the compare-grid product pool (cache key bumped `v2` → `v3`).
+  - `ProductCompare::mount()`'s `maxPrice` slider-bound query — an unbuyable-only-offer product's price no
+    longer stretches the slider range.
+  - `SimilarProducts` — the "Similar Products" rail has the identical CTA-per-card problem (cache key bumped
+    `similar_products_` → `similar_products_v2_`).
+  `schemaProducts()` needed no change — it derives its product IDs from the same (now-filtered) `scoredProducts`,
+  so the ItemList JSON-LD automatically agrees with the rendered grid.
+  **Deliberately NOT filtered** (per-surface judgment, logged in `docs/questions.md`):
+  - The product page itself (`/product/{slug}` via `ProductCompare::mount($product)`/`openProduct`/
+    `selectedProduct`) — a legitimate Google landing target; the CTA is already conditionally rendered
+    (`@if ($product->affiliate_url)`) so it degrades gracefully with no button, no broken layout.
+  - Filament admin (`ProblemProducts`, `ProductResource`) — the owner triages flagged/unbuyable products there;
+    hiding them would break that workflow.
+  - `SitemapController` — unchanged (see the new follow-up item below).
+  - `GlobalSearch`'s product search results and `ProductCompare::mount()`'s `?focus=` auto-pin query — left
+    unfiltered; an unbuyable focused product now simply doesn't appear in the (already-filtered) grid, a
+    harmless no-op rather than a broken card.
+  Empty-state check: the Blade's existing `@else` branch ("No products found" — `product-compare.blade.php`
+  ~line 356) already covers `scoredProducts->count() === 0`, so an (currently hypothetical) all-unbuyable
+  category degrades to that message rather than a broken grid; no Blade change was needed.
+  6 new tests in `ProductCompareTest` (hidden/present/zero-price/schema-match/slider-bound) + 2 new tests in a
+  new `SimilarProductsTest`; 3 existing test files (`ProductCompareIntegrationTest`,
+  `CompareRenderLimitTest`, `CompareContentOrderTest`) updated to give their fixture products a purchasable
+  offer, since their assertions (grid content, card counts, ItemList counts) now require it. Full suite
+  635 passed/19 skipped → **641 passed/19 skipped** (+6 net new, no regressions).
+- [ ] **SEO follow-up (owner decision needed, flagged not fixed):** hiding a product from the compare grid
+  while its `/product/{slug}` page stays live and in the sitemap (`SitemapController` still lists every
+  non-ignored/processed product regardless of buyability) creates an orphaned page — reachable from Google,
+  but with no CTA and no longer linked from the category grid or (per the filter above) the Similar Products
+  rail on other products' pages. Options: (a) exclude unbuyable products from the sitemap entirely; (b) leave
+  in the sitemap but add `noindex` while unbuyable (auto-clears on a clean rescan, matching how `listing_flags`
+  already clear); (c) leave as-is, since stock/condition issues are often transient and the page is still
+  useful to a reader who lands on it. Needs the owner — SEO risk tolerance, not a data question. *[SEO, Product]*
 - [ ] **Signal for Tier-3 discovery:** 25% of the headsets pool and ~15% of mics being unbuyable is a stronger
   argument for the quarterly import than pool size alone. Consider triggering discovery on
   *unbuyable share*, not just absolute pool count. *[Data, Content]*

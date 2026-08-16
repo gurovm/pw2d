@@ -174,14 +174,25 @@ class ProductCompare extends Component
         // Eloquent unserialize for 2000+ objects takes ~90ms; plain arrays take ~5ms.
         // Scoring still runs fresh (weights change), but the DB round-trip is skipped.
         //
-        // Perf C1 / Review S1 (2026-08-16 audit): cache key bumped to v2 — the
-        // query/mapping below changed shape, so a pre-fix v1 entry (still holding
-        // the old unfiltered 'best_price') must never be served post-deploy.
-        $cacheKey = tenant_cache_key("products:v2:cat{$this->category->id}:b{$this->filterBrand}:p{$this->selectedPrice}");
+        // Owner decision (2026-08-16, "hide unbuyable products"): cache key bumped to
+        // v3 — the base query below now excludes products with zero purchasable
+        // offers (see the whereHas('offers', ...) below), so a pre-fix v2 entry
+        // (still holding the old unfiltered product set) must never be served
+        // post-deploy.
+        $cacheKey = tenant_cache_key("products:v3:cat{$this->category->id}:b{$this->filterBrand}:p{$this->selectedPrice}");
         $rawData = Cache::remember($cacheKey, 90, function () {
             return Product::where('category_id', $this->category->id)
                 ->where('is_ignored', false)
                 ->whereNull('status') // exclude pending_ai / failed (not yet fully scored)
+                // Owner decision (2026-08-16): a product with no purchasable offer
+                // (every offer condition-marked, pick-excluding-flagged, or priceless)
+                // renders a card with a silently-missing "Check Current Price" CTA —
+                // the whole point of a compare page is that button. Filtered at the
+                // DB level (not loaded-then-discarded) to avoid pulling in ~15-25%
+                // of a category's pool just to throw it away in PHP. Mirrors
+                // ListingHealth::isPurchasable()'s three offer-level conditions via
+                // its SQL twin — see ListingHealth::applyPurchasableOfferQuery().
+                ->whereHas('offers', fn ($q) => ListingHealth::applyPurchasableOfferQuery($q))
                 ->select(['id', 'brand_id', 'amazon_rating', 'price_tier'])
                 ->with([
                     'featureValues:id,product_id,feature_id,raw_value',
@@ -471,11 +482,16 @@ class ProductCompare extends Component
             $this->weights[$feature->id] = 50;
         }
 
-        $this->maxPrice = (int) (ProductOffer::whereHas('product', fn ($q) => $q
-                ->where('category_id', $this->category->id)
-                ->where('is_ignored', false)
-                ->whereNull('status'))
-            ->max('scraped_price') ?? 500);
+        // Owner decision (2026-08-16): the slider's upper bound must only reflect
+        // offers a reader could actually buy — an unbuyable product's flagged/
+        // condition-marked price would otherwise stretch the slider range past
+        // what any visible card can show (it's already excluded from
+        // scoredProducts() entirely; the bound should agree).
+        $maxPriceQuery = ProductOffer::whereHas('product', fn ($q) => $q
+            ->where('category_id', $this->category->id)
+            ->where('is_ignored', false)
+            ->whereNull('status'));
+        $this->maxPrice = (int) (ListingHealth::applyPurchasableOfferQuery($maxPriceQuery)->max('scraped_price') ?? 500);
         $this->selectedPrice = $this->maxPrice;
 
         if (session()->has('ai_initial_prompt')) {

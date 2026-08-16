@@ -8,6 +8,8 @@ use App\Models\Brand;
 use App\Models\Category;
 use App\Models\Feature;
 use App\Models\Product;
+use App\Models\ProductOffer;
+use App\Models\Store;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -23,12 +25,31 @@ class ProductCompareIntegrationTest extends TestCase
         $category = Category::factory()->create(['name' => 'Smartphones', 'slug' => 'smartphones']);
         $brand = Brand::factory()->create(['name' => 'TechBrand']);
         $features = Feature::factory()->count(3)->create(['category_id' => $category->id]);
-        
+
         $product = Product::factory()->create([
             'category_id' => $category->id,
             'brand_id' => $brand->id,
             'name' => 'Super Phone 3000',
             'slug' => 'super-phone-3000',
+        ]);
+
+        // Owner decision (2026-08-16): a product with no purchasable offer is now
+        // hidden from the compare grid — give it a clean, priced offer so it still
+        // renders (this test is about the header component wiring, not buyability).
+        $store = Store::create([
+            'tenant_id'  => null,
+            'name'       => 'TechStore',
+            'slug'       => 'techstore-' . uniqid(),
+            'is_active'  => true,
+        ]);
+        ProductOffer::create([
+            'product_id'    => $product->id,
+            'store_id'      => $store->id,
+            'tenant_id'     => null,
+            'url'           => 'https://example.com/super-phone-3000',
+            'scraped_price' => 599.00,
+            'raw_title'     => 'Super Phone 3000',
+            'condition'     => 'new',
         ]);
 
         // Hit the Route

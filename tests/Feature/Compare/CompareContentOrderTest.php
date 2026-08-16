@@ -10,6 +10,8 @@ use App\Models\Feature;
 use App\Models\FeaturePreset;
 use App\Models\Preset;
 use App\Models\Product;
+use App\Models\ProductOffer;
+use App\Models\Store;
 use App\Models\Tenant;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -88,13 +90,34 @@ class CompareContentOrderTest extends TestCase
     {
         $brand = Brand::factory()->create();
 
-        return Product::factory()->create([
+        $product = Product::factory()->create([
             'category_id' => $category->id,
             'brand_id'    => $brand->id,
             'slug'        => $slug,
             'is_ignored'  => false,
             'status'      => null,
         ]);
+
+        // Owner decision (2026-08-16): a product with no purchasable offer is
+        // hidden from the compare grid — this file's tests assert on the grid's
+        // "Personal Match Score" marker, so the product needs a clean priced offer.
+        $store = Store::create([
+            'tenant_id' => null,
+            'name'      => 'Content Order Store',
+            'slug'      => 'content-order-store-' . uniqid(),
+            'is_active' => true,
+        ]);
+        ProductOffer::create([
+            'product_id'    => $product->id,
+            'store_id'      => $store->id,
+            'tenant_id'     => null,
+            'url'           => 'https://example.com/' . $slug,
+            'scraped_price' => 99.99,
+            'raw_title'     => $slug,
+            'condition'     => 'new',
+        ]);
+
+        return $product;
     }
 
     /**

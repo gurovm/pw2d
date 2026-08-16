@@ -37,7 +37,9 @@ class CompareRenderLimitTest extends TestCase
 
     /**
      * Create a category with one feature, a brand, and N scored products.
-     * Each product gets a ProductFeatureValue so the scoring service has data.
+     * Each product gets a ProductFeatureValue so the scoring service has data,
+     * plus a clean priced offer so it clears the "hide unbuyable products"
+     * filter (owner decision, 2026-08-16) and stays visible in the grid.
      *
      * @return array{category: Category, feature: Feature, brand: Brand, products: \Illuminate\Support\Collection}
      */
@@ -46,6 +48,12 @@ class CompareRenderLimitTest extends TestCase
         $category = Category::factory()->create(['slug' => $categorySlug]);
         $feature  = Feature::factory()->create(['category_id' => $category->id]);
         $brand    = Brand::factory()->create();
+        $store    = Store::create([
+            'tenant_id' => null,
+            'name'      => 'Render Limit Store',
+            'slug'      => "render-limit-store-{$categorySlug}-" . uniqid(),
+            'is_active' => true,
+        ]);
 
         $products = collect();
         for ($i = 1; $i <= $productCount; $i++) {
@@ -62,6 +70,16 @@ class CompareRenderLimitTest extends TestCase
                 'product_id' => $product->id,
                 'feature_id' => $feature->id,
                 'raw_value'  => $i * 5.0, // distinct scores so order is deterministic
+            ]);
+
+            ProductOffer::create([
+                'product_id'    => $product->id,
+                'store_id'      => $store->id,
+                'tenant_id'     => null,
+                'url'           => "https://example.com/{$categorySlug}/{$i}",
+                'scraped_price' => 50 + $i,
+                'raw_title'     => "{$categorySlug} product {$i}",
+                'condition'     => 'new',
             ]);
 
             $products->push($product);
@@ -532,6 +550,12 @@ class CompareRenderLimitTest extends TestCase
         ]);
         $feature = Feature::factory()->create(['category_id' => $category->id]);
         $brand   = Brand::factory()->create();
+        $store   = Store::create([
+            'tenant_id' => null,
+            'name'      => 'Meta Desc Store',
+            'slug'      => 'meta-desc-store-' . uniqid(),
+            'is_active' => true,
+        ]);
 
         for ($i = 1; $i <= 14; $i++) {
             $product = Product::factory()->create([
@@ -545,6 +569,18 @@ class CompareRenderLimitTest extends TestCase
                 'product_id' => $product->id,
                 'feature_id' => $feature->id,
                 'raw_value'  => $i * 3.0,
+            ]);
+            // Owner decision (2026-08-16): products with no purchasable offer are
+            // now hidden from the grid — this test needs all 14 visible to exercise
+            // the displayLimit-vs-renderLimit meta description count.
+            ProductOffer::create([
+                'product_id'    => $product->id,
+                'store_id'      => $store->id,
+                'tenant_id'     => null,
+                'url'           => "https://example.com/meta/{$i}",
+                'scraped_price' => 50 + $i,
+                'raw_title'     => "Meta product {$i}",
+                'condition'     => 'new',
             ]);
         }
 

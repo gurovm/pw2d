@@ -340,10 +340,16 @@ class ProductCompareTest extends TestCase
     // only offer is priced but excluded (negative condition / pick-excluding
     // flag) must never carry a non-null estimated_price into the scoring/ranking
     // pass, since the rendered card's affiliate_url will be null for it.
+    //
+    // Superseded 2026-08-16 (owner decision, "hide unbuyable products"): a
+    // product with NO purchasable offer at all is no longer scored/rendered on
+    // compare pages — see the block below. The C1/S1 "score with null price"
+    // behavior only applies now to a product that has AT LEAST one purchasable
+    // offer alongside its excluded one(s) (tested separately below).
     // =========================================================================
 
     /** @test */
-    public function a_product_whose_only_offer_carries_a_pick_excluding_flag_scores_with_no_price(): void
+    public function a_product_whose_only_offer_carries_a_pick_excluding_flag_is_hidden_from_the_compare_grid(): void
     {
         $category = Category::factory()->create(['slug' => 'espresso-machines']);
         $brand = Brand::factory()->create();
@@ -377,19 +383,263 @@ class ProductCompareTest extends TestCase
 
         $component = Livewire::test(ProductCompare::class, ['slug' => 'espresso-machines']);
 
+        // Owner decision (2026-08-16): a product with no purchasable offer is
+        // hidden entirely — a card with no "Check Current Price" CTA defeats the
+        // whole point of a compare page.
         $scored = $component->instance()->scoredProducts;
-        $entry  = $scored->firstWhere('id', $product->id);
-
-        $this->assertNotNull($entry, 'the product must still be scored (stays visible, only pick-ineligible)');
         $this->assertNull(
-            $entry->estimated_price,
-            'a flag-excluded-only-offer product must score with no price, matching its null affiliate_url'
+            $scored->firstWhere('id', $product->id),
+            'a product whose only offer carries a pick-excluding flag must be absent from scoredProducts'
         );
 
-        // The rendered card must agree: no affiliate link, no phantom price.
         $visible = $component->instance()->visibleProducts->firstWhere('id', $product->id);
-        $this->assertNull($visible->affiliate_url);
-        $this->assertNull($visible->estimated_price);
+        $this->assertNull($visible, 'the product must not render as a card on the compare grid');
+    }
+
+    /** @test */
+    public function a_product_with_one_flagged_offer_and_one_clean_priced_offer_is_present(): void
+    {
+        $category = Category::factory()->create(['slug' => 'espresso-machines-mixed']);
+        $brand = Brand::factory()->create();
+        Feature::factory()->create(['category_id' => $category->id]);
+
+        $product = Product::factory()->create([
+            'category_id' => $category->id,
+            'brand_id'    => $brand->id,
+            'slug'        => 'mixed-offers-product',
+        ]);
+
+        $store = \App\Models\Store::create([
+            'tenant_id'       => null,
+            'name'            => 'Amazon',
+            'slug'            => 'amazon-mixed-' . uniqid(),
+            'commission_rate' => 0,
+            'priority'        => 0,
+            'is_active'       => true,
+        ]);
+        $otherStore = \App\Models\Store::create([
+            'tenant_id'       => null,
+            'name'            => 'Whole Latte Love',
+            'slug'            => 'wll-mixed-' . uniqid(),
+            'commission_rate' => 0,
+            'priority'        => 0,
+            'is_active'       => true,
+        ]);
+
+        // Offer 1: flagged — must not, on its own, count as purchasable.
+        \App\Models\ProductOffer::create([
+            'product_id'    => $product->id,
+            'store_id'      => $store->id,
+            'tenant_id'     => null,
+            'url'           => 'https://example.com/product/' . uniqid(),
+            'scraped_price' => 39.99,
+            'raw_title'     => 'Flagged Offer',
+            'condition'     => 'new',
+            'listing_flags' => ['high_price'],
+        ]);
+
+        // Offer 2: clean and priced — this alone makes the product purchasable.
+        \App\Models\ProductOffer::create([
+            'product_id'    => $product->id,
+            'store_id'      => $otherStore->id,
+            'tenant_id'     => null,
+            'url'           => 'https://example.com/product/' . uniqid(),
+            'scraped_price' => 59.99,
+            'raw_title'     => 'Clean Offer',
+            'condition'     => 'new',
+            'listing_flags' => [],
+        ]);
+
+        $component = Livewire::test(ProductCompare::class, ['slug' => 'espresso-machines-mixed']);
+
+        $scored = $component->instance()->scoredProducts;
+        $this->assertNotNull(
+            $scored->firstWhere('id', $product->id),
+            'a product with at least one purchasable offer must remain scored, even if another offer is flagged'
+        );
+
+        $visible = $component->instance()->visibleProducts->firstWhere('id', $product->id);
+        $this->assertNotNull($visible, 'the product must render as a card on the compare grid');
+        $this->assertNotNull($visible->affiliate_url, 'the card must have a working CTA, sourced from the clean offer');
+    }
+
+    /** @test */
+    public function a_product_whose_only_offer_has_price_zero_is_absent_from_the_compare_grid(): void
+    {
+        $category = Category::factory()->create(['slug' => 'espresso-machines-zero-price']);
+        $brand = Brand::factory()->create();
+        Feature::factory()->create(['category_id' => $category->id]);
+
+        $product = Product::factory()->create([
+            'category_id' => $category->id,
+            'brand_id'    => $brand->id,
+            'slug'        => 'zero-price-product',
+        ]);
+
+        $store = \App\Models\Store::create([
+            'tenant_id'       => null,
+            'name'            => 'Amazon',
+            'slug'            => 'amazon-zero-' . uniqid(),
+            'commission_rate' => 0,
+            'priority'        => 0,
+            'is_active'       => true,
+        ]);
+
+        \App\Models\ProductOffer::create([
+            'product_id'    => $product->id,
+            'store_id'      => $store->id,
+            'tenant_id'     => null,
+            'url'           => 'https://example.com/product/' . uniqid(),
+            'scraped_price' => 0,
+            'raw_title'     => 'Zero Price Offer',
+            'condition'     => 'new',
+            'listing_flags' => [],
+        ]);
+
+        $component = Livewire::test(ProductCompare::class, ['slug' => 'espresso-machines-zero-price']);
+
+        $scored = $component->instance()->scoredProducts;
+        $this->assertNull(
+            $scored->firstWhere('id', $product->id),
+            'a product whose only offer is priced at $0 must be absent from scoredProducts'
+        );
+
+        $visible = $component->instance()->visibleProducts->firstWhere('id', $product->id);
+        $this->assertNull($visible, 'a $0.00-only-offer product must not render as a card');
+    }
+
+    /** @test */
+    public function schema_itemlist_matches_the_rendered_set_when_a_product_has_no_purchasable_offer(): void
+    {
+        $category = Category::factory()->create(['slug' => 'espresso-machines-schema']);
+        $brand = Brand::factory()->create();
+        Feature::factory()->create(['category_id' => $category->id]);
+
+        $store = \App\Models\Store::create([
+            'tenant_id'       => null,
+            'name'            => 'Amazon',
+            'slug'            => 'amazon-schema-' . uniqid(),
+            'commission_rate' => 0,
+            'priority'        => 0,
+            'is_active'       => true,
+        ]);
+
+        $buyable = Product::factory()->create([
+            'category_id' => $category->id,
+            'brand_id'    => $brand->id,
+            'slug'        => 'schema-buyable-product',
+            'name'        => 'Schema Buyable Product',
+        ]);
+        \App\Models\ProductOffer::create([
+            'product_id'    => $buyable->id,
+            'store_id'      => $store->id,
+            'tenant_id'     => null,
+            'url'           => 'https://example.com/product/' . uniqid(),
+            'scraped_price' => 199.99,
+            'raw_title'     => 'Schema Buyable Product',
+            'condition'     => 'new',
+        ]);
+
+        $unbuyable = Product::factory()->create([
+            'category_id' => $category->id,
+            'brand_id'    => $brand->id,
+            'slug'        => 'schema-unbuyable-product',
+            'name'        => 'Schema Unbuyable Product',
+        ]);
+        \App\Models\ProductOffer::create([
+            'product_id'    => $unbuyable->id,
+            'store_id'      => $store->id,
+            'tenant_id'     => null,
+            'url'           => 'https://example.com/product/' . uniqid(),
+            'scraped_price' => 149.99,
+            'raw_title'     => 'Schema Unbuyable Product',
+            'condition'     => 'refurbished',
+        ]);
+
+        $html = $this->get('/compare/espresso-machines-schema')->getContent();
+
+        preg_match_all(
+            '/<script[^>]+type="application\/ld\+json"[^>]*>(.*?)<\/script>/si',
+            $html,
+            $matches,
+        );
+
+        $itemListSchema = null;
+        foreach ($matches[1] as $raw) {
+            $decoded = json_decode(trim($raw), true);
+            if (is_array($decoded) && ($decoded['@type'] ?? '') === 'ItemList') {
+                $itemListSchema = $decoded;
+                break;
+            }
+        }
+
+        $this->assertNotNull($itemListSchema, 'An ItemList schema must be present.');
+
+        $schemaUrls = collect($itemListSchema['itemListElement'])
+            ->map(fn (array $item) => $item['url'] ?? ($item['item']['url'] ?? null))
+            ->filter()
+            ->values();
+
+        $this->assertTrue(
+            $schemaUrls->contains(fn ($url) => str_contains($url, 'schema-buyable-product')),
+            'ItemList must include the purchasable product.'
+        );
+        $this->assertFalse(
+            $schemaUrls->contains(fn ($url) => str_contains($url, 'schema-unbuyable-product')),
+            'ItemList must NOT include the product with no purchasable offer — it is not on the rendered page either.'
+        );
+    }
+
+    /** @test */
+    public function the_price_slider_max_bound_ignores_a_products_only_unbuyable_offer(): void
+    {
+        $category = Category::factory()->create(['slug' => 'espresso-machines-slider-bound']);
+        $brand = Brand::factory()->create();
+        Feature::factory()->create(['category_id' => $category->id]);
+
+        $store = \App\Models\Store::create([
+            'tenant_id'       => null,
+            'name'            => 'Amazon',
+            'slug'            => 'amazon-slider-' . uniqid(),
+            'commission_rate' => 0,
+            'priority'        => 0,
+            'is_active'       => true,
+        ]);
+
+        // A cheap, buyable product — establishes a LOW real max.
+        $buyable = Product::factory()->create([
+            'category_id' => $category->id,
+            'brand_id'    => $brand->id,
+            'slug'        => 'slider-bound-buyable',
+        ]);
+        \App\Models\ProductOffer::create([
+            'product_id'    => $buyable->id,
+            'store_id'      => $store->id,
+            'tenant_id'     => null,
+            'url'           => 'https://example.com/product/' . uniqid(),
+            'scraped_price' => 75.00,
+            'raw_title'     => 'Slider Bound Buyable',
+            'condition'     => 'new',
+        ]);
+
+        // An expensive, unbuyable-only-offer product — must NOT stretch maxPrice.
+        $unbuyable = Product::factory()->create([
+            'category_id' => $category->id,
+            'brand_id'    => $brand->id,
+            'slug'        => 'slider-bound-unbuyable',
+        ]);
+        \App\Models\ProductOffer::create([
+            'product_id'    => $unbuyable->id,
+            'store_id'      => $store->id,
+            'tenant_id'     => null,
+            'url'           => 'https://example.com/product/' . uniqid(),
+            'scraped_price' => 999.00,
+            'raw_title'     => 'Slider Bound Unbuyable',
+            'condition'     => 'used',
+        ]);
+
+        Livewire::test(ProductCompare::class, ['slug' => 'espresso-machines-slider-bound'])
+            ->assertSet('maxPrice', 75);
     }
 
     /** @test */
