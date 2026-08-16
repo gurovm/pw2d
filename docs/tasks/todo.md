@@ -249,6 +249,26 @@ All 17 tasks from the March 22 code quality review are complete. See git history
   - Review flags from pick tables: (a) podcast-studio-mics picks include BOTH "Shure SM58-LC Three-Mic-Pack" and "Shure SM58 (2-Pack)" — pack variants slipped the ≥85% similarity guard (F29-adjacent; consider a pack-variant rule); (b) gaming-chat-headsets budget pick is "Logitech G PRO Gaming Headset for Oculus Quest 2" — VR-specific product on a general headsets page; (c) semi-auto busy-commuter pick "Breville Oracle Jet, Olive Tapenade" — is this one of the 4 detached-from-super-auto units already re-homed, or a duplicate row? Comma in name = pre-cap legacy name.
 - [x] **Owner QA round 2 on /best/gaming-chat-headsets (published, then 3 problems found+fixed 2026-08-09)** — (1) TWO renewed picks with completely clean stored data: #1638 HyperX Cloud II Red (was Best Overall!) + #1655 Logitech G Pro X Wired — both `is_ignored=true` via tinker (verified 2 rows). Marker-blind cases #3-4 after #2704. **New structural finding: their `product_offers.raw_title` values EQUAL the cleaned product names — that import path stored cleaned titles, not raw Amazon titles, so the title-marker guard can never fire on those rows. Investigate which import path did this and whether raw titles are recoverable (extension re-scan).** (2) #1702 Logitech G PRO for Oculus Quest 2 detached (`category_id=null`, joins the re-home list) — VR-specific, doesn't belong in general headsets. (3) Page re-selected (98 eligible) + re-authored + updated in place (status kept published, verified live: Cloud III overall, no renewed traces). **Owner: re-verify the NEW pick URLs** (Kaira X #1674, Arctis Nova 7P #1781 / 7X #1795 — note these two are Destiny-2-edition siblings, judgment call whether both stay) **and do the same URL check on the other 5 drafts before publishing them.** *[Data, Content]*
 - [x] **Duplicate "Best Overall" badge on fill-in overall picks — FIXED, AWAITING /deploy** — `SelectLandingPagePicks` reuses role 'overall' for fill-in picks (by design, per its docblock); `show.blade.php` labeled every one "Best Overall". Fix: `$overallSeen` flag — first 'overall' → "Best Overall", subsequent → "Also Great" (badge styling unchanged; SeoSchema confirmed role-label-free). +1 regression test (page with two 'overall' picks → exactly one "Best Overall"). Suite 458 passed / 10 skipped. Affects all /best/ pages incl. published podcast + keyboards pages once deployed. *[Frontend]*
+### Post-audit finding (2026-08-16) — unbuyable products still render on compare pages
+
+**99 non-ignored products have NO purchasable offer** (every offer is flagged / renewed / unavailable / priceless).
+They keep their feature scores, so they still rank and display on compare pages — but with **no "Check Current
+Price" button and no explanation**. Live example: `pw2d.com/compare/gaming-chat-headsets` renders 6 cards with
+only 2 CTAs. Per category: podcast-studio-mics 28, gaming-chat-headsets 20, mechanical-gaming-keyboards 13,
+productivity-ergonomic-keyboards 13, lavalier-wireless-systems 10, semi-auto 4, cold-brew 4, kettles 3,
+super-auto 2, pour-over 2.
+
+Landing pages are unaffected — `SelectLandingPagePicks` excludes them. This is compare-page-only, and the
+2026-08-16 audit's C1 fix corrected price/scoring consistency but deliberately did not change visibility.
+
+- [ ] **DECIDE (owner): how should compare pages treat an unbuyable product?** Options: (a) exclude from the
+  grid like landing picks do; (b) keep for information but render an explicit "no current offer" state instead
+  of a missing button; (c) rank them last. Compare pages are informational while landing pages recommend, so
+  (b) may be the honest answer — but a silently absent button is the worst of the three. *[Frontend, Product]*
+- [ ] **Signal for Tier-3 discovery:** 25% of the headsets pool and ~15% of mics being unbuyable is a stronger
+  argument for the quarterly import than pool size alone. Consider triggering discovery on
+  *unbuyable share*, not just absolute pool count. *[Data, Content]*
+
 ### Rescan rollout — pw2d COMPLETE (2026-08-14)
 
 All 5 pw2d categories rescanned by owner; all 5 published pages re-selected from health-verified pools, re-authored (Claude — Gemini admin_model still timing out on this call), updated in place, and verified live. `pw2d:landing-pages:audit` → **"All published landing pages are fresh."** Bad listings surfaced: headsets 36 · gaming keyboards 30 · lavalier 10 · mics 24 · ergonomic 16 ≈ **116**, plus large price corrections (Q5 Pro $220→$150, ECM77B $350→$290, Kaira X $40→$99.99, one mic $75→$100). Pool sizes after cleanup: 79 / 162 / 76 / 181 / 99.
