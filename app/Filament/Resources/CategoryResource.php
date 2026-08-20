@@ -2,9 +2,11 @@
 
 namespace App\Filament\Resources;
 
+use App\Actions\AssessCategoryHealth;
 use App\Filament\Resources\CategoryResource\Pages;
 use App\Filament\Resources\CategoryResource\RelationManagers;
 use App\Models\Category;
+use App\Support\CategoryHealthRow;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -129,6 +131,10 @@ class CategoryResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            // Spec 032 — one query for the whole list: adds pool_count, buyable_count,
+            // never_checked_count, oldest_check, newest_check, products_count.
+            ->modifyQueryUsing(fn (Builder $query) => AssessCategoryHealth::decorate($query))
+            ->defaultSort('oldest_check', 'asc')
             ->columns([
                 Tables\Columns\TextColumn::make('parent.name')
                     ->label('Parent Category')
@@ -139,10 +145,53 @@ class CategoryResource extends Resource
                 Tables\Columns\TextColumn::make('name')
                     ->searchable()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('products_count')
-                    ->counts('products')
-                    ->label('Products')
+                // Spec 032 — health/freshness columns. `AssessCategoryHealth::decorate()`
+                // (applied via `modifyQueryUsing()` below) supplies pool_count,
+                // buyable_count, never_checked_count, oldest_check, newest_check, and
+                // products_count in ONE query; every column here just reads those
+                // already-decorated attributes.
+                Tables\Columns\TextColumn::make('health')
+                    ->label('Health')
+                    ->getStateUsing(fn (Category $record) => self::healthRow($record)->reasons() ?: ['HEALTHY'])
+                    ->badge()
+                    ->color(fn (string $state): string => match ($state) {
+                        'import_debt', 'stale' => 'danger',
+                        'aging', 'thin', 'churn' => 'warning',
+                        default => 'success',
+                    }),
+                Tables\Columns\TextColumn::make('buyable_count')
+                    ->label('Buyable')
                     ->sortable()
+                    ->color('primary'),
+                Tables\Columns\TextColumn::make('never_checked_count')
+                    ->label('Unchecked')
+                    ->sortable()
+                    ->badge()
+                    ->color(fn (?int $state): string => ($state ?? 0) > 0 ? 'warning' : 'gray')
+                    ->url(fn ($record) => ProductResource::getUrl('index', [
+                        'tableFilters' => [
+                            'categories' => [
+                                'values' => [$record->id],
+                            ],
+                        ],
+                    ])),
+                Tables\Columns\TextColumn::make('oldest_check')
+                    ->label('Oldest check')
+                    ->date()
+                    ->sortable()
+                    ->color(fn (?string $state): ?string => $state !== null
+                        && \Carbon\CarbonImmutable::parse($state)->diffInDays(now()) > CategoryHealthRow::STALE_DAYS
+                            ? 'danger'
+                            : null)
+                    ->placeholder('—'),
+                Tables\Columns\TextColumn::make('pool_count')
+                    ->label('Pool')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\TextColumn::make('products_count')
+                    ->label('Rows')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true)
                     ->url(fn ($record) => ProductResource::getUrl('index', [
                         'tableFilters' => [
                             'categories' => [
@@ -175,6 +224,17 @@ class CategoryResource extends Resource
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ]);
+    }
+
+    /**
+     * Builds a {@see CategoryHealthRow} from a `Category` record already
+     * decorated by `AssessCategoryHealth::decorate()` (via `modifyQueryUsing()`
+     * above) — reuses {@see AssessCategoryHealth::fromRecord()} so this
+     * resource never carries its own copy of the threshold/reason logic.
+     */
+    private static function healthRow(Category $record): CategoryHealthRow
+    {
+        return AssessCategoryHealth::fromRecord($record);
     }
 
     public static function getRelations(): array
