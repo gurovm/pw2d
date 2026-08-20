@@ -4,7 +4,16 @@
       "Bash(cat database/migrations/*create_tenants*)",
       "Bash(php -r ':*)",
       "Bash(composer install:*)",
-      "Bash(php -r 'require \"vendor/autoload.php\"; $ref = new ReflectionClass\\(\"App\\\\\\\\Support\\\\\\\\SeoSchema\"\\); echo \"File: \" . $ref->getFileName\\(\\) . \"\\\\n\"; echo \"Has forHomepage: \" . \\($ref->hasMethod\\(\"forHomepage\"\\) ? \"yes\" : \"no\"\\) . \"\\\\n\";')"
+      "Bash(php -r 'require \"vendor/autoload.php\"; $ref = new ReflectionClass\\(\"App\\\\\\\\Support\\\\\\\\SeoSchema\"\\); echo \"File: \" . $ref->getFileName\\(\\) . \"\\\\n\"; echo \"Has forHomepage: \" . \\($ref->hasMethod\\(\"forHomepage\"\\) ? \"yes\" : \"no\"\\) . \"\\\\n\";')",
+      "Bash(php /tmp/f5-repro-stancl-base.php)",
+      "Read(//tmp/**)",
+      "Read(//private/tmp/**)",
+      "Bash(php -r 'require \"vendor/autoload.php\"; $f = \"vendor/composer/installed.json\"; $d = json_decode\\(file_get_contents\\($f\\), true\\); foreach\\($d[\"packages\"] ?? $d as $p\\) { if \\(\\($p[\"name\"] ?? \"\"\\) === \"stancl/tenancy\"\\) { echo \"version: \" . \\($p[\"version\"] ?? \"?\"\\) . \"\\\\n\"; echo \"source: \" . json_encode\\($p[\"source\"] ?? []\\) . \"\\\\n\"; break; }}')",
+      "Bash(php -r 'echo \"PHP: \" . PHP_VERSION . \"\\\\n\";')"
+    ],
+    "additionalDirectories": [
+      "/Users/mg/projects/power_to_decide/pw2d/docs",
+      "/private/tmp"
     ]
   }
 }

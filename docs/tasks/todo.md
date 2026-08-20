@@ -309,7 +309,7 @@ Landing pages are unaffected — `SelectLandingPagePicks` excludes them. This is
 
 All 5 pw2d categories rescanned by owner; all 5 published pages re-selected from health-verified pools, re-authored (Claude — Gemini admin_model still timing out on this call), updated in place, and verified live. `pw2d:landing-pages:audit` → **"All published landing pages are fresh."** Bad listings surfaced: headsets 36 · gaming keyboards 30 · lavalier 10 · mics 24 · ergonomic 16 ≈ **116**, plus large price corrections (Q5 Pro $220→$150, ECM77B $350→$290, Kaira X $40→$99.99, one mic $75→$100). Pool sizes after cleanup: 79 / 162 / 76 / 181 / 99.
 
-- [ ] **BUG: rescan updates land on the wrong product row for cross-category duplicates** — `OfferIngestionService` re-resolves the offer by URL, so when two products in different categories share an ASIN the FIRST match (lowest id) absorbs the update and the twin is never health-stamped. Found on ergonomic keyboards: 16 rows structurally unreachable, one of them a live pick. **Fix:** `rescan-list` already returns `offer_id` — have the extension echo it back and have the server prefer that exact offer when supplied, falling back to URL matching. popup/content/background + API in sync (CLAUDE.md). *[API, Extension]*
+- [x] **BUG: rescan updates land on the wrong product row for cross-category duplicates** — `OfferIngestionService` re-resolves the offer by URL, so when two products in different categories share an ASIN the FIRST match (lowest id) absorbs the update and the twin is never health-stamped. Found on ergonomic keyboards: 16 rows structurally unreachable, one of them a live pick. **Fixed by Spec 033** (2026-08-20) — code complete + tested, **AWAITING /deploy AND extension reload to 1.8**. The bug is still live in production until both ship; do not trust a rescan of a duplicate-bearing category before then. See below. *[API, Extension]*
 - [x] **Cross-category duplicate cleanup (ergonomic)** — 16 rows in `productivity-ergonomic-keyboards` were exact-ASIN duplicates of `mechanical-gaming-keyboards` rows (mostly gaming boards miscategorised into ergonomic: G815, G PRO X TKL, ROG Strix, AULA ×3, Redragon, Q5 Pro ×3, K2, K4, C1, C2, K8 HE). Owner approved ignoring all 16 (2026-08-14, reversible in Filament); pool 115→99 and the office-professional slot moved off an unverifiable row. **Other categories not yet audited for the same pattern**; `pw2d:merge-duplicates` is category-scoped and cannot see cross-category dupes — needs a cross-category mode or a Filament "duplicate ASIN" report. *[Data, Tooling]*
 - [ ] **Extension popup undercounts flags** — the run summary's `flagged` tally counts only `flagged_condition` (condition→ignored) and ignores `listing_flags` hits, so runs that flagged 10 and 24 offers both reported "flagged 0". Cosmetic but actively misleading during QA. *[Extension]*
 - [ ] **Editorial: repeated products within/across pages** — Keychron Q11 appears twice on the ergonomic page (two distinct live ASINs, same board, same $210); K8 HE appears on both keyboard pages in different colourways; SM58 two-pack + SM58S both on the mics page. Each page's prose now says so plainly, but the ≥85% similarity guard catches none of these (different ASINs / colourways / pack sizes). Consider a variant rule. *[Content, AI]*
@@ -360,7 +360,7 @@ All 5 pw2d categories rescanned by owner; all 5 published pages re-selected from
     - Decisions logged in `docs/questions.md` (B2 guard-placement tradeoff, guard-bypass-on-explicit-condition applied uniformly across all 3 paths, `product_name` picks-JSON shape addition, index-position-based restore in `mutateFormDataBeforeSave`). Reusable patterns + the two new gotchas (raw SQL vs JSON columns; `foreach ($x ?? [] as &$y)` binding to a temporary) logged in `.claude/memory/builder/patterns.md` and `docs/lessons.md`.
 - [ ] **c2d leaf #5: Electric Burr Grinders (owner decision 2026-08-09; slot #6 stays open)** — launch checklist: (1) create leaf category in Filament (name/slug/parent, budget_max/midrange_max); (2) AI-generate features + buying guide via EditCategory; (3) attach the 11 detached seed products (category assign) + feature rescan; (4) presets (2-3, e.g. espresso-focused / filter-brewer / low-effort); (5) verify compare page renders + sitemap pickup; (6) landing page only AFTER the category has GSC signal (don't publish /best/ on day one).
 - [x] **Owner QA on live /best/podcast-studio-mics — 2 fixes applied (AWAITING /deploy)** — (1) pick image unbounded on desktop (`md:h-full` never resolved → tall portrait images stretched the card): image column now `md:flex md:items-center`, anchor `h-56 md:h-64`, img `max-h-full max-w-full object-contain`. (2) "Full product details" stranded users on /compare after drawer close (2 Backs to return): link now opens in a new tab (`target="_blank" rel="noopener noreferrer"`), matching the affiliate CTA; "See how it compares" unchanged. +1 assertion in `LandingPageControllerTest`. Suite 457 passed / 10 skipped. *[Frontend]*
-- [ ] **Cannibalization watch continues (~Aug 16-23)**: c2d "best super automatic espresso machine" is served by BOTH /compare (~pos 61) and /best/ (~pos 75-90) — /best/ should win it as it ages; if /compare keeps it long-term, consider a canonical-ish internal-link nudge (NOT a redirect).
+- [x] **Cannibalization watch — CLOSED 2026-08-17, no cannibalization.** Over the six weeks spanning the /best/ launch, `/compare/super-automatic-espresso-machines` held ~90 impr/wk and its weighted position *improved* 63→48, while `/best/` added 51 impressions of separate surface. Both URLs coexist on the cluster with no measurable transfer. No internal-link nudge needed. Original note: c2d "best super automatic espresso machine" is served by BOTH /compare (~pos 61) and /best/ (~pos 75-90) — /best/ should win it as it ages; if /compare keeps it long-term, consider a canonical-ish internal-link nudge (NOT a redirect).
 
 - [x] **F38: Offer-refresh paths drop image_url (owner hit this on G715)** -- Extension re-scan of an existing offer updates price only: `OfferIngestionService` URL-dedup branch and the batch-import ASIN-dedup branch ignore the incoming `image_url` (and stock_status). Fix: on refresh, also update `image_url`/`stock_status` when provided. Fixed as part of Spec 029 Phase A (T1) — see below. Related root cause found same day (still open, not part of Spec 029): 8 products had `image_path` pointing at files missing from disk (image_url accessor prefers local path without existence check) — data-fixed by nulling; consider a `pw2d:verify-images` integrity command or re-download from offer image_url. *[API, Extension-adjacent]*
 - [x] **2026-08-12: Fix pick-eligibility null-best-offer blind spot in `SelectLandingPagePicks`/`AuditLandingPageFreshness` (live prod incident)** — a category rescan set two products' only offers to `listing_flags: ["unavailable"]` + `scraped_price: NULL`; both products still got selected as landing-page picks (one ranked #1 "Best Overall") because `hasPickExcludingFlag()` read flags off `$product->best_offer`, and `Product::bestOffer` itself excludes null-price offers — a product whose ONLY offer was flagged + priceless had no `best_offer` at all, so the flag check had nothing to inspect and silently passed it as eligible. Fixed with a single coherent rule in both files, checked across EVERY offer (never skippable by best-offer absence): a product is pick-eligible only if it has at least one offer that is simultaneously priced (`scraped_price` non-null and > 0), free of `ListingHealth::PICK_EXCLUDING_FLAGS`, and (Audit only — Select's condition check stays the separate, unchanged, product-level `ProductConditionGuard` text-marker check) free of `ListingHealth::NEGATIVE_CONDITIONS`. +4 new tests (Select: null-price+unavailable-only-offer excluded, multi-offer partial-eligibility selectable, all-offers-null-price excluded; Audit: stored pick's only offer going flagged+priceless now fires `pick_ineligible`). Test-fixture ripple: `SelectLandingPagePicksTest` and `GenerateLandingPageCommandTest`'s "eligible product" helpers previously defaulted `scraped_price` to `NULL` (harmless under the old price-blind rule) — both now default to a buyable `scraped_price => 100` so existing "eligible" fixtures stay eligible under the new price requirement. Suite 550 passed/17 skipped → **554 passed/17 skipped** (+4 new), no regressions. Judgment calls (semantics widened from "best/cheapest offer only" to "any offer"; condition-column check folded into Audit's per-offer test) in `docs/questions.md`. *[API]*
@@ -409,3 +409,61 @@ All 5 pw2d categories rescanned by owner; all 5 published pages re-selected from
 - [ ] **S7** Q2/Q3 (Form Requests, `BatchImportService`) are overdue — extract a `RescanWorkList` query object first. *Already tracked as Q2/Q3 above; not actioned this session.* *[API]*
 - [~] **S8** test gaps: marker false positive (✅ done, B1), pick ⇒ non-null `best_offer` (✅ done, B2/S2), detached-pick row (✅ done, extension-side per B3), "narrow `offers:` select still applies the exclusion" (✅ done — `OFFER_HEALTH_COLUMNS` constant makes this mechanical; no dedicated regression test for "forgetting the constant" specifically, since the constant itself is now the single point of truth). `flagged_offer_condition` tallying — extension-side, no PHP test possible (per the original note).
 - [ ] **S9** up to one `AuditLandingPageFreshnessJob` per rescanned offer, each re-running full pick selection over the category. *Deferred.* *[API]*
+
+## SEO checkpoint 2026-08-17 — new items
+
+- [ ] **Spec-028 (product content depth) — PROMOTE to next spec.** Three consecutive checkpoints now converge: product pages carry **68% of impressions, 72% of clicks, and the best weighted position (17.8 pw2d / 18.8 c2d)** across both tenants, and every single click is a model-number query landing at pos 4–9 (`aoc gk330` ×4, `kingrinder k7 review`, `mhw-3bomber r3 pro review`, coletti crag ×3). Compare presets remain click-dead at pos 10–15. Gate to clear first: the `evaluateProduct` grounding guardrail + the ~32 polluted `ai_summaries`. *[SEO, Content, Architect]*
+
+- [ ] **WATCH ~2026-08-23: `/best/manual-coffee-grinders` has zero GSC rows in 13+ days.** Live since ~Aug 1 on c2d's #2 demand surface (83 impr/14d, with clicks) while its two Aug-1 siblings both indexed within 2–4 days. Sitemap verified correct on both domains, so this is not plumbing. The other 7 post-Aug-9 `/best/` pages have only had ~3–5 eligible days against a 3-day GSC lag and are legitimately too early to judge — manual-grinders is not. If it is still empty on the Aug-23 check while siblings index, treat as a page-level indexing problem (thin/duplicate content, canonical, or pick-table credibility) rather than crawl latency. *[SEO]*
+
+- [ ] **Orphaned `/product/{slug}` — data now favours `noindex`, still an owner call.** Product pages are the top click surface on both tenants, so an orphaned page with no CTA converts a hard-won pos-4–9 click into a dead end. `noindex` while unbuyable (auto-clearing on a clean rescan, matching how `listing_flags` already clear) preserves the surface for products that come back; sitemap exclusion alone leaves the page indexed and clickable. Supersedes the neutral framing of the earlier entry. *[SEO, Product]*
+
+- [ ] **Compare-page cleanup impact — read on 2026-08-23.** The unbuyable-product filter shipped ~Aug 12–16; GSC ends Aug 14, so this week was unreadable. pw2d weekly impression baseline for the diff — headsets 12/9/7/5, mics 111/123/80/79, lavalier 16/6/6/4 across wk 202629→202632 (202632 is 6 of 7 days). Headsets and lavalier were already drifting down *before* the cleanup, so attribution will be muddy; judge on 202633–202634. *[SEO]*
+
+- [ ] **First PostHog engagement read is now viable on c2d** (15 clicks in 28d clears the floor that blocked this in June). Key in local `.env` `POSTHOG_PERSONAL_API_KEY`, project 133580. *[SEO, Analytics]*
+
+## Session 2026-08-20 — category health tooling
+
+- [x] **Spec 032 — category health & freshness** (`docs/specs/032-category-health.md`, APPROVED, built 2026-08-20).
+  `AssessCategoryHealth` action + `CategoryHealthRow` DTO + `pw2d:categories:health` command + health
+  columns on the Filament `CategoryResource` list. Replaces the "SSH into prod and write SQL" answer to
+  *what's topped up / what's next* with a computed one. Reasons vocabulary mirrors Spec 030's
+  `stale_reasons`: `import_debt` / `stale` / `aging` / `thin` / `churn` / `no_data`. Reuses
+  `ListingHealth::applyPurchasableOfferQuery()` verbatim for `buyable_count` — no fifth definition of
+  "purchasable". 24 new tests (`AssessCategoryHealthTest`, `CategoriesHealthCommandTest`,
+  `CategoryResourceHealthTest`), including a regression asserting `buyable_count` agrees with
+  `ProductCompare::scoredProducts()->count()`. Judgment calls (stale/aging mutual exclusivity, no_data
+  short-circuit, explicit tenant filter in `execute()`) logged in `docs/questions.md`.
+  *[Architect, Filament, Tooling]*
+
+- [ ] **Fix unfiltered `products_count` — owner: "remember to fix homepage numbers later" (2026-08-20).**
+  Four callers count raw `products` rows with no `is_ignored` / `status` / buyability filter, so the UI
+  overstates inventory — podcast-studio-mics advertises **"Top 280 Picks"** against a 181 pool and **153
+  buyable**; gooseneck-kettles reads "Top 70" against 34 buyable. This is what made the homepage
+  unusable as a top-up check on 2026-08-20. Sites: `app/Livewire/Home.php:30` (public homepage — highest
+  impact, needs the `home:popular_categories` cache key bumped), `app/Filament/Resources/CategoryResource.php:143`
+  (fixed as part of Spec 032's relabel), `app/Filament/Resources/BrandResource.php:62`,
+  `app/Livewire/ProductCompare.php:99` (brand-filter counts can exceed what the grid renders).
+  `ListingHealth::applyPurchasableOfferQuery()` already exists — this is filter application, not new logic.
+  *[Frontend, Filament, Data]*
+
+- [x] **Tier-3 standings verified against prod (2026-08-20)** — only `manual-coffee-grinders` has been
+  topped up (63 rows added 2026-08-16, pool 33→58, 0% unbuyable). All other 10 categories: **zero** rows
+  added since 08-15; every buyable figure matches the Aug-16 baseline exactly. Buyable pools —
+  kettles 34 · cold-brew 36 · super-auto 41 · pour-over 57 · grinders 58 · headsets 59 · lavalier 66 ·
+  ergonomic 86 · semi-auto 121 · keyboards 149 · mics 153. Oldest health check platform-wide is
+  2026-08-14 (6 days), so **no Tier-2 sweep is due until ~2026-09-13**. `never_health_checked` = 3,
+  matching the known straggler list above. Query kept in Spec 032's rationale. *[QA, Data]*
+
+- [x] **Spec 033 — `offer_id` rescan targeting** (`docs/specs/033-offer-id-rescan-targeting.md`) — implemented (AWAITING /deploy + extension reload to 1.8)
+  2026-08-20. Closes the cross-category duplicate absorption bug: `OfferIngestionService` resolves the
+  rescanned offer by `(store_id, url)` + unordered `->first()`, so the lowest-id twin absorbs every update
+  and its sibling is structurally unreachable (16 such rows found on ergonomic keyboards, one a live pick).
+  Server accepts + prefers `offer_id` (tenant-scoped `Rule::exists` — it is a security boundary under the
+  shared extension token, not a convenience) via `resolveExistingOffer()`; extension echoes back the
+  `offer_id` `rescan-list` already returns (`background.js`); URL fallback gains `orderBy('id')` + a
+  multi-match warning that makes duplicates observable. Manifest 1.7 → 1.8. No endpoint URL change, so the
+  CLAUDE.md popup/content sync rule was not triggered. 6 new tests in
+  `tests/Feature/OfferIdRescanTargetingTest.php` (647 passed / 21 skipped, up from 641/21, 0 failures).
+  **Unblocks the super-auto Tier-3 top-up** — super-auto ↔ semi-auto is the confirmed duplicate pair.
+  *[API, Extension, Security]*

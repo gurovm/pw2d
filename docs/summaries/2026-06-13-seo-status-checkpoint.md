@@ -383,3 +383,128 @@ normal post-sprint digestion, not a stall.
 - **Spec-028 (product content depth) case keeps strengthening** — gated behind the evaluateProduct grounding
   guardrail + ~32 polluted ai_summaries cleanup.
 - pw2d: authority verdict unchanged; founder off-page track remains the lever.
+
+---
+
+## UPDATE — 2026-08-17 check: coffee2decide BREAKOUT (best week on every axis). pw2d clicks 3→10 but **product pages, not preset pages** — authority verdict stands. Cannibalization watch CLEARED.
+
+**Pipeline:** all 4 sources HEALTHY. GSC through 2026-08-14 (normal 3-day lag), GA4 through 08-16.
+Week 202632 is **6 of 7 days** — per-day rates below are adjusted where it matters.
+
+### The headline finding: product pages are the click engine on BOTH tenants
+
+28d by surface:
+
+| Tenant | Surface | Pages | Impr | Clicks | wpos | CTR |
+|---|---|---|---|---|---|---|
+| c2d | **product** | 194 | **1,289** | **10** | **18.8** | 0.78% |
+| c2d | compare | 24 | 770 | 5 | 45.1 | 0.65% |
+| c2d | best | 1 | 51 | 0 | 59.2 | 0% |
+| pw2d | **product** | 232 | **1,790** | **8** | **17.8** | 0.45% |
+| pw2d | compare | 15 | 564 | 1 | 22.9 | 0.18% |
+| pw2d | best | 2 | 31 | 1 | 38.4 | 3.23% |
+
+**Product pages = 68% of impressions, 72% of clicks, and the best weighted position on both tenants.**
+Third consecutive checkpoint where this strengthens; it is no longer a hint. Every pw2d product click
+came from a model-number query at pos 4.7–8.8 (`aoc gk330` ×4 clicks, `ymdk sofle`, `ymdk corne4x6`,
+`mistel md600`). Same on c2d (`kingrinder k7 review`, `mhw-3bomber r3 pro review`, coletti crag ×3).
+
+### coffee2decide — breakout week
+| Metric | 07-19 | 08-02 | 08-09 | **08-17** |
+|---|---|---|---|---|
+| Pages w/ impressions | — | 197 | 197 | **221** |
+| Impressions (28d) | — | 1,468 | 1,468 | **2,112** |
+| Clicks (28d) | 1 | 5 | 8 | **15** |
+| Weighted pos | 54 | 37.6 | 37.6 | **29.3** |
+| CTR | — | 0.34% | 0.54% | **0.71%** |
+
+| wk | impr | clicks | wpos | days |
+|---|---|---|---|---|
+| 202630 | 385 | 1 | 29.8 | 7 |
+| 202631 | 564 | 5 | 30.7 | 7 |
+| 202632 | **839** | **6** | **23.7** | 6 |
+
+~140 impr/day vs ~80 the week before, and wpos broke below 25 for the first time. Best week on
+impressions, clicks, and position simultaneously. Not a composition artifact — the compare and
+product surfaces both improved.
+
+### pw2d — clicks moved, but not on the target pages
+| Metric | 07-19 | 08-02 | 08-09 | **08-17** |
+|---|---|---|---|---|
+| Pages w/ impressions | 237 | 221 | 239 | **251** |
+| Impressions (28d) | 2,175 | 2,199 | 2,346 | **2,402** |
+| Clicks (28d) | 7 | 6 | 3 | **10** |
+| Weighted pos | — | — | 18.4 | **19.2** |
+
+**Target preset queries — unchanged for a ninth week.** Zero clicks across all of them.
+
+| Query | Path | Impr | Pos (08-17) | Pos (prior) |
+|---|---|---|---|---|
+| rsi keyboard | ergonomic?preset=rsi-sufferer | 15 | 12.5 | 12.8 |
+| streamer keyboards | gaming?preset=streamer | 8 | 11.3 | 9.9 |
+| best ergonomic keyboard for programmers | ergonomic?preset=programmer | 8 | 14.8 | — |
+| pro gaming keyboards | gaming?preset=pro-gamer | 8 | 35.6 | — |
+| best mechanical keyboard for rsi | ergonomic?preset=rsi-sufferer | 5 | 15.7 | — |
+
+Still the same 10–15 band held since June. **The Jul-10 authority verdict stands for compare pages** —
+the 3→10 click recovery is entirely product + /best/, not the presets.
+
+**First /best/ click on pw2d:** `/best/mechanical-gaming-keyboards`, query **"best keyboards for gaming"**
+@ pos 11.0 (2026-08-12). The /best/ surface also holds "best gaming keyboards" @ 9.0 and "best mechanical
+keyboards 2026" @ 16.7 — head queries no preset page ever reached. 3.23% CTR on tiny volume, but the
+designed division of labor is producing.
+
+### Cannibalization watch (opened 2026-08-09) — **CLEARED, no action**
+`/compare/super-automatic-espresso-machines` weekly, six weeks:
+
+| wk | impr | wpos |
+|---|---|---|
+| 202627 | 100 | 63.1 |
+| 202629 | 96 | 53.5 |
+| 202631 | 87 | 50.8 |
+| 202632 | 92 | **48.3** |
+
+The compare page held its volume and its position *improved* 63→48 across the whole /best/ launch
+window, while `/best/super-automatic-espresso-machines` added 51 impressions of separate surface
+(pos 39–77). Both URLs coexist on the query cluster with no measurable transfer. Watch closed.
+
+### The 8 newer /best/ pages have zero GSC rows — too early, but manual-grinders is on notice
+Only the 3 original pages (published Aug 1) have ever impressed. Sitemaps verified correct — all 11
+`/best/` URLs present on both domains. The 8 published after the Aug-9 GO have had ~3–5 eligible days
+against a 3-day lag, so **not yet a finding**. Exception worth tracking: `/best/manual-coffee-grinders`
+has been live since ~Aug 1 with **zero rows in 13+ days**, on c2d's #2 demand surface. Re-check Aug 23;
+if still empty while its siblings index, that's a page-level indexing problem, not crawl latency.
+
+### Compare-page cleanup impact — unreadable this week (baseline recorded)
+The unbuyable-product filter shipped ~Aug 12–16; GSC ends Aug 14. pw2d weekly impressions for the
+affected categories, for next week's diff:
+
+| wk | headsets | mics | lavalier |
+|---|---|---|---|
+| 202629 | 12 | 111 | 16 |
+| 202630 | 9 | 123 | 6 |
+| 202631 | 7 | 80 | 6 |
+| 202632 (6d) | 5 | 79 | 4 |
+
+Headsets and lavalier were already drifting down *before* the cleanup, so attribution will be muddy.
+Judge on 202633–202634.
+
+### Decisions (2026-08-17)
+- **Spec-028 (product content depth) is now the highest-leverage unbuilt work.** Three checkpoints of
+  converging evidence: product pages own the impressions, the clicks, and the best positions on both
+  tenants, and every click is a model-number query landing at pos 4–9. Unblock it — the gate is the
+  `evaluateProduct` grounding guardrail + the ~32 polluted `ai_summaries`. Recommend specifying it next.
+- **Orphaned `/product/{slug}` decision is now urgent, and the data says NOINDEX not exclude.** Product
+  pages are the top click surface, so an orphaned page with no CTA converts a hard-won click into a dead
+  end. `noindex` while unbuyable (auto-clearing on a clean rescan) preserves the surface for products
+  that come back; sitemap exclusion alone leaves the page indexed and clickable. **Owner call still.**
+- **pw2d compare pages: authority verdict unchanged.** No new on-page specs for presets. Founder off-page
+  track remains the lever.
+- **c2d: no intervention.** It is compounding on its own; do not perturb it mid-climb.
+- Cannibalization watch closed.
+
+### Next check (~2026-08-23/24)
+1. Did the 8 new `/best/` pages index? Specifically `/best/manual-coffee-grinders`.
+2. Compare-page cleanup effect on headsets/mics (weeks 202633–34 vs the baseline above).
+3. c2d — does 202633 hold ~140 impr/day, or was 202632 a spike?
+4. First PostHog engagement read is now viable on c2d (15 clicks in 28d clears the floor).
