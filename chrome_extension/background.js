@@ -475,6 +475,11 @@ async function handleRescanExtract(offer, response, attempt) {
     // existing offer by exact URL.
     const payload = {
         url: offer.url,
+        // Spec 033: target the exact row being rescanned instead of letting the
+        // server re-resolve by (store_id, url), which silently collapses
+        // cross-category duplicates onto the lowest-id row. Already present on
+        // every rescan-list row (see the `offers` shape documented above).
+        offer_id: offer.offer_id ?? null,
         store_slug: product.store_slug,
         raw_title: product.raw_title,               // raw as scraped — heals cleaned-title rows
         brand: product.brand ?? null,

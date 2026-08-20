@@ -45,6 +45,7 @@ class OfferIngestionService
      *   reviews_count: ?int,
      *   condition: ?string,
      *   listing_flags: ?array,
+     *   offer_id: ?int,
      * } $data
      * @return array{action: string, product_id: int|null}
      */
@@ -60,10 +61,8 @@ class OfferIngestionService
             ['name' => Str::title(str_replace('-', ' ', $data['store_slug']))]
         );
 
-        // 2. Check if this exact offer URL already exists → price refresh
-        $existingOffer = ProductOffer::where('store_id', $store->id)
-            ->where('url', $data['url'])
-            ->first();
+        // 2. Resolve the offer being refreshed/rescanned (Spec 033 precedence).
+        $existingOffer = $this->resolveExistingOffer($data, $store, $tenantId);
 
         if ($existingOffer) {
             // Reviewer B2: a title marker is condition EVIDENCE for a listing we
@@ -311,5 +310,63 @@ class OfferIngestionService
         ]);
 
         return ['action' => $action, 'product_id' => $product->id];
+    }
+
+    /**
+     * Spec 033 — resolve the offer this payload is refreshing/rescanning.
+     *
+     * Precedence:
+     *   (a) `offer_id`, when supplied, explicitly re-scoped `where('tenant_id', ...)`.
+     *       The controller's `Rule::exists` already enforces tenant ownership at the
+     *       HTTP boundary, but this is an API controller running outside domain
+     *       tenancy middleware, so the service re-scopes independently rather than
+     *       trusting the caller (CLAUDE.md multi-tenant data access rule).
+     *   (b) the targeted offer's store must agree with the store already resolved
+     *       from `store_slug` — on mismatch (e.g. a stale work-list row), ignore the
+     *       offer_id, log it, and fall through to the URL lookup.
+     *   (c) absent, or unresolvable (deleted between rescan-list and this POST) →
+     *       today's (store_id, url) lookup, unchanged — now ordered by id, and
+     *       logging a warning naming the ids when it matches more than one offer
+     *       (previously-invisible cross-category duplicates, made greppable).
+     *
+     * Never hard-fails on an unresolvable offer_id: a ~100-offer rescan walk must
+     * not stall because one row was deleted mid-run.
+     */
+    private function resolveExistingOffer(array $data, Store $store, ?string $tenantId): ?ProductOffer
+    {
+        if (!empty($data['offer_id'])) {
+            $targetedOffer = ProductOffer::where('id', $data['offer_id'])
+                ->where('tenant_id', $tenantId)
+                ->first();
+
+            if ($targetedOffer) {
+                if ($targetedOffer->store_id === $store->id) {
+                    return $targetedOffer;
+                }
+
+                Log::warning('OfferIngestion: offer_id store mismatch, falling back to URL match', [
+                    'offer_id'          => $data['offer_id'],
+                    'offer_store_id'    => $targetedOffer->store_id,
+                    'resolved_store_id' => $store->id,
+                ]);
+            }
+            // else: offer_id didn't resolve (deleted mid-walk) — degrade silently to
+            // the URL lookup below rather than hard-failing this offer.
+        }
+
+        $urlMatches = ProductOffer::where('store_id', $store->id)
+            ->where('url', $data['url'])
+            ->orderBy('id')
+            ->get();
+
+        if ($urlMatches->count() > 1) {
+            Log::warning('OfferIngestion: URL lookup matched multiple offers', [
+                'store_id'  => $store->id,
+                'url'       => $data['url'],
+                'offer_ids' => $urlMatches->pluck('id')->all(),
+            ]);
+        }
+
+        return $urlMatches->first();
     }
 }

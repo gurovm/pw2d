@@ -42,6 +42,16 @@ class OfferIngestionController extends Controller
             'image_url'           => 'nullable|url|max:2000',
             'stock_status'        => 'nullable|string|max:50',
             'category_id'         => ['required', Rule::exists('categories', 'id')->where('tenant_id', tenant('id'))],
+            // Spec 033: offer_id targets the exact row being rescanned instead of
+            // re-resolving by (store_id, url), which silently collapses cross-category
+            // duplicates onto the lowest-id row. The tenant_id clause here is a
+            // SECURITY boundary, not a convenience — offer_id is client-supplied under
+            // the shared, non-rotating extension token, so without it a bare integer id
+            // becomes a trivially enumerable cross-tenant write primitive (strictly
+            // worse than the URL path it targets, which at least requires knowing a
+            // real URL). Required even though ProductOffer carries BelongsToTenant —
+            // this controller runs outside domain tenancy middleware (CLAUDE.md).
+            'offer_id'            => ['nullable', 'integer', Rule::exists('product_offers', 'id')->where('tenant_id', tenant('id'))],
             'rating'              => 'nullable|numeric|min:0|max:5',
             'reviews_count'       => 'nullable|integer|min:0',
             'condition'           => ['nullable', Rule::in(ListingHealth::CONDITIONS)],
