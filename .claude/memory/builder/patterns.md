@@ -738,3 +738,56 @@ run the suite — if your own "before" run disagrees with what you were told, `g
 in-flight agent's uncommitted work — do NOT `git stash` the whole working directory), re-run the suite to get
 the TRUE immediate-prior baseline, `git stash pop`, and report the reconciled numbers with the explanation
 rather than silently using whichever number happens to match what you were told.
+
+## Pattern: when a spec's prose under-specifies an algorithm but ships a "verified by hand" table,
+## treat the table as the actual spec and re-derive the missing rule from it (Spec 034, 2026-08-21)
+`SelectLandingPagePicks::modelKey()` (Spec 034 §1) describes joining a short "qualifier" token onto a
+digit-bearing "candidate" token (e.g. `GIGA` + `10` → `giga10`) and states the length limit only on the
+qualifier side ("≤5 chars"). Read literally, that rule wrongly prefixes an already-self-identifying long SKU
+token (`ECAM29043SB`, 11 chars) with an unrelated preceding word, producing `evoecam29043sb` — but the spec's
+own hand-verified table says the answer is `ecam29043sb`. The fix (apply the same ≤5-char gate to the
+candidate token too) is the ONLY rule that reproduces every row of the table at once, so it's a safe,
+confident inference rather than a guess — when a real-world verification table is provided, treat every row
+of it as a hard constraint the implementation must satisfy, and if the prose and the table disagree, the table
+wins (it's presumably what got hand-checked against production data); log the gap and the reasoning in
+`docs/questions.md` rather than silently picking one interpretation.
+
+## Pattern: a new "soft" selection cap that needs a two-pass (prefer X, fall back to any) search belongs in
+## ONE shared resolver closure next to the existing single-candidate `$addPick`-style gate, not duplicated
+## inline at every pick site (Spec 034 §2, `SelectLandingPagePicks::$pickBrandAware`)
+When several pick sites each currently do `$collection->first(fn ($p) => <predicate>)` then hand the single
+result to a shared `$addPick`-style acceptor, and a new rule needs "prefer a candidate matching an EXTRA
+condition, but if none exists take the best one that doesn't — and log when that happens" — don't bolt the
+extra condition onto each site's existing predicate plus a duplicated fallback search. Extract ONE closure
+(`fn (Collection $candidates, callable $predicate, string $role): ?Product`) that does the two-pass search
++ conditional log once, sharing the same `use (&...)` state (here: `$pickedIds`, `$brandCounts`) as the
+acceptor closure, and have every site call `$addPick($resolver($candidates, $predicate, $role), $role)`. Keeps
+the acceptor's own contract/signature completely unchanged (safer for "preserve existing behaviour exactly"
+instructions) while avoiding 5x copy-pasted two-pass-search-with-logging boilerplate — the actual DRY reading
+of "this must be a single chokepoint."
+
+## Gotcha: a Factory's default relationship (e.g. `'brand_id' => Brand::factory()`) creates a FRESH,
+## unrelated row on every `Model::factory()->create()` call unless explicitly overridden — existing test
+## fixtures that never pinned that FK can silently break when new logic starts keying off it. WHEN THAT
+## HAPPENS, FIX THE FIXTURE, NOT THE PRODUCTION RULE (Spec 034, corrected 2026-08-21)
+`ProductFactory::definition()` has `'brand_id' => \App\Models\Brand::factory()`. A pre-existing test in
+`SelectLandingPagePicksTest` built two "near-duplicate" products (e.g. "Keychron Q6 Max Black" vs
+"Keychron Q6 Max - Black") via two separate `makeEligibleProduct()` calls and got two DIFFERENT, unrelated
+Brand rows by accident — harmless under the old name-similarity-only duplicate guard (which never looked
+at `brand_id`), but broke the moment new logic started keying identity off `brand_id` (Spec 034's
+`modelKey()`, which treats the model key as AUTHORITATIVE once both sides have one).
+**First instinct was wrong and got caught in review:** widened the production rule so a confirmed
+model-key MISMATCH would still fall through to the old similarity check "just in case," reasoning the
+fixture's mismatched brands proved a fallback was still needed. That widening reintroduced the exact bug
+the spec exists to fix — real, genuinely-different products with high `similar_text` (Philips 4400 vs
+1200, 95.7% similar) started getting wrongly merged again, because a correct model-key "not a duplicate"
+verdict was being overruled by a stale string-similarity signal. **The correct fix was the fixture, not
+the rule:** the two Keychron rows are the SAME physical keyboard in the real world, so they should share
+one brand — pin both to `Brand::factory()->create(['name' => 'Keychron'])` explicitly, and the existing
+production rule (same brand + same model token = duplicate) handles it correctly with zero code changes.
+General lesson: when a NEW identity/business rule starts failing an OLD test because that test's fixture
+took an implicit factory default that happens not to match real-world data shape, the fixture is almost
+always the thing that's wrong (it was never asserting on that default, just relying on it by accident) —
+fix the fixture to represent reality accurately, and treat "I need to loosen the new rule to keep an old
+fixture passing" as a signal to stop and check whether the fixture itself is unrealistic before touching
+production logic.

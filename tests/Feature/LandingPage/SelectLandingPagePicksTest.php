@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\LandingPage;
 
 use App\Actions\SelectLandingPagePicks;
+use App\Models\Brand;
 use App\Models\Category;
 use App\Models\Feature;
 use App\Models\FeaturePreset;
@@ -14,6 +15,7 @@ use App\Models\ProductFeatureValue;
 use App\Models\ProductOffer;
 use App\Models\Tenant;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Log;
 use Tests\TestCase;
 
 /**
@@ -328,15 +330,24 @@ class SelectLandingPagePicksTest extends TestCase
         $category = Category::factory()->create(['slug' => 'lp-picks-duplicate-name']);
         $feature  = Feature::factory()->create(['category_id' => $category->id, 'is_higher_better' => true, 'unit' => null]);
 
+        // Both rows are pinned to the SAME brand deliberately: in reality these
+        // are two un-merged rows of the identical physical keyboard, so they
+        // share one brand. (ProductFactory's default hands every product a
+        // fresh, unrelated Brand unless overridden — leaving that default here
+        // would make modelKey() key them to two different brands and this
+        // fixture would no longer represent the real-world scenario it's
+        // named for.)
+        $keychron = Brand::factory()->create(['name' => 'Keychron']);
+
         $winner = $this->makeEligibleProduct($category, 'lp-picks-dup-winner', [
-            'name' => 'Keychron Q6 Max Black', 'price_tier' => 2,
+            'name' => 'Keychron Q6 Max Black', 'brand_id' => $keychron->id, 'price_tier' => 2,
         ]);
         $this->setScore($winner, $feature, 99);
 
         // Same physical keyboard under a separate, un-merged Product row (F29 root cause) —
         // must never be picked once its near-duplicate is already selected.
         $duplicate = $this->makeEligibleProduct($category, 'lp-picks-dup-variant', [
-            'name' => 'Keychron Q6 Max - Black', 'price_tier' => 2,
+            'name' => 'Keychron Q6 Max - Black', 'brand_id' => $keychron->id, 'price_tier' => 2,
         ]);
         $this->setScore($duplicate, $feature, 95);
 
@@ -652,5 +663,317 @@ class SelectLandingPagePicksTest extends TestCase
         $sortedPicked = $pickedIds;
         sort($sortedPicked);
         $this->assertSame($eligibleIds, $sortedPicked);
+    }
+
+    // =========================================================================
+    // Spec 034 §1 — model-identity variants (real names from the spec's
+    // 2026-08-20 super-auto Tier-3 regression, verified by hand).
+    // =========================================================================
+
+    /** @test */
+    public function it_rejects_the_z10_aluminum_white_as_a_variant_of_the_already_picked_z10_gen_1(): void
+    {
+        $category = Category::factory()->create(['slug' => 'lp-picks-model-key-z10']);
+        $feature  = Feature::factory()->create(['category_id' => $category->id, 'is_higher_better' => true, 'unit' => null]);
+
+        $jura = Brand::factory()->create(['name' => 'Jura']);
+
+        // The regression this spec exists for: one machine held BOTH "overall"
+        // and "premium" on the live page because 43.3% similar_text was far
+        // below the old 85% duplicate threshold (Spec 034 "Why").
+        $winner = $this->makeEligibleProduct($category, 'lp-picks-z10-gen-1', [
+            'name'       => 'JURA Z10 Super-Automatic Espresso Machine - Gen 1',
+            'brand_id'   => $jura->id,
+            'price_tier' => 2,
+        ]);
+        $this->setScore($winner, $feature, 99);
+
+        $variant = $this->makeEligibleProduct($category, 'lp-picks-z10-aluminum-white', [
+            'name'       => 'Jura Z10 Aluminum White',
+            'brand_id'   => $jura->id,
+            'price_tier' => 2,
+        ]);
+        $this->setScore($variant, $feature, 95);
+
+        $fillerIds = [];
+        foreach (range(1, 5) as $i) {
+            $filler = $this->makeEligibleProduct($category, "lp-picks-z10-filler-{$i}", ['price_tier' => 2]);
+            $this->setScore($filler, $feature, 50 + $i);
+            $fillerIds[] = $filler->id;
+        }
+
+        $picks     = (new SelectLandingPagePicks())->execute($category);
+        $pickedIds = collect($picks)->pluck('product_id')->all();
+
+        $this->assertContains($winner->id, $pickedIds, 'JURA Z10 Super-Automatic Espresso Machine - Gen 1 must win Best Overall');
+        $this->assertNotContains($variant->id, $pickedIds, 'Jura Z10 Aluminum White is the same machine (model key "z10") and must be rejected as a variant, not merely scored as a near-duplicate name');
+        foreach ($fillerIds as $fillerId) {
+            $this->assertContains($fillerId, $pickedIds, 'Distinct fillers must still fill the slot the variant was skipped for');
+        }
+        $this->assertCount(6, $pickedIds, 'winner + 5 distinct fillers; the variant is skipped entirely');
+    }
+
+    /** @test */
+    public function it_keeps_x10_dark_inox_and_j10_twin_as_distinct_picks_despite_82_percent_name_similarity(): void
+    {
+        $category = Category::factory()->create(['slug' => 'lp-picks-model-key-x10-j10']);
+        $feature  = Feature::factory()->create(['category_id' => $category->id, 'is_higher_better' => true, 'unit' => null]);
+
+        $jura = Brand::factory()->create(['name' => 'Jura']);
+
+        // 82.1% similar_text (Spec 034 "Why") — the guard the metric-inverted
+        // 85% threshold nearly false-positived on. Two genuinely different
+        // machines; the model key ("x10" vs "j10") must keep both selectable.
+        $x10 = $this->makeEligibleProduct($category, 'lp-picks-x10-dark-inox', [
+            'name'       => 'JURA X10 Dark Inox',
+            'brand_id'   => $jura->id,
+            'price_tier' => 2,
+        ]);
+        $this->setScore($x10, $feature, 99);
+
+        $j10 = $this->makeEligibleProduct($category, 'lp-picks-j10-twin', [
+            'name'       => 'JURA J10 Twin',
+            'brand_id'   => $jura->id,
+            'price_tier' => 2,
+        ]);
+        $this->setScore($j10, $feature, 95);
+
+        foreach (range(1, 5) as $i) {
+            $filler = $this->makeEligibleProduct($category, "lp-picks-x10-j10-filler-{$i}", ['price_tier' => 2]);
+            $this->setScore($filler, $feature, 50 + $i);
+        }
+
+        $picks     = (new SelectLandingPagePicks())->execute($category);
+        $pickedIds = collect($picks)->pluck('product_id')->all();
+
+        $this->assertContains($x10->id, $pickedIds, 'X10 Dark Inox must be picked');
+        $this->assertContains($j10->id, $pickedIds, 'J10 Twin is a different machine and must remain selectable despite scoring 82.1% similar to X10 Dark Inox');
+    }
+
+    /**
+     * Twin of the X10/J10 test above, guarding the OPPOSITE failure direction:
+     * X10/J10 proves the guard doesn't over-merge BELOW the 85% similar_text
+     * threshold; this proves it doesn't over-merge ABOVE it. "Philips 4400
+     * Series..." vs "Philips 1200 Series..." measures 95.7% similar_text —
+     * comfortably over the old threshold — yet these are two different
+     * machines with different model keys ("4400" vs "1200"). The model key is
+     * authoritative once both sides have one: a confirmed key difference must
+     * veto the similarity check, never be overruled by it. Both products are
+     * live in the real super-auto pool today (Philips 1200 = product 4161,
+     * Philips 4400 = product 4160).
+     */
+    /** @test */
+    public function it_keeps_philips_4400_and_philips_1200_as_distinct_picks_despite_95_7_percent_name_similarity(): void
+    {
+        $category = Category::factory()->create(['slug' => 'lp-picks-model-key-philips-4400-1200']);
+        $feature  = Feature::factory()->create(['category_id' => $category->id, 'is_higher_better' => true, 'unit' => null]);
+
+        $philips = Brand::factory()->create(['name' => 'Philips']);
+
+        $p4400 = $this->makeEligibleProduct($category, 'lp-picks-philips-4400', [
+            'name'       => 'Philips 4400 Series Fully Automatic Espresso Machine',
+            'brand_id'   => $philips->id,
+            'price_tier' => 2,
+        ]);
+        $this->setScore($p4400, $feature, 99);
+
+        $p1200 = $this->makeEligibleProduct($category, 'lp-picks-philips-1200', [
+            'name'       => 'Philips 1200 Series Fully Automatic Espresso Machine',
+            'brand_id'   => $philips->id,
+            'price_tier' => 2,
+        ]);
+        $this->setScore($p1200, $feature, 95);
+
+        foreach (range(1, 5) as $i) {
+            $filler = $this->makeEligibleProduct($category, "lp-picks-philips-4400-1200-filler-{$i}", ['price_tier' => 2]);
+            $this->setScore($filler, $feature, 50 + $i);
+        }
+
+        $picks     = (new SelectLandingPagePicks())->execute($category);
+        $pickedIds = collect($picks)->pluck('product_id')->all();
+
+        $this->assertContains($p4400->id, $pickedIds, 'Philips 4400 must be picked');
+        $this->assertContains($p1200->id, $pickedIds, 'Philips 1200 is a different machine (model key "1200" vs "4400") and must remain selectable despite scoring 95.7% similar to Philips 4400');
+    }
+
+    /** @test */
+    public function it_keeps_giga_10_and_giga_x8_as_distinct_picks(): void
+    {
+        $category = Category::factory()->create(['slug' => 'lp-picks-model-key-giga']);
+        $feature  = Feature::factory()->create(['category_id' => $category->id, 'is_higher_better' => true, 'unit' => null]);
+
+        $jura = Brand::factory()->create(['name' => 'Jura']);
+
+        $giga10 = $this->makeEligibleProduct($category, 'lp-picks-giga-10', [
+            'name'       => 'JURA GIGA 10 Espresso Machine',
+            'brand_id'   => $jura->id,
+            'price_tier' => 2,
+        ]);
+        $this->setScore($giga10, $feature, 99);
+
+        $gigaX8 = $this->makeEligibleProduct($category, 'lp-picks-giga-x8', [
+            'name'       => 'Jura GIGA X8 Professional',
+            'brand_id'   => $jura->id,
+            'price_tier' => 2,
+        ]);
+        $this->setScore($gigaX8, $feature, 95);
+
+        foreach (range(1, 5) as $i) {
+            $filler = $this->makeEligibleProduct($category, "lp-picks-giga-filler-{$i}", ['price_tier' => 2]);
+            $this->setScore($filler, $feature, 50 + $i);
+        }
+
+        $picks     = (new SelectLandingPagePicks())->execute($category);
+        $pickedIds = collect($picks)->pluck('product_id')->all();
+
+        $this->assertContains($giga10->id, $pickedIds, 'GIGA 10 must be picked (model key "giga10")');
+        $this->assertContains($gigaX8->id, $pickedIds, 'GIGA X8 is a different machine (model key "gigax8") and must remain selectable');
+    }
+
+    /** @test */
+    public function it_falls_back_to_the_similarity_guard_when_neither_product_has_a_model_token(): void
+    {
+        $category = Category::factory()->create(['slug' => 'lp-picks-model-key-fallback']);
+        $feature  = Feature::factory()->create(['category_id' => $category->id, 'is_higher_better' => true, 'unit' => null]);
+
+        // Neither name contains a digit anywhere -> modelKey() is null on both
+        // sides -> Addendum A §2b's original normalized-name similarity guard
+        // must still apply, completely unchanged.
+        $winner = $this->makeEligibleProduct($category, 'lp-picks-gaggia-cadorna', [
+            'name'       => 'Gaggia Cadorna Prestige',
+            'price_tier' => 2,
+        ]);
+        $this->setScore($winner, $feature, 99);
+
+        $duplicate = $this->makeEligibleProduct($category, 'lp-picks-gaggia-cadorna-dup', [
+            'name'       => 'Gaggia Cadorna Prestige - Black',
+            'price_tier' => 2,
+        ]);
+        $this->setScore($duplicate, $feature, 95);
+
+        $fillerIds = [];
+        foreach (range(1, 5) as $i) {
+            $filler = $this->makeEligibleProduct($category, "lp-picks-gaggia-filler-{$i}", ['price_tier' => 2]);
+            $this->setScore($filler, $feature, 50 + $i);
+            $fillerIds[] = $filler->id;
+        }
+
+        $picks     = (new SelectLandingPagePicks())->execute($category);
+        $pickedIds = collect($picks)->pluck('product_id')->all();
+
+        $this->assertContains($winner->id, $pickedIds, 'Gaggia Cadorna Prestige must win Best Overall');
+        $this->assertNotContains($duplicate->id, $pickedIds, 'The near-duplicate name must still be caught by the unchanged similarity fallback when neither product has a model token');
+        foreach ($fillerIds as $fillerId) {
+            $this->assertContains($fillerId, $pickedIds);
+        }
+    }
+
+    // =========================================================================
+    // Spec 034 §2 — brand cap (soft, keyed by brand_id)
+    // =========================================================================
+
+    /** @test */
+    public function it_caps_picks_per_brand_at_three_when_alternatives_exist(): void
+    {
+        $category = Category::factory()->create(['slug' => 'lp-picks-brand-cap-alternatives']);
+        $feature  = Feature::factory()->create(['category_id' => $category->id, 'is_higher_better' => true, 'unit' => null]);
+
+        $acme = Brand::factory()->create(['name' => 'Acme']);
+
+        // The 5 top-scored products in the whole pool all share one brand.
+        $acmeIds = [];
+        foreach ([100, 95, 90, 85, 80] as $i => $raw) {
+            $p = $this->makeEligibleProduct($category, "lp-picks-brand-cap-acme-{$i}", [
+                'brand_id'   => $acme->id,
+                'price_tier' => 2,
+            ]);
+            $this->setScore($p, $feature, $raw);
+            $acmeIds[] = $p->id;
+        }
+
+        // 5 alternative-brand fillers (factory default: a fresh, distinct brand
+        // per product), each scoring below every Acme product.
+        foreach ([70, 65, 60, 55, 50] as $i => $raw) {
+            $p = $this->makeEligibleProduct($category, "lp-picks-brand-cap-alt-{$i}", ['price_tier' => 2]);
+            $this->setScore($p, $feature, $raw);
+        }
+
+        $picks      = (new SelectLandingPagePicks())->execute($category);
+        $pickedIds  = collect($picks)->pluck('product_id')->all();
+        $acmePicked = collect($pickedIds)->intersect($acmeIds);
+
+        $this->assertCount(7, $pickedIds, 'All 10 eligible products exist; MAX_PICKS still caps the page at 7');
+        $this->assertLessThanOrEqual(3, $acmePicked->count(), 'No more than MAX_PICKS_PER_BRAND (3) picks may share a brand when under-quota alternatives exist');
+        $this->assertGreaterThan(0, $acmePicked->count(), 'Acme is genuinely the top-scored brand and must still contribute picks up to the cap');
+    }
+
+    /** @test */
+    public function it_softly_exceeds_the_brand_cap_when_only_one_brand_is_viable_and_logs(): void
+    {
+        Log::spy();
+
+        $category = Category::factory()->create(['slug' => 'lp-picks-brand-cap-monoculture']);
+        $feature  = Feature::factory()->create(['category_id' => $category->id, 'is_higher_better' => true, 'unit' => null]);
+
+        $onlyBrand = Brand::factory()->create(['name' => 'OnlyBrand']);
+
+        // Exactly MIN_PICKS eligible products, ALL one brand — a category with
+        // only one viable brand must still produce a page.
+        $ids = [];
+        foreach ([90, 85, 80, 75, 70] as $i => $raw) {
+            $p = $this->makeEligibleProduct($category, "lp-picks-brand-cap-mono-{$i}", [
+                'brand_id'   => $onlyBrand->id,
+                'price_tier' => 2,
+            ]);
+            $this->setScore($p, $feature, $raw);
+            $ids[] = $p->id;
+        }
+
+        $picks     = (new SelectLandingPagePicks())->execute($category);
+        $pickedIds = collect($picks)->pluck('product_id')->all();
+
+        $this->assertCount(5, $pickedIds, 'The only 5 eligible products must all be picked to reach MIN_PICKS, even though all 5 share one brand');
+        sort($ids);
+        $sortedPicked = $pickedIds;
+        sort($sortedPicked);
+        $this->assertSame($ids, $sortedPicked);
+
+        Log::shouldHaveReceived('info')
+            ->withArgs(fn (string $message) => str_contains($message, $category->name) && str_contains($message, 'brand cap'))
+            ->atLeast()->once();
+    }
+
+    /** @test */
+    public function the_brand_cap_counts_by_brand_id_not_brand_name_string(): void
+    {
+        $category = Category::factory()->create(['slug' => 'lp-picks-brand-cap-by-id']);
+        $feature  = Feature::factory()->create(['category_id' => $category->id, 'is_higher_better' => true, 'unit' => null]);
+
+        // Two DISTINCT Brand rows that happen to share a display name — the
+        // cap must key off brand_id, never the name string, or these would be
+        // wrongly treated as one brand and over-capped.
+        $brandA = Brand::factory()->create(['name' => 'Acme']);
+        $brandB = Brand::factory()->create(['name' => 'Acme']);
+
+        $ids = [];
+        foreach ([$brandA, $brandB] as $brand) {
+            foreach ([90, 85, 80] as $i => $raw) {
+                $p = $this->makeEligibleProduct($category, "lp-picks-brand-cap-id-{$brand->id}-{$i}", [
+                    'brand_id'   => $brand->id,
+                    'price_tier' => 2,
+                ]);
+                $this->setScore($p, $feature, $raw);
+                $ids[] = $p->id;
+            }
+        }
+
+        $picks     = (new SelectLandingPagePicks())->execute($category);
+        $pickedIds = collect($picks)->pluck('product_id')->all();
+
+        $this->assertCount(6, $pickedIds, 'All 6 products (3 per distinct brand_id, split across 2 brand rows sharing a name) fit within the cap and must all be picked');
+        sort($ids);
+        $sortedPicked = $pickedIds;
+        sort($sortedPicked);
+        $this->assertSame($ids, $sortedPicked);
     }
 }

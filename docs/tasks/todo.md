@@ -467,3 +467,88 @@ All 5 pw2d categories rescanned by owner; all 5 published pages re-selected from
   `tests/Feature/OfferIdRescanTargetingTest.php` (647 passed / 21 skipped, up from 641/21, 0 failures).
   **Unblocks the super-auto Tier-3 top-up** — super-auto ↔ semi-auto is the confirmed duplicate pair.
   *[API, Extension, Security]*
+
+## 2026-08-20 — super-auto Tier-3 top-up + wrong-category recovery
+
+- [x] **Super-auto top-up complete despite a wrong-page import.** Owner imported an Amazon SERP batch
+  (27 products) plus two Whole Latte Love pages — one of them **semi-automatic by mistake**. Net result:
+  super-auto pool **43 → 64**, buyable **41 → 58**, clearing the `thin` threshold (45). Semi-auto gained
+  the re-homed rows: pool 125 → 137, buyable 121 → 132.
+- [x] **The AI pipeline self-healed 9 of 19 mis-filed rows on its own.** `AiService::matchProduct()` is
+  brand-scoped but NOT category-scoped, so WLL semi-auto offers for brands already present in semi-auto
+  (Profitec MOVE, ECM Synchronika II, ECM Classika PID) merged onto the **existing correctly-categorised
+  product** and 6 duplicate stubs were deleted. Only brands with no processed products in the tenant
+  (Arkel, Stone) bypassed matching entirely — the documented heuristic short-circuit. Worth remembering:
+  a wrong-category import is partially self-correcting, so **let the queue drain before cleaning up**.
+- [x] **12 products swept out of super-auto and re-homed to semi-auto (category 16).**
+  `pw2d:ai-sweep-category` flagged all 12 with accurate per-product reasons and zero false positives
+  across 76 products — including 2 the owner and I both missed from the *Amazon* batch (#4172 Ninja Luxe
+  Café Pro ES701, #4181 Luxe Café Mini ES301 — assisted-manual portafilter machines, not bean-to-cup).
+  It correctly KEPT #4169 Ninja AutoBarista, which is a true super-auto. Each product's 6 stale
+  super-auto `product_feature_values` were cleared and re-scored against semi-auto features before
+  anything else touched them — avoiding the Product 3352 two-category feature bug. Verified post-run:
+  all now carry Espresso Quality / Steam Wand / Heat-Up, no super-auto leftovers.
+- [ ] **FINDING: `pw2d:ai-assign-categories` would pollute `manual-coffee-grinders` with grain mills.**
+  Its tenant-wide dry run proposed 20 assignments — our 12 (all correct) plus 8 pre-existing detached
+  products, **three of which are not coffee grinders**: #3853 Corona Manual Grain Mill, #4098 Estrella
+  Cast Iron Manual **Corn** Grinder, #4108 Victoria Cast Iron **Grain** Mill. The AI's rationale ("can be
+  used for grinding coffee") is technically true and editorially wrong; all three would have become
+  pick-eligible in the one category that is 0% unbuyable and feeds a live `/best/` page. **The blanket
+  command was NOT run** — the 12 were re-homed directly instead. Before this command is ever run
+  tenant-wide it needs a guard (category-specific negative examples in the prompt, or an owner-review
+  gate). *[AI, Tooling, Data]*
+- [ ] **Owner decision: the other 8 detached products.** Left untouched. Four look right (#3474 Philips
+  Barista Brew, #3485/#3486 Breville Barista Touch → semi-auto; #3986 Takeya → cold-brew), three are the
+  grain mills above, and #3503 Breville Oracle Jet → super-auto is a genuine judgment call (auto
+  grind/dose/tamp, but a portafilter machine). *[Data, Content]*
+- [ ] **NEXT: rescan both espresso categories, then regenerate.** super-auto 21 unchecked, semi-auto 13.
+  Requires the extension at **1.8** first (Spec 033), or the rescan won't send `offer_id` — and super-auto
+  ↔ semi-auto is the exact cross-category duplicate pair that fix exists for. Sequence per Spec 031:
+  rescan → regenerate → review → publish. The super-auto page also has sub-threshold price drift to fix
+  (Jura E8 quoted $2,800, now $2,550). *[QA, Content]*
+
+- [x] **Spec 034 — pick diversity: model-identity variants + brand cap** (`docs/specs/034-pick-diversity.md`, DRAFT→building).
+  The super-auto top-up grew the pool 41→62 buyable and made the page WORSE: `--dry-run` returned the
+  Jura Z10 in two slots (Gen 1 as *overall*, Aluminum White as *premium*) and **6 of 7 picks from one
+  brand**, displacing the only mid-price option ($2,000 De'Longhi) so the page jumped $680 → $3,800.
+  **The ≥85% `similar_text` guard cannot be tuned into correctness** — measured on the real names, the
+  true duplicate scores **43.3%** while two genuinely different machines (X10 Dark Inox vs J10 Twin)
+  score **82.1%**. The metric is inverted relative to truth. Fix: identity via **model token**
+  (`z10`, `giga10`, `ecam29043sb`) keyed with `brand_id`, similarity kept only as the null-token
+  fallback; plus a **soft** `MAX_PICKS_PER_BRAND = 3` that may be exceeded rather than leave a slot
+  empty. Partly addresses the open "repeated products within/across pages" item (Keychron Q11, K8 HE,
+  SM58 family). **Changes selection on all 11 pages — regenerate one at a time with review, never a
+  mass rebuild.** *[AI, Content, Architect]*
+  **BUILT 2026-08-21:** landed entirely in `SelectLandingPagePicks`'s `$isDuplicateOfPicked` (model-key
+  is AUTHORITATIVE once both sides have one — equal keys duplicate, different keys don't, full stop;
+  similarity runs only when at least one side has no model token, exactly per spec) and a new
+  `$pickBrandAware` resolver every pick site now funnels through (soft cap, `Log::info` on overflow).
+  Model-key algorithm needed one addition beyond the spec's prose to match its own verified table: the
+  join-candidate token itself must also be ≤5 chars, or a long self-identifying SKU like `ECAM29043SB`
+  gets wrongly prefixed with its line name (`evo`) — logged as a judgment call in `docs/questions.md`.
+  Coordinator caught and reverted a first-pass widening (running similarity even when both keys were
+  non-null-but-different) that reintroduced the exact over-merge failure Spec 034 exists to fix —
+  Philips 4400 vs 1200 (95.7% similar_text, different machines, both live in the pool) would have been
+  wrongly rejected as a duplicate; fixed by reverting to the spec's literal rule and fixing the
+  Keychron test's fixture (pin both rows to the same brand) instead of the production logic. 8 new
+  tests (real names from the spec's table plus the Philips 4400/1200 regression, twin of X10/J10 in the
+  opposite direction); full suite 672→680 passed, 21 skipped, all green. Regeneration of the two
+  espresso pages is still the separate next step below, deliberately not done in this pass per the
+  spec's "ship the rule, then regenerate one page at a time with review" sequencing.
+- [ ] **`/best/super-automatic-espresso-machines` regeneration DEFERRED pending Spec 034.** Page is
+  STALE on `selection_drift` only; its picks remain buyable and correctly priced, so there is no
+  reader-facing harm today. Regenerating now would publish a 6/7-single-brand page. Also still carries
+  the sub-threshold price drift (Jura E8 quoted $2,800, now $2,550) to fix in the same pass.
+  Semi-auto is in the same position and has the same brand-heavy WLL inventory. *[Content]*
+- [ ] **#3568 Eureka Costanza R (WLL) — collection-scoped URL is now a CONFIRMED systematic extractor
+  gap.** Failed the rescan on both 2026-08-16 and 2026-08-20, same cause: its stored URL is
+  `wholelattelove.com/collections/semi-automatic-espresso…` rather than product-scoped, so the extractor
+  cannot read it. It is the sole reason semi-auto still reports `import_debt`. **It is also currently
+  pick-eligible** — price $1,799, `condition` NULL, `listing_flags` NULL. Fix: repoint the offer at the
+  product-scoped URL, then single-scan. *[Extension, Data]*
+- [ ] **FINDING: pick eligibility does not require `health_checked_at`.** `ListingHealth::isPurchasable()`
+  reads NULL `condition`/`listing_flags` as clean, so an offer that was **never verified** is
+  indistinguishable from one **verified clean**. Spec 031's Tier-3 rule ("never select picks from an
+  unverified pool") is therefore a human process rule with no code enforcement — #3568 above is a live
+  example. Consider requiring `health_checked_at IS NOT NULL` for pick eligibility, or surfacing
+  unverified picks as a distinct `AuditLandingPageFreshness` reason. *[API, Content]*
