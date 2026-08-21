@@ -344,7 +344,11 @@ class ProblemProducts extends Page implements HasTable
                         ->modalHeading('Mark selected products as ignored?')
                         ->action(function (Collection $records) {
                             $count = $records->count();
-                            Product::whereIn('id', $records->pluck('id'))->update(['is_ignored' => true]);
+                            // Spec 036 §2 — model-level saves (not a mass Builder::update()) so
+                            // ProductObserver::saved() fires the instant freshness-audit trigger
+                            // for every affected landing page. See ProblemProducts.php:325 (the
+                            // single-record Ignore action) for the same requirement.
+                            $records->each(fn (Product $p) => $p->update(['is_ignored' => true]));
                             Notification::make()->title("{$count} products marked as ignored")->success()->send();
                         })
                         ->deselectRecordsAfterCompletion(),

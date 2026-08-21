@@ -123,7 +123,11 @@ class AiAssignCategories extends Command implements Isolatable
                             if ($isDryRun) {
                                 $this->line("  <fg=yellow>WOULD IGNORE</> #{$item['id']} {$product->name}");
                             } else {
-                                Product::where('id', (int) $item['id'])->update(['is_ignored' => true]);
+                                // Spec 036 §2 — model-level save (not a mass Builder::update())
+                                // so ProductObserver::saved() fires, same reasoning as the
+                                // category-assignment branch above.
+                                $product->is_ignored = true;
+                                $product->save();
                                 $this->line("  <fg=yellow>IGNORED</> #{$item['id']} {$product->name}");
                             }
                         } else {

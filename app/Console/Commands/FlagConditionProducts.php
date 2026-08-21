@@ -120,7 +120,10 @@ class FlagConditionProducts extends Command
 
         $ids = collect($matches)->map(fn (array $m) => $m[0]->id)->unique()->values();
 
-        Product::whereIn('id', $ids)->update(['is_ignored' => true]);
+        // Spec 036 §2 — model-level saves (not a mass Builder::update()) so
+        // ProductObserver::saved() fires the instant freshness-audit trigger for
+        // any landing page already showing one of these condition-marked products.
+        Product::whereIn('id', $ids)->cursor()->each(fn (Product $p) => $p->update(['is_ignored' => true]));
 
         $this->info("Flagged {$ids->count()} product(s) as is_ignored=true.");
 

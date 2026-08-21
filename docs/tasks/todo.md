@@ -68,7 +68,10 @@ Consolidated from 15 parallel agent audits (5 chunks x 3 agents). Deduplicated a
 
 - [ ] **Q10: Replace hardcoded Amazon orange** -- `bg-[#FF9900]` on CTA buttons. Use `var(--color-primary)`. *[Review-Frontend]*
 
-- [ ] **Q11: Use bulk update for Mark as Ignored** -- Loops individual `$record->update()`. Use `whereIn()->update()`. *[Review-Filament]*
+- [x] **Q11: Use bulk update for Mark as Ignored** -- WONTFIX (Spec 036 §3, 2026-08-21). Per-record saves are
+  load-bearing: `ProductObserver` is the freshness-audit trigger for `is_ignored` flips, and `Builder::update()`
+  fires no Eloquent events. This exact advice is what produced the `ProblemProducts.php:347` bug (H-B,
+  audit-2026-08-21) — applying it to `ProductResource.php:262-266` would break that site too. *[Review-Filament]*
 
 - [ ] **Q12: Add `url_hash` column to product_offers** -- TEXT column can't be indexed for equality. Add CHAR(64) hash. *[Perf-API]*
 
@@ -540,12 +543,15 @@ All 5 pw2d categories rescanned by owner; all 5 published pages re-selected from
   reader-facing harm today. Regenerating now would publish a 6/7-single-brand page. Also still carries
   the sub-threshold price drift (Jura E8 quoted $2,800, now $2,550) to fix in the same pass.
   Semi-auto is in the same position and has the same brand-heavy WLL inventory. *[Content]*
-- [ ] **#3568 Eureka Costanza R (WLL) — collection-scoped URL is now a CONFIRMED systematic extractor
-  gap.** Failed the rescan on both 2026-08-16 and 2026-08-20, same cause: its stored URL is
-  `wholelattelove.com/collections/semi-automatic-espresso…` rather than product-scoped, so the extractor
-  cannot read it. It is the sole reason semi-auto still reports `import_debt`. **It is also currently
-  pick-eligible** — price $1,799, `condition` NULL, `listing_flags` NULL. Fix: repoint the offer at the
-  product-scoped URL, then single-scan. *[Extension, Data]*
+- [x] **CORRECTED + RESOLVED: #3568 Eureka Costanza R was DELISTED, not a URL-shape problem.** Earlier
+  logged as a "confirmed systematic extractor gap" with collection-scoped WLL URLs. That was wrong on
+  both counts, verified 2026-08-21: a sibling collection-scoped URL
+  (`/collections/semi-automatic-espresso-machines/products/profitec-go-espresso-machine`) returns **200**,
+  and most collection-scoped offers in the table are health-checked successfully — the URL shape is fine.
+  #3568's own page **404s** and WLL's site search returns no Costanza product: the listing is gone.
+  The extension's "error" on both 08-16 and 08-20 was a dead page, reported accurately. Resolved by
+  flagging its only offer `unavailable` + `out_of_stock` and health-stamping it, which is the state a
+  successful scrape would have produced; it clears itself if WLL ever relists. *[Data]*
 - [ ] **FINDING: pick eligibility does not require `health_checked_at`.** `ListingHealth::isPurchasable()`
   reads NULL `condition`/`listing_flags` as clean, so an offer that was **never verified** is
   indistinguishable from one **verified clean**. Spec 031's Tier-3 rule ("never select picks from an
@@ -614,3 +620,151 @@ All 5 pw2d categories rescanned by owner; all 5 published pages re-selected from
   exercised for command-driven re-homes because the mass update never reached it. Test: 6 swept products
   across 2 pages produce exactly 2 audit jobs, not 6. 7 new tests, `php artisan test` 687 passed / 21
   skipped (was 680/21). *[API, Data, Perf]*
+- [x] **Breville Oracle Jet family consolidated (2026-08-21).** Four rows, one machine. #3503 turned out
+  to share ASIN `B0DYGDKQ85` with #3292 — a true duplicate, not a colourway — and being detached it was
+  structurally unreachable by any category rescan, which is why it was the only never-health-checked row.
+  It also held the family's only Whole Latte Love offer. Resolved: moved that WLL offer onto canonical
+  #3292 (no unique-constraint clash), deleted #3503's duplicate-ASIN Amazon offer, and ignored #3503 plus
+  the two colourway rows #3433 Damson Blue / #3461 Olive Tapenade (both $1,999.95 against #3292's
+  $1,974). **#3292 is now a genuine multi-store product** — Amazon $1,974 + WLL $1,999.95 — which is
+  better than any of the four rows was alone. `pw2d:merge-duplicates` could never have caught these: it
+  matches on *identical* `(name, brand_id, category_id)` and all four names differ. *[Data]*
+- [ ] **Owner decision: are the two Jura Z10 rows one machine or two generations?** #3507 "Jura Z10
+  Aluminum White" (Amazon $4,199 + WLL $4,499) and #4243 "JURA Z10 Super-Automatic — Gen 1" (WLL $4,299,
+  currently the *overall* pick on the live super-auto page). Whole Latte Love lists them at two distinct
+  product URLs, one explicitly "-gen-1", so this may be a real generational split rather than a
+  colourway duplicate. **Not merged** — needs product knowledge I don't have. If they are one machine,
+  merging would consolidate three offers onto one row and change the super-auto page's top pick.
+  *[Data, Content]*
+- [ ] **#3292's Whole Latte Love offer is unchecked** (moved from #3503, which had never been scanned).
+  One single-scan clears it. Note it does NOT show as `import_debt`: Spec 032's `never_checked` is a
+  PRODUCT-level metric (products with *zero* health-stamped offers), so a product with one checked and
+  one unchecked offer reads as clean. Worth knowing when reading that column — offer-level gaps hide
+  behind it. *[QA, Tooling]*
+
+## 2026-08-21 — Tier-3 discovery complete; all 6 c2d pages rebuilt
+
+- [x] **Every coffee2decide landing page is FRESH, rebuilt from a freshly verified pool.** super-auto
+  (twice — once after the Z10 merge changed its top pick), manual-grinders, semi-auto, cold-brew and
+  gooseneck-kettles all regenerated 2026-08-21; pour-over unchanged and still fresh. Prose authored by
+  Claude to the style + grounding contract, machine-checked clean against banned + condition words, every
+  figure traced to the pick payload. Each row backed up on prod (`/tmp/{sa,mg,se,cb,gk}_backup_*.json`)
+  before writing. *[Content]*
+- [x] **Tier-3 discovery objective met — no c2d category is `thin` any more.** Buyable pools, start → end
+  of the two-day push: super-auto **41 → 61**, gooseneck-kettles **34 → 48**, cold-brew **36 → 51**.
+  The kettle and cold-brew end figures are *post-sweep*; raw import numbers were higher (56 and 53) before
+  miscategorised rows were removed, so quote the swept figures.
+- [x] **The `iced coffee maker` / `electric kettle` warning proved correct — sweeps caught 15 strays,
+  2 of them live picks.** Cold-brew: 6 removed, including a **Keurig K-Brew+Chill sitting in the premium
+  slot** and a Primula iced *tea* maker. Kettles: 9 removed, including the **Fellow Corvo EKG Pro in the
+  tea-drinker slot** — a traditional-spout kettle whose gooseneck sibling is the Fellow Stagg, an easy
+  confusion — plus a Fire-Maple camping pot. **The AI Bouncer wrote accurate summaries and admitted them
+  anyway** ("a standard hot pod brewer masquerading as an iced coffee machine"): `evaluateProduct` gates
+  quality, not category fit. **Always run `pw2d:ai-sweep-category --dry-run` after a Tier-3 import,
+  before regenerating.** Worth adding to Spec 031's Tier-3 sequence: import → **sweep** → rescan →
+  regenerate. *[Content, AI]*
+- [x] **Spec 035 validated in production.** The cold-brew sweep detached 6 products and the kettle sweep 9;
+  stale cross-category `product_feature_values` stayed at **0** throughout (the observer cleared them
+  automatically — pre-035 these would have orphaned ~90 rows), freshness audits fired, and the
+  `ShouldBeUnique` guard held with no queue flood. *[QA]*
+- [ ] **Spec 031 amendment: add the sweep step to the Tier-3 sequence.** Currently documented as
+  "import → rescan → regenerate". Today proved a sweep belongs between import and rescan — otherwise you
+  rescan products that are about to be removed, and risk publishing them. *[Docs, Architect]*
+
+## Audit 2026-08-21 — three-agent review of Specs 032–035 (all live in production)
+
+Reports: `docs/reviews/audit-2026-08-21-review.md`, `docs/security/audit-2026-08-21-security.md`,
+`docs/performance/audit-2026-08-21-performance.md`. **0 critical, 6 high, 9 medium.** No new cross-tenant
+read or write, no injection, no mass-assignment gap — the `offer_id` primitive is correctly scoped on both
+paths (verified: `Rule::exists`'s presence verifier uses the query builder, so `BelongsToTenant` would NOT
+apply and the explicit `where('tenant_id')` is load-bearing).
+
+- [ ] **H-A (Spec 034, WORST — my design defect, live on 6 pages): `modelKey()` false-merges distinct
+  products.** It takes the first digit-bearing token as identity, which breaks three ways, all confirmed
+  against production data 2026-08-21:
+  (1) **a brand name containing a digit becomes the key** — all **6** `1Zpresso` grinders (K-Ultra, Q Air,
+  J, X-Ultra, Q, J-Ultra) collapse to `291:1zpresso`, and the X-Ultra is the *live overall pick* on
+  `/best/manual-coffee-grinders`, so five siblings were silently excluded from every other slot;
+  (2) **size/quantity tokens read as model identity** — `Bodum Chambord 8 Cup` = `Bodum Brazil 8 Cup` =
+  `1:8`; `Takeya Deluxe 2 Quart` = `Takeya Glass 2 Qt`; `Chemex Classic 8-Cup` = `Chemex Glass Handle 8-Cup`;
+  (3) **decimals split** — `Kettle 0.8L` and `0.9L` both key to `0`; `Speed Boil 1.7L` keys to `boil1`.
+  Worst single case: **9** Hario V60 pour-over products (sizes 01/02/03, metal, ceramic, decanter, glass
+  set) all collapse to `266:v60`. Variant rejection **logs nothing**, so this leaves no trace, and the key
+  comparison short-circuits so the similarity guard cannot rescue it. Escalation path found by the
+  reviewer: on a thin category this can drop the pool below `MIN_PICKS`, `execute()` throws,
+  `AuditLandingPageFreshness::hasSelectionDrift()` catches and returns true, and the page is stamped
+  `selection_drift` on every audit forever, busting page + sitemap cache each time.
+  **Fix direction:** exclude brand-name tokens from *candidate selection* (not just from joining, which is
+  all Spec 034 specified); reject bare numeric tokens followed by a unit/quantity word (cup, quart, qt, oz,
+  l, ml, g, pack); handle decimals as one token. A real model code almost always mixes letters and digits
+  (`z10`, `bes870xl`, `c40`, `a53`, `v60`) — a bare number is usually a size. Needs a spec, not a patch.
+  *[AI, Content, Architect]*
+- [x] **H-B (Spec 035 incomplete — mine): 3 of 5 mass-update sites survive.** `ProductObserver` has TWO
+  triggers; Spec 035 fixed both `category_id` sites and left every `is_ignored` one:
+  `AiAssignCategories.php:126` (**eleven lines below its own fix**), `FlagConditionProducts.php:123`,
+  `ProblemProducts.php:347`. Note `ProblemProducts.php:325` (single-record) does fire the observer while
+  `:347` (bulk) does not — **same page, same button semantics, opposite behaviour**, and `:347` is the
+  triage path the owner actually uses. Fix is the same one-line treatment. **Also: todo item Q11 is now an
+  instruction to REINTRODUCE this bug into `ProductResource.php:262-266` — close it WONTFIX or amend it.**
+  *[API, Filament]*
+  **Closed by Spec 036 §2 (2026-08-21):** all three sites converted to model-level saves
+  (`ProblemProducts.php:347` — `$records->each(fn ($p) => $p->update(...))`; `FlagConditionProducts.php:123` —
+  `cursor()->each(...)`; `AiAssignCategories.php:126` — `$product->is_ignored = true; $product->save();`).
+  Regression pinned in `tests/Feature/Filament/ProblemProductsBulkIgnoreTest.php`,
+  `tests/Feature/Commands/FlagConditionProductsCommandTest.php`, and
+  `tests/Feature/Commands/AiAssignCategoriesCommandTest.php`. Q11 closed WONTFIX.
+- [x] **H-C (Spec 035 × pre-existing): a failed rescan can leave a product with ZERO feature values,
+  silently.** `RescanProductFeatures.php:115-117` swallows the exception on the final attempt, so the job is
+  marked *successful* and never reaches `failed_jobs` — `queue:retry` can never recover it. Pre-035 that
+  only meant stale scores; post-035 the observer has already **committed** the delete first. Confirmed no
+  transaction on the command path (`config/queue.php` has `after_commit => false`), so this is reachable in
+  practice. Such a product still passes pick eligibility, which never checks feature values.
+  **Inversion worth knowing: Filament is the SAFE path** (`EditRecord::save()` wraps in a transaction and
+  the `database` queue driver shares the connection); the automated command is the unsafe one.
+  **Fix: delete the conditional so it always rethrows** — one line, ship before the next
+  `pw2d:ai-assign-categories`. Do NOT wrap the observer in a transaction. *[API]*
+  **Closed by Spec 036 §1 (2026-08-21):** the `if ($this->attempts() < $this->tries)` guard deleted; catch
+  block now always rethrows, no transaction added. Regression pinned in
+  `tests/Feature/Jobs/RescanProductFeaturesTest.php` (drives a real `database`-connection `queue:work` run to
+  a genuine 3rd-of-3 attempt — `QUEUE_CONNECTION=sync` can't reproduce this bug since `SyncJob::attempts()` is
+  hardcoded to 1).
+- [ ] **H-D: `import_debt` may be un-clearable, making the cron exit code permanently red.**
+  `background.js:499` never sends `condition: 'unknown'`, so `ListingHealthService::apply()` early-returns
+  at the `$condition === null` check and never stamps `health_checked_at` — but `content.js:154` sets
+  `'unknown'` whenever the Amazon buy box didn't load. Those offers can never be stamped, so their category
+  reports `import_debt` forever and `pw2d:categories:health` exits FAILURE nightly, while Spec 031 tells the
+  operator picks must not be selected there. **The three single-product `import_debt` stragglers may be
+  unstampable rows rather than genuine debt — check before treating them as a scanning backlog.**
+  *[Extension, API]*
+- [ ] **H-E (Spec 035 blast radius not enumerated): `ProcessPendingProduct.php:153` destroys all feature
+  values on the hottest `category_id` write path in the system**, and `ListProducts.php:44-47` bulk-dispatches
+  it. A 50-product "Retry Failed" wipes every previously-rejected product's feature values with no rescan
+  queued. Owner decision: accept, or narrow the null branch using `getOriginal('category_id')`. *[API]*
+- [ ] **H-F (Spec 035 × H2): queue starvation.** All jobs share `default` with 2 workers, so a 100-product
+  assign blocks `ProcessPendingProduct` — the extension's live ingest path — for ~12 min, and
+  `ai-assign-categories` runs *during* a Tier-3 import by design. Fix is `public string $queue = 'bulk';`
+  on `RescanProductFeatures` + `--queue=default,bulk` in supervisor, NOT a rate limiter (2 workers already
+  cap Gemini at ~5-15 req/min against a 150 RPM tier). Also covers the pre-existing Filament bulk action.
+  *[Perf, DevOps]*
+
+**Mediums** (detail in the reports): `offer_id` honoured without checking the payload `url` matches the
+targeted row (M-1/MEDIUM-2 — fix restores "you must know the URL" as a precondition); a store-mismatch +
+URL miss silently **creates** a product and the extension buckets `created` as `updated`, so a rescan that
+minted a duplicate reports a clean pass (M-2); omitting `scraped_price` nulls the stored price via
+undefined-array-key (M-4); Spec 032's `no_data` categories sort FIRST because MySQL sorts NULL first on ASC,
+defeating the spec's own "row one is the next to sweep" purpose (M2/LOW); the new "Unchecked" deep-link uses
+`tableFilters[categories]` while `ProductResource` declares `SelectFilter::make('category')`, so it opens
+unfiltered (MEDIUM-3, copy-pasted from the pre-existing "Rows" column); `AssessCategoryHealth::execute(Tenant)`
+returns silent all-zero rows if its argument disagrees with ambient tenancy (MEDIUM-4); Spec 032's docblock
+credits the `category_id` FK pin when `BelongsToTenant`'s global scope is the actual control (L-1).
+
+**Validated:** Spec 032's one-query claim holds and its invariance test asserts the right thing; the
+no-cache decision holds; declining the `(product_id, health_checked_at)` index was right (scaling knee is
+~25k pool products, currently 940); no Gemini rate-limiting middleware warranted; `ShouldBeUnique` genuinely
+collapses the Spec 035 fan-out; `buyable_count` and `ProductCompare::scoredProducts()` apply byte-identical
+filters. Spec 033 is a net **performance win** and partially retires the deferred `product_offers.url` index.
+- [x] **Spec 036 — observer coverage on `is_ignored` + failure visibility** (`docs/specs/036-observer-coverage-and-failure-visibility.md`,
+  built 2026-08-21). Closes audit H-B and H-C: always rethrow in `RescanProductFeatures` so an exhausted
+  rescan lands in `failed_jobs` instead of being marked successful; model-level saves at the three
+  surviving `is_ignored` mass-update sites so `ProductObserver` actually fires; closed todo Q11 WONTFIX.
+  *[API, Filament]*

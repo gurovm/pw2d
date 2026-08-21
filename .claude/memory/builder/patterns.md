@@ -847,3 +847,54 @@ ever reaches the real queue connection or `Queue::fake()`'s `push()` — so `Que
 count assertions in tests reflect real dedup behaviour, not an artifact of faking. Worth this level of
 verification because "the interface is present" and "the dedup actually fires in this test/prod config"
 are different claims, and the whole point of a queue-flood test is trusting the count assertion.
+
+## Gotcha: `QUEUE_CONNECTION=sync` (phpunit.xml default) CANNOT reproduce an "exhausted retries" bug —
+## `Illuminate\Queue\Jobs\SyncJob::attempts()` is hardcoded to return 1 (Spec 036, H-C)
+Any job logic that branches on `$this->attempts()` (e.g. the pre-fix `RescanProductFeatures` guard
+`if ($this->attempts() < $this->tries) throw $e;`) behaves identically on every dispatch under the sync
+driver, because `SyncJob::attempts()` never reads a real attempt counter — it's a constant `1`. A job with
+`$tries = 3` therefore always sees `1 < 3` and always rethrows under sync, which is exactly backwards from
+the bug (final attempt swallowing the exception) this needed to catch. **To actually test "N attempts,
+final one lands in `failed_jobs`":** switch `config(['queue.default' => 'database'])` for the test, dispatch
+for real, then drive it to exhaustion with N iterations of `Artisan::call('queue:work', ['connection' =>
+'database', '--once' => true, '--queue' => 'default', '--sleep' => 0])` — resetting
+`DB::table('jobs')->update(['available_at' => now()->getTimestamp()])` before each iteration to skip past
+the job's own `$backoff` delay (otherwise the next `pop()` finds nothing available and silently no-ops).
+`Illuminate\Queue\DatabaseQueue::markJobAsReserved()` increments `attempts` on every real pop, so this is
+the only way `$job->attempts()` (and therefore `$this->attempts()` inside `handle()`) reflects a genuine
+Nth-of-M state. `connection` is a positional ARGUMENT on `queue:work`, not a `--connection` option — passing
+`'--connection' => 'database'` throws `InvalidOptionException`. Verified the whole technique by writing the
+test BEFORE the fix and confirming it reproduced the exact silent-swallow symptom (`jobs` count 0, AND
+`failed_jobs` count 0 — the job just vanishes, "succeeded" per Laravel), then re-ran unchanged after
+applying the one-line fix and watched it go to `jobs=0, failed_jobs=1`.
+
+## Gotcha: `$this->assertDatabaseCount($table, $count, $message)` — the 3rd positional arg is a
+## CONNECTION NAME, not a PHPUnit failure message. Passing a string message there throws
+## `InvalidArgumentException: Database connection [<your message>] not configured.`
+`Illuminate\Foundation\Testing\Concerns\InteractsWithDatabase::assertDatabaseCount(string $table, int
+$count, $connection = null)` — there is no message parameter. Put explanatory text in a `//` comment above
+the assertion instead (matches this codebase's existing convention of bare `$this->assertSame($expected,
+$actual, 'message')` — note `assertSame`/`assertTrue`/etc. DO take a message as their last arg; it's
+specifically the `assertDatabase*` Laravel testing helpers that don't).
+
+## Pattern: driving a real Filament `BulkAction`/`Action` closure (not reimplementing its body) when the
+## page's own base table query hits F12 (unsupported `REGEXP` on sqlite) — `ProblemProducts` specifically
+`ProblemProducts::problemQuery()` (the page's OWN `->query(...)`, not just a filter) unconditionally
+includes a `whereRaw('LOWER(name) REGEXP ?', ...)` clause, so `Livewire::test(ProblemProducts::class)` fails
+immediately on mount with `SQLSTATE[HY000]: ... no such function: REGEXP` under the sqlite test driver —
+confirmed by writing a scratch test and running it before assuming impracticality. Three existing Filament
+tests (`ProductResourceTest`, `CategoryResourceHealthTest`, `LandingPageResourceTest`) route around F12 by
+testing a DIFFERENT, unaffected Livewire component instead (e.g. `ListProducts` rather than a full-page HTTP
+request that renders `ProblemProducts::getNavigationBadge()` in the nav). That option doesn't exist when
+`ProblemProducts` itself is the page under test (Spec 036's bulk-ignore test). **Working fix, test-file-only,
+touches zero app code:** register a REGEXP callback on the sqlite PDO connection in `setUp()` —
+`DB::connection()->getPdo()->sqliteCreateFunction('REGEXP', fn ($p, $s) => preg_match('/'.$p.'/i', (string)
+$s) === 1 ? 1 : 0, 2);`. Production runs MySQL, which supports `REGEXP` natively, so this changes nothing
+about app behavior — it only fills a sqlite capability gap so `Livewire::test()->callTableBulkAction(...)`/
+`->callTableAction(...)` can drive the REAL closures defined in `ProblemProducts::table()`. Confirmed this
+actually exercises production code (not a reimplementation) by reverting the app-code fix and rerunning:
+the test failed with the exact pre-fix symptom (`AuditLandingPageFreshnessJob` never pushed). Also: Filament
+notification assertions use `Notification::assertNotified('exact title')`, exposed on the `Testable` mixin
+as `$component->assertNotified(...)` via `Filament\Notifications\Testing\TestsNotifications` — no bespoke
+event-dispatch inspection needed. `landing_pages` is unique on `(tenant_id, category_id)`, so multiple test
+landing pages referencing different products each need their OWN `Category`, not a shared one.

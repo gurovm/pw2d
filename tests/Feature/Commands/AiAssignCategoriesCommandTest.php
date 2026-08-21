@@ -94,6 +94,23 @@ class AiAssignCategoriesCommandTest extends TestCase
         return $prop->getValue($job) === $landingPageId;
     }
 
+    /** AiService spy for the --ignore-unmatched branch: every product is unmatched. */
+    private function makeUnmatchedSpy(int $productId): object
+    {
+        return new class ($productId) extends AiService {
+            public function __construct(private int $productId) {}
+
+            public function assignCategories(Collection $products, array $categoryOptions): array
+            {
+                return [[
+                    'id'          => $this->productId,
+                    'category_id' => null,
+                    'reason'      => 'No matching category',
+                ]];
+            }
+        };
+    }
+
     // =========================================================================
     // The #3352 regression (Spec 035): a product must never hold two
     // categories' worth of feature values after being re-homed.
@@ -185,6 +202,51 @@ class AiAssignCategoriesCommandTest extends TestCase
         ]);
 
         tenancy()->initialize($this->tenant);
+
+        Queue::assertPushed(
+            AuditLandingPageFreshnessJob::class,
+            fn (AuditLandingPageFreshnessJob $job) => $this->jobTargetsPage($job, $page->id)
+        );
+    }
+
+    /**
+     * Spec 036 §2 / H-B (2026-08-21 audit) — the --ignore-unmatched branch used a
+     * mass `Product::where('id', ...)->update(...)`, 11 lines below the category-
+     * assignment branch's own model-level-save fix (Spec 035). No Eloquent event
+     * fired, so a page already showing an unmatched product as a pick never got
+     * re-audited when it was flipped to is_ignored=true.
+     */
+    /** @test */
+    public function ignore_unmatched_dispatches_the_freshness_audit_for_pages_referencing_the_product(): void
+    {
+        $pageCategory = Category::factory()->create();
+
+        // Uncategorized (the only state the command touches), already referenced by
+        // a landing page pick — the shape a category re-home or manual pick edit
+        // could leave behind.
+        $product = Product::factory()->create(['category_id' => null, 'is_ignored' => false]);
+
+        $page = LandingPage::factory()->create([
+            'category_id' => $pageCategory->id,
+            'picks'       => [
+                ['product_id' => $product->id, 'role' => 'overall', 'headline' => 'H', 'body' => 'B', 'est_price_snapshot' => 100],
+            ],
+        ]);
+
+        app()->instance(AiService::class, $this->makeUnmatchedSpy($product->id));
+
+        Queue::fake([AuditLandingPageFreshnessJob::class]);
+
+        tenancy()->end();
+
+        Artisan::call('pw2d:ai-assign-categories', [
+            'tenant'               => 'assign-cmd-tenant',
+            '--ignore-unmatched'   => true,
+        ]);
+
+        tenancy()->initialize($this->tenant);
+
+        $this->assertTrue($product->fresh()->is_ignored);
 
         Queue::assertPushed(
             AuditLandingPageFreshnessJob::class,

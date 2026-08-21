@@ -112,9 +112,8 @@ class RescanProductFeatures implements ShouldQueue
                 'error'      => $e->getMessage(),
             ]);
 
-            if ($this->attempts() < $this->tries) {
-                throw $e; // trigger queue retry with backoff
-            }
+            throw $e; // trigger queue retry with backoff; on the final attempt this
+                      // lets the queue worker record the failure in failed_jobs.
         }
     }
 }

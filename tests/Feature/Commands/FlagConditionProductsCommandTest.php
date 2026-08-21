@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Commands;
 
+use App\Jobs\AuditLandingPageFreshnessJob;
 use App\Models\Category;
+use App\Models\LandingPage;
 use App\Models\Product;
 use App\Models\ProductOffer;
 use App\Models\Tenant;
 use Illuminate\Console\Command;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
 /**
@@ -136,6 +139,45 @@ class FlagConditionProductsCommandTest extends TestCase
         tenancy()->initialize($this->tenant);
         $this->assertTrue($renewed->fresh()->is_ignored, '--ignore must flag the matched product');
         $this->assertFalse($clean->fresh()->is_ignored, '--ignore must not touch clean products');
+    }
+
+    /**
+     * Spec 036 §2 / H-B (2026-08-21 audit) — before this fix, --ignore ran a mass
+     * `Product::whereIn('id', $ids)->update(...)`, which fires no Eloquent events,
+     * so a landing page already showing a condition-marked product as a pick kept
+     * rendering it until the nightly audit caught up. The fix (per-record saves)
+     * makes ProductObserver::saved() fire the instant freshness-audit trigger.
+     */
+    /** @test */
+    public function ignore_flag_dispatches_the_freshness_audit_for_pages_referencing_the_flagged_product(): void
+    {
+        $category = Category::factory()->create();
+
+        $renewed = $this->makeProductWithOfferTitle($category, 'fcp-freshness-renewed', 'Some Keyboard (Renewed)');
+
+        $page = LandingPage::factory()->create([
+            'category_id' => $category->id,
+            'picks'       => [
+                ['product_id' => $renewed->id, 'role' => 'overall', 'headline' => 'H', 'body' => 'B', 'est_price_snapshot' => 100],
+            ],
+        ]);
+
+        Queue::fake([AuditLandingPageFreshnessJob::class]);
+
+        tenancy()->end();
+
+        Artisan::call('pw2d:flag-condition-products', ['tenant' => 'fcp-tenant', '--ignore' => true]);
+
+        Queue::assertPushed(
+            AuditLandingPageFreshnessJob::class,
+            function (AuditLandingPageFreshnessJob $job) use ($page) {
+                $ref  = new \ReflectionClass($job);
+                $prop = $ref->getProperty('landingPageId');
+                $prop->setAccessible(true);
+
+                return $prop->getValue($job) === $page->id;
+            }
+        );
     }
 
     /** @test */
