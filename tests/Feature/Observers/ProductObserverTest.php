@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace Tests\Feature\Observers;
 
 use App\Jobs\AuditLandingPageFreshnessJob;
+use App\Jobs\RescanProductFeatures;
 use App\Models\Category;
+use App\Models\Feature;
 use App\Models\LandingPage;
 use App\Models\Product;
+use App\Models\ProductFeatureValue;
 use App\Models\Tenant;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
@@ -144,6 +147,99 @@ class ProductObserverTest extends TestCase
         Queue::assertNotPushed(AuditLandingPageFreshnessJob::class);
     }
 
+    // =========================================================================
+    // Spec 035 — re-home integrity: clearing foreign-category feature values.
+    //
+    // A plain `$product->update(...)`/`->save()` IS the Filament re-home path
+    // (Filament's category select just sets the attribute and saves). The two
+    // AI commands (see tests/Feature/Commands/AiSweepCategoryCommandTest and
+    // AiAssignCategoriesCommandTest) were fixed to use the same model-level
+    // save instead of a mass Builder::update(), so they run through this exact
+    // same observer logic — proving the "Filament path behaves identically to
+    // a command re-home" requirement without duplicating these assertions.
+    // =========================================================================
+
+    /** @test */
+    public function re_homing_a_product_deletes_the_old_categorys_feature_values_and_queues_a_rescan_for_the_new_one(): void
+    {
+        Queue::fake();
+
+        $categoryA = Category::factory()->create();
+        $categoryB = Category::factory()->create();
+
+        $featureA = Feature::factory()->create(['category_id' => $categoryA->id]);
+        $featureB = Feature::factory()->create(['category_id' => $categoryB->id]);
+
+        $product = Product::factory()->create(['category_id' => $categoryA->id]);
+        ProductFeatureValue::factory()->create(['product_id' => $product->id, 'feature_id' => $featureA->id]);
+
+        $product->update(['category_id' => $categoryB->id]);
+
+        $this->assertSame(
+            0,
+            ProductFeatureValue::where('product_id', $product->id)->where('feature_id', $featureA->id)->count(),
+            "category A's feature value must be deleted once the product leaves category A"
+        );
+
+        Queue::assertPushed(
+            RescanProductFeatures::class,
+            fn (RescanProductFeatures $job) => $this->rescanJobTargets($job, $product->id, $categoryB->id)
+        );
+    }
+
+    /** @test */
+    public function detaching_a_product_to_null_deletes_all_feature_values_and_queues_no_rescan(): void
+    {
+        Queue::fake();
+
+        $category = Category::factory()->create();
+        $feature1 = Feature::factory()->create(['category_id' => $category->id]);
+        $feature2 = Feature::factory()->create(['category_id' => $category->id]);
+
+        $product = Product::factory()->create(['category_id' => $category->id]);
+        ProductFeatureValue::factory()->create(['product_id' => $product->id, 'feature_id' => $feature1->id]);
+        ProductFeatureValue::factory()->create(['product_id' => $product->id, 'feature_id' => $feature2->id]);
+
+        $product->update(['category_id' => null]);
+
+        $this->assertSame(
+            0,
+            ProductFeatureValue::where('product_id', $product->id)->count(),
+            'a detached product (no category) has no reachable feature — every value must be deleted'
+        );
+
+        Queue::assertNotPushed(RescanProductFeatures::class);
+    }
+
+    /** @test */
+    public function a_feature_value_already_belonging_to_the_new_category_survives_the_re_home(): void
+    {
+        Queue::fake();
+
+        $categoryA = Category::factory()->create();
+        $categoryB = Category::factory()->create();
+
+        $featureA = Feature::factory()->create(['category_id' => $categoryA->id]);
+        $featureB = Feature::factory()->create(['category_id' => $categoryB->id]);
+
+        $product = Product::factory()->create(['category_id' => $categoryA->id]);
+        ProductFeatureValue::factory()->create(['product_id' => $product->id, 'feature_id' => $featureA->id]);
+        // A value for categoryB's feature that (unusually) already exists before the re-home.
+        ProductFeatureValue::factory()->create(['product_id' => $product->id, 'feature_id' => $featureB->id]);
+
+        $product->update(['category_id' => $categoryB->id]);
+
+        $this->assertDatabaseHas('product_feature_values', [
+            'product_id' => $product->id,
+            'feature_id' => $featureB->id,
+        ]);
+        $this->assertSame(
+            1,
+            ProductFeatureValue::where('product_id', $product->id)->count(),
+            'only the foreign-category value should have been deleted'
+        );
+    }
+
     /**
      * Reflection helper: AuditLandingPageFreshnessJob's constructor args are
      * private readonly — no public accessor exists (nor should one, for a job
@@ -156,5 +252,23 @@ class ProductObserverTest extends TestCase
         $prop->setAccessible(true);
 
         return $prop->getValue($job) === $landingPageId;
+    }
+
+    /**
+     * Reflection helper: RescanProductFeatures' constructor args are private
+     * readonly — see {@see jobTargets()} above for why reflection is used.
+     */
+    private function rescanJobTargets(RescanProductFeatures $job, int $productId, int $categoryId): bool
+    {
+        $ref = new \ReflectionClass($job);
+
+        $productIdProp = $ref->getProperty('productId');
+        $productIdProp->setAccessible(true);
+
+        $categoryIdProp = $ref->getProperty('categoryId');
+        $categoryIdProp->setAccessible(true);
+
+        return $productIdProp->getValue($job) === $productId
+            && $categoryIdProp->getValue($job) === $categoryId;
     }
 }

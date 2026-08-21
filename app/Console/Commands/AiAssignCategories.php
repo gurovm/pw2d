@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Jobs\RescanProductFeatures;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\Tenant;
@@ -73,9 +72,15 @@ class AiAssignCategories extends Command implements Isolatable
         $categoryNameMap = collect($leafCategories)->pluck('name', 'id')->toArray();
 
         // chunkById avoids loading all rows into memory (AI prompt token limit drives chunk size of 10)
+        // tenant_id is selected too, not just id/name: ProductObserver::saved() now fires
+        // on the model-level save below, and its dispatchForProduct() reads $product->tenant_id
+        // directly. An unselected column comes back null, which silently turns that lookup
+        // into "find landing pages with tenant_id IS NULL" (Laravel's query builder
+        // auto-converts where(col, null) to whereNull) — a no-op against the tenant-scoped
+        // global scope, so the audit never dispatches.
         Product::whereNull('category_id')
             ->where('is_ignored', false)
-            ->select(['id', 'name'])
+            ->select(['id', 'name', 'tenant_id'])
             ->chunkById(10, function ($chunk) use (
                 $aiService, $leafCategories, $categoryNameMap,
                 $isDryRun, $ignoreUnmatched, $prefix,
@@ -101,10 +106,14 @@ class AiAssignCategories extends Command implements Isolatable
                             $this->line("  <fg=green>WOULD ASSIGN</> #{$item['id']} {$product->name}");
                             $this->line("    <fg=gray>→ {$categoryName}: {$item['reason']}</>");
                         } else {
-                            Product::where('id', (int) $item['id'])->update(['category_id' => (int) $item['category_id']]);
-                            // Stagger dispatches 5 s apart to avoid flooding workers and Gemini rate limits
-                            RescanProductFeatures::dispatch((int) $item['id'], (int) $item['category_id'])
-                                ->delay(now()->addSeconds($assigned * 5));
+                            // Spec 035: a model-level save (not a mass Builder::update()) so
+                            // ProductObserver::saved() fires. The observer itself now clears
+                            // the old category's feature values and queues the rescan for the
+                            // new one — a single definition instead of duplicating it here (and
+                            // instead of the old command double-dispatching a rescan on top of
+                            // whatever the observer does).
+                            $product->category_id = (int) $item['category_id'];
+                            $product->save();
                             $this->line("  <fg=green>ASSIGNED + QUEUED RESCAN</> #{$item['id']} {$product->name}");
                             $this->line("    <fg=gray>→ {$categoryName}: {$item['reason']}</>");
                         }

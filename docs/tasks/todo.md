@@ -552,3 +552,65 @@ All 5 pw2d categories rescanned by owner; all 5 published pages re-selected from
   unverified pool") is therefore a human process rule with no code enforcement — #3568 above is a live
   example. Consider requiring `health_checked_at IS NOT NULL` for pick eligibility, or surfacing
   unverified picks as a distinct `AuditLandingPageFreshness` reason. *[API, Content]*
+
+- [ ] **Spec 034 GAP: model-less product names still rely on the unreliable similarity guard.**
+  `modelKey()` returns null when a name contains no digit-bearing token, falling back to `similar_text`.
+  Live example found 2026-08-21: **four** `Breville Oracle Jet` rows exist (3292 Brushed Stainless,
+  3433 Damson Blue, 3461 Olive Tapenade, 3503 detached) — the same machine in colourways. Pairwise
+  similarity is only **61.5% / 64.7% / 66.7%**, so the fallback misses all of them and three are
+  simultaneously pick-eligible on semi-auto. Today's dry run picked just one, but by score ordering,
+  not by the guard — two topping different roles would reproduce the Z10 double-pick on a live page.
+  Same exposure for any word-named model (`La Marzocco Linea Mini`, `Breville Bambino`).
+  Naive fixes fail: a colour stoplist can't cover open-ended names like "Olive Tapenade", and a
+  common-prefix ratio would wrongly merge `Bambino` with `Bambino Plus`.
+  **The better framing:** Spec 034 stops duplicates reaching the page; it does not stop them existing.
+  The four Oracle Jet rows are a data-cleanup job for `pw2d:merge-duplicates` (which is category-scoped
+  and did not catch them), not a picker workaround. *[AI, Content, Data]*
+- [ ] **Merge the 4 Breville Oracle Jet rows + 5 Jura Z10-family rows.** Concrete instances of the above.
+  #3503 is additionally detached and unchecked (2 offers, never health-stamped). *[Data]*
+
+## 2026-08-21 — super-auto page regenerated; stale-feature backlog cleared
+
+- [x] **`/best/super-automatic-espresso-machines` regenerated and live.** First page rebuilt under Spec 034.
+  Picks went from 6/7 Jura (with the Z10 in two slots) to **3 Jura / 2 De'Longhi / 2 Philips**, and the
+  price ladder is now continuous — $300 · $680 · $1,080 · $1,970 · $4,300 · $5,500 · $10,000, closing the
+  old $680→$3,800 hole. Prose authored by Claude to the style + grounding contract (Gemini's admin model
+  still times out on `generateLandingPageContent`), machine-checked clean against banned + condition
+  words, every figure traced to the pick payload. Five new FAQs, all distinct from the 17 excluded; the
+  old "Why is almost this entire list Jura?" FAQ retired as no longer true. Page reads FRESH.
+  Row backed up to `/tmp/sa_backup_20260821_115413.json` on prod before the write. *[Content]*
+- [x] **Stale cross-category `product_feature_values` cleared — 309 rows, 55 products, 6 categories.**
+  The "Product 3352 carries feature values from two categories" item was logged as one product; it was
+  platform-wide (super-auto 120 rows, gaming-keyboards 90, semi-auto 66, lavalier 15, ergonomic 12,
+  mics 6). Affected products carried 12 feature values where their category defines 6. Deleted every
+  row whose `feature.category_id <> product.category_id` — unambiguous, since a Feature belongs to
+  exactly one category. Affects display and generated prose, not ranking (scoring joins through the
+  category's own features). 0 remaining. *[Data]*
+- [x] **ROOT CAUSE: nothing clears feature values on re-home.** Fixed by Spec 035 (below) —
+  `ProductObserver::saved()` now deletes foreign-category feature values and dispatches
+  `RescanProductFeatures` on every category change, command or Filament. *[API, Data]*
+- [x] **CORRECTED: the "landing-page cache is not busted" finding was wrong.** `LandingPage::booted()`
+  already registers `saved`/`deleted` hooks that forget both `cacheKey()` and the sitemap cache. The stale
+  page seen on 2026-08-21 was caused by the ad-hoc regeneration script writing via
+  `DB::table('landing_pages')->update()` — a mass update, which fires no Eloquent events. Operator tooling
+  bug, not an application one. Any future ad-hoc content script must write through the model. Same root
+  cause as Spec 035; see that spec's Correction section. *[Docs]*
+- [ ] **`/best/manual-coffee-grinders` went STALE on `selection_drift`** — expected fallout of Spec 034
+  changing selection platform-wide. Regenerate one page at a time with review; do not mass-rebuild.
+  Semi-auto still stale too, and still blocked on merging the 4 Breville Oracle Jet rows. *[Content]*
+- [x] **Spec 035 — re-home integrity** (`docs/specs/035-rehome-integrity.md`, built 2026-08-21).
+  `Product::where(...)->update(...)` in `AiSweepCategory:88` and `AiAssignCategories:104` is a MASS update
+  and fires no model events, so `ProductObserver` never runs for either. Two consequences, both live:
+  **Spec 030's instant freshness path is dead for the AI sweep** (nightly audit has been silently covering
+  it), and neither path clears the old category's `product_feature_values` — the mechanism that produced
+  today's 309-row backlog. Fixed: both commands now use model-level saves (also now `select()`ing
+  `tenant_id`, not just `id`/`name` — an unselected column comes back null and silently turns
+  `AuditLandingPageFreshnessJob::dispatchForProduct()`'s tenant lookup into a no-op, a second latent bug
+  this surfaced); feature-clearing moved into `ProductObserver::saved()` so Filament re-homes are covered
+  too (`whereHas`/EXISTS delete, not a per-product feature-row load); `AiAssignCategories`' old manual
+  `RescanProductFeatures::dispatch()->delay()` call removed in favour of the observer's single definition.
+  Queue-collapse guard (the open S9 concern) needed no new code — `AuditLandingPageFreshnessJob` already
+  had `ShouldBeUnique` (`uniqueFor: 600s`, keyed on landing page id) from Spec 030; it was just never
+  exercised for command-driven re-homes because the mass update never reached it. Test: 6 swept products
+  across 2 pages produce exactly 2 audit jobs, not 6. 7 new tests, `php artisan test` 687 passed / 21
+  skipped (was 680/21). *[API, Data, Perf]*

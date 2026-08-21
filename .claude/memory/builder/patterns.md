@@ -791,3 +791,59 @@ always the thing that's wrong (it was never asserting on that default, just rely
 fix the fixture to represent reality accurately, and treat "I need to loosen the new rule to keep an old
 fixture passing" as a signal to stop and check whether the fixture itself is unrealistic before touching
 production logic.
+
+## Gotcha: `Product::where(...)->update([...])` (a mass Builder update) fires NO Eloquent events —
+## this codebase leans on observers for freshness, cache-busting, and feature-value integrity, so this
+## silently disables all three (Spec 035, 2026-08-21 incident)
+Any `SomeModel::where(...)->update([...])` (query-builder-level, not `$model->update([...])` on an
+already-loaded instance) skips `saving`/`saved`/`updating`/`updated` entirely — Eloquent only fires
+these from `Model::save()`. In this codebase that means: `ProductObserver::saved()` (instant freshness
+audit + Spec 035 feature-value cleanup) never runs, and any model with a `booted()` cache-forget hook
+(e.g. `LandingPage`) never busts its cache. Both bugs found in the same 2026-08-21 session had this SAME
+root cause in two different places (an AI command's bulk update, and an ad-hoc `DB::table(...)->update()`
+regeneration script) — "the cache isn't busting" and "category re-homes leave stale feature values" read
+like two unrelated findings but were one lesson. **Fix pattern:** inside a `chunkById`/`each` loop that's
+already iterating model instances one at a time (the common case for admin/AI commands), there is no new
+N+1 cost to switching `Model::where('id', $id)->update([...])` to `$instance->attr = $value; $instance->
+save();` — the loop already has the instance in hand. **Rule of thumb for this codebase:** any FUTURE
+bulk-mutation code path (command, ad-hoc script, tinker one-off) that touches a model with an `Observer`
+or a cache-busting `booted()` hook must go through `save()`/`delete()` on the model, never a raw
+`Builder::update()`/`DB::table(...)->update()` — grep for `Observers/` and model `booted()` static hooks
+before assuming a bulk update is "just faster and equivalent."
+
+## Gotcha: `->select(['id', 'name'])` on a chunked query silently breaks any Observer logic that reads a
+## column NOT in that select list — the attribute comes back `null`, not "not loaded" (Spec 035)
+`Product::where(...)->select(['id', 'name'])->chunkById(...)` is a common pattern here to keep AI-prompt
+payloads small. It's safe for columns the loop only WRITES (`$product->category_id = $x; $product->
+save();` works fine even though `category_id` was never selected — see the `wasChanged()` note below).
+It is NOT safe for any column an Observer subsequently READS on that same instance:
+`AuditLandingPageFreshnessJob::dispatchForProduct($product)` reads `$product->tenant_id` directly, and an
+unselected column silently evaluates to `null` rather than throwing or lazy-loading. Worse, this specific
+failure is easy to miss because it fails QUIETLY: `LandingPage::where('tenant_id', $product->tenant_id)`
+with a null value gets auto-converted by Laravel's query builder to `whereNull('tenant_id', ...)` (see
+`Illuminate\Database\Query\Builder::where()` — value === null on operator '=' short-circuits to
+`whereNull`), which combined with `LandingPage`'s own `BelongsToTenant` global scope (`tenant_id = '<the
+real tenant>'`) produces an always-false `AND`, so the query returns zero rows and dispatches nothing —
+no error, no exception, just silence. **Rule:** before trusting a `->select([...])` list on a query whose
+resulting instances get passed through `save()`/`delete()` (and therefore through any registered
+Observer), check what columns that Observer's methods actually READ (not just write) and include them.
+**Related nuance confirmed by reading Eloquent internals, not assumed:** `wasChanged('category_id')`
+still correctly returns `true` after `$product->category_id = $x; $product->save();` even when
+`category_id` was never selected — `Model::getDirty()`'s `originalIsEquivalent()` treats an attribute
+key that doesn't exist at all in `$this->original` as unconditionally dirty (`array_key_exists` check
+first), so the "did this change" signal survives a narrow select; only DIRECT reads of an unselected
+column's value (like `dispatchForProduct()` reading `tenant_id`) are the actual risk.
+
+## Pattern: verify `ShouldBeUnique` actually gates BEFORE assuming a "no code change needed" call
+When a spec's queue-flood-prevention requirement turns out to already be satisfied by an existing
+`ShouldBeUnique` job (found via `git log -- <job>` — it shipped in an earlier spec, e.g. Spec 030's
+`AuditLandingPageFreshnessJob`), don't just cite the interface and move on — confirm the dedup actually
+holds under THIS project's specific test/deploy config, because `ShouldBeUnique` silently no-ops if its
+cache store lacks atomic-lock support. Checked here: `CACHE_STORE=array` (phpunit.xml) →
+`Illuminate\Cache\ArrayStore implements LockProvider` ✓; production `CACHE_STORE=database` (.env) →
+`Illuminate\Cache\DatabaseStore implements LockProvider` ✓. Also confirmed the gating point is
+`Illuminate\Foundation\Bus\PendingDispatch::shouldDispatch()`, called from `__destruct()` BEFORE the job
+ever reaches the real queue connection or `Queue::fake()`'s `push()` — so `Queue::assertPushed($job, N)`
+count assertions in tests reflect real dedup behaviour, not an artifact of faking. Worth this level of
+verification because "the interface is present" and "the dedup actually fires in this test/prod config"
+are different claims, and the whole point of a queue-flood test is trusting the count assertion.

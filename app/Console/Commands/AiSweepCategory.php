@@ -60,7 +60,13 @@ class AiSweepCategory extends Command implements Isolatable
         Product::where('category_id', $category->id)
             ->where('is_ignored', false)
             ->whereNull('status')
-            ->select(['id', 'name'])
+            // tenant_id must be selected too, not just id/name: ProductObserver::saved()
+            // now fires on the model-level save below, and its dispatchForProduct() reads
+            // $product->tenant_id directly. An unselected column comes back null, which
+            // silently turns that lookup into "find landing pages with tenant_id IS NULL"
+            // (Laravel's query builder auto-converts where(col, null) to whereNull) — a
+            // no-op against the tenant-scoped global scope, so the audit never dispatches.
+            ->select(['id', 'name', 'tenant_id'])
             ->chunkById(25, function ($chunk) use ($aiService, $category, $isDryRun, &$totalFlagged, &$failedChunks) {
                 try {
                     $flagged = $aiService->sweepCategoryPollution($category, $chunk);
@@ -85,7 +91,11 @@ class AiSweepCategory extends Command implements Isolatable
                             ['rejection_reason' => $item['reason']]
                         );
 
-                        Product::where('id', (int) $item['id'])->update(['category_id' => null]);
+                        // Spec 035: a model-level save (not a mass Builder::update()) so
+                        // ProductObserver::saved() fires — instant freshness audit + stale
+                        // feature-value cleanup for the category this product just left.
+                        $product->category_id = null;
+                        $product->save();
 
                         $this->line("  <fg=red>REMOVED</> #{$item['id']} {$product->name}");
                         $this->line("    <fg=gray>Reason: {$item['reason']}</>");
