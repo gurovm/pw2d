@@ -95,7 +95,7 @@ class AiService
         return $this->gemini->generate($prompt, [
             'maxOutputTokens' => 8192,
             'thinkingConfig'  => ['thinkingBudget' => 128],
-        ], config('services.gemini.admin_model'));
+        ], config('services.gemini.admin_model'), purpose: 'evaluate_product');
     }
 
     /**
@@ -127,7 +127,7 @@ class AiService
 
         return $this->gemini->generate($prompt, [
             'maxOutputTokens' => 4096,
-        ], config('services.gemini.admin_model'));
+        ], config('services.gemini.admin_model'), purpose: 'rescan_features');
     }
 
     /**
@@ -170,7 +170,7 @@ PROMPT;
             'maxOutputTokens' => 1024,
             'thinkingConfig'  => ['thinkingBudget' => 0],
             'timeout'         => 15,
-        ]);
+        ], purpose: 'parse_search_query');
     }
 
     /**
@@ -232,7 +232,7 @@ PROMPT;
             'temperature'     => 0.4,
             'maxOutputTokens' => 1200,
             'timeout'         => 15,
-        ]);
+        ], purpose: 'chat_response');
     }
 
     /**
@@ -325,7 +325,7 @@ PROMPT;
             'thinkingConfig'  => ['thinkingBudget' => 128],
             'temperature'     => 0.1,
             'timeout'         => 15,
-        ], config('services.gemini.site_model'));
+        ], config('services.gemini.site_model'), purpose: 'match_product');
 
         $parsed = $result['parsed'];
 
@@ -403,7 +403,7 @@ PROMPT;
             'temperature'     => 0.1,
             'timeout'         => 60,
             'thinkingConfig'  => ['thinkingBudget' => 0],
-        ], config('services.gemini.site_model'));
+        ], config('services.gemini.site_model'), purpose: 'sweep_category');
 
         $parsed = $result['parsed'];
 
@@ -455,7 +455,7 @@ PROMPT;
             'temperature'     => 0.1,
             'timeout'         => 90,
             'thinkingConfig'  => ['thinkingBudget' => 0],
-        ], config('services.gemini.site_model'));
+        ], config('services.gemini.site_model'), purpose: 'assign_categories');
 
         $parsed = $result['parsed'];
 
@@ -523,7 +523,7 @@ PROMPT;
             'temperature'    => 0.4,
             'maxOutputTokens' => 8192,
             'timeout'        => 120,
-        ], config('services.gemini.admin_model'));
+        ], config('services.gemini.admin_model'), purpose: 'analyze_search_trends');
 
         return $result['content'];
     }
@@ -539,7 +539,7 @@ PROMPT;
         $result = $this->gemini->generate($prompt, [
             'timeout'         => 120,
             'maxOutputTokens' => 8000,
-        ], config('services.gemini.admin_model'));
+        ], config('services.gemini.admin_model'), purpose: 'category_content');
 
         return $result['content'];
     }
@@ -619,7 +619,7 @@ PROMPT;
 
         return $this->gemini->generate($prompt, [
             'maxOutputTokens' => 4000,
-        ], config('services.gemini.admin_model'));
+        ], config('services.gemini.admin_model'), purpose: 'extract_product');
     }
 
     /**
@@ -720,7 +720,7 @@ PROMPT;
             // match the 8192 ceiling the other admin_model content calls use.
             'maxOutputTokens' => 8192,
             'timeout'         => 120,
-        ], config('services.gemini.admin_model'));
+        ], config('services.gemini.admin_model'), purpose: 'preset_content');
 
         $content = $raw['content'] ?? '';
 
@@ -850,7 +850,7 @@ PROMPT;
         $raw = $this->gemini->generate($prompt, [
             'maxOutputTokens' => 4000,
             'timeout'         => 120,
-        ], config('services.gemini.admin_model'));
+        ], config('services.gemini.admin_model'), purpose: 'compare_content');
 
         $content = $raw['content'] ?? '';
 
@@ -1049,7 +1049,7 @@ PROMPT;
             // (generatePresetContent's truncation lesson — never lower this).
             'maxOutputTokens' => 8192,
             'timeout'         => 120,
-        ], config('services.gemini.admin_model'));
+        ], config('services.gemini.admin_model'), purpose: 'landing_page_content');
 
         $content = $raw['content'] ?? '';
 

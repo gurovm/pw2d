@@ -15,17 +15,22 @@ use Illuminate\Support\Facades\Http;
  */
 class GeminiService
 {
+    public function __construct(private readonly AiUsageService $usage = new AiUsageService()) {}
+
     /**
      * Send a prompt to Gemini and return the parsed response.
      *
      * @param string      $prompt  The full prompt text
      * @param array       $config  Override generation config (temperature, maxOutputTokens, timeout, thinkingConfig, etc.)
      * @param string|null $model   Override the model (defaults to config value)
+     * @param string      $purpose Caller attribution for AI usage accounting (spec 037 T1),
+     *                             e.g. 'evaluate_product', 'match_product'. Never affects
+     *                             the request sent to Gemini.
      * @return array{content: string, parsed: ?array, finish_reason: string}
      *
      * @throws \Exception on API error or truncation
      */
-    public function generate(string $prompt, array $config = [], ?string $model = null): array
+    public function generate(string $prompt, array $config = [], ?string $model = null, string $purpose = 'unspecified'): array
     {
         $apiKey  = config('services.gemini.api_key');
         $model   = $model ?? config('services.gemini.site_model');
@@ -82,6 +87,9 @@ class GeminiService
 
         $result       = $response->json();
         $finishReason = $result['candidates'][0]['finishReason'] ?? 'UNKNOWN';
+
+        // Record usage even on truncation below — tokens were billed either way.
+        $this->usage->record($purpose, $model, $result['usageMetadata'] ?? []);
 
         if ($finishReason === 'MAX_TOKENS') {
             throw new \Exception('Gemini response truncated (MAX_TOKENS).');

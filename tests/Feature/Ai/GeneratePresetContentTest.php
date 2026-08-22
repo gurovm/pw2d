@@ -57,7 +57,7 @@ class GeneratePresetContentTest extends TestCase
         $fake = new class ($responseText) extends GeminiService {
             public function __construct(private string $text) {}
 
-            public function generate(string $prompt, array $config = [], ?string $model = null): array
+            public function generate(string $prompt, array $config = [], ?string $model = null, string $purpose = 'unspecified'): array
             {
                 return [
                     'content'       => $this->text,
@@ -344,7 +344,7 @@ class GeneratePresetContentTest extends TestCase
 
             public function __construct(?string &$ref) {}
 
-            public function generate(string $prompt, array $config = [], ?string $model = null): array
+            public function generate(string $prompt, array $config = [], ?string $model = null, string $purpose = 'unspecified'): array
             {
                 $this->usedModel = $model;
                 return [
@@ -379,7 +379,7 @@ class GeneratePresetContentTest extends TestCase
         $throwing = new class extends GeminiService {
             public function __construct() {}
 
-            public function generate(string $prompt, array $config = [], ?string $model = null): array
+            public function generate(string $prompt, array $config = [], ?string $model = null, string $purpose = 'unspecified'): array
             {
                 throw new \Exception('Gemini quota exceeded.');
             }

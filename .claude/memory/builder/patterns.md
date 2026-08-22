@@ -898,3 +898,55 @@ notification assertions use `Notification::assertNotified('exact title')`, expos
 as `$component->assertNotified(...)` via `Filament\Notifications\Testing\TestsNotifications` — no bespoke
 event-dispatch inspection needed. `landing_pages` is unique on `(tenant_id, category_id)`, so multiple test
 landing pages referencing different products each need their OWN `Category`, not a shared one.
+
+## Gotcha: `config("services.gemini.pricing.{$model}")` silently mis-parses when `$model` itself
+## contains a literal `.` — Gemini model names do (`gemini-2.5-flash`, `gemini-3.1-flash-lite`)
+Laravel's `config()` dot-notation helper splits the WHOLE string on `.`, with no way to escape a dot
+inside a segment. `config("services.gemini.pricing.gemini-2.5-flash")` is parsed as the nested path
+`['services','gemini','pricing','gemini-2','5-flash']`, not `['services','gemini','pricing']['gemini-2.5-flash']`
+— it silently resolves to `null` instead of throwing, so this bug produces "unknown model, cost is null"
+for EVERY real Gemini model, and a naive test written against the same buggy helper won't catch it (I
+initially wrote the test with `assertNull`-shaped expectations by accident and had to double back once
+I computed the expected non-null value by hand). Fix: fetch the whole config array once —
+`config('services.gemini.pricing')[$model] ?? null` — and index into it with the literal PHP array key.
+Any future `config()` lookup keyed by a Gemini/OpenAI/Anthropic model string needs the same treatment.
+
+## Gotcha: adding a new parameter to a widely-subclassed service method is a breaking change even
+## though PHP has no interface here — `GeminiService::generate()` had 5 hand-written anonymous
+## `extends GeminiService { public function generate(...) }` overrides across 2 test files
+PHP enforces child-method signature compatibility for CONCRETE class inheritance too, not just
+interfaces/abstracts — confirmed empirically: a child override with fewer parameters than a parent that
+has trailing optional params is a **fatal `Declaration ... must be compatible`** error at class-load
+time, not a warning, not something caught only when the extra param is actually used. Before adding
+`string $purpose = '...'` as a 4th param to `GeminiService::generate()` (spec 037 T1), grepped
+`extends GeminiService` across `app/` AND `tests/` (`app(GeminiService::class)`/PHPUnit `createMock()`
+call sites are safe — those build proxies against the CURRENT signature at mock-generation time; only
+hand-written subclasses are at risk) and updated all 5 override signatures to match. Default parameter
+VALUES don't need to match between parent/child, only the parameter's presence/type — confirmed with a
+throwaway `php -r` repro before touching real files, cheaper than trial-and-error editing.
+Also confirmed `new GeminiService()` (17+ call sites, zero-arg) stays valid when adding a new
+constructor with a defaulted, container-resolvable dependency: `public function __construct(private
+readonly AiUsageService $usage = new AiUsageService()) {}` — PHP 8.1 "new in initializers" plus Laravel's
+container preferring to `make()` a typed dependency over falling back to the literal default expression
+either way produces a working instance, so this is a fully backward-compatible way to add DI to a class
+with many pre-existing no-arg instantiations in tests.
+
+## Precedent found and reused: when a new tenant-scoped table is really a cross-tenant accounting/
+## observability log, do NOT add `BelongsToTenant` — `SeoMetric` already establishes this exact pattern
+`app/Models/SeoMetric.php` has a docblock explaining it intentionally skips `BelongsToTenant` because
+"the status command and dashboard widgets query across all tenants from the central (console) context;
+automatic tenant scoping would break those cross-tenant reads." Reused this reasoning verbatim for the
+new `AiUsage` model (spec 037 T1): its dominant writer, `evaluateProduct()` via `ProcessPendingProduct`,
+runs on a queued worker where `tenancy()->initialized` is always false (no `QueueTenancyBootstrapper` is
+configured in `config/tenancy.php`) even though the `Product` being scored has a real `tenant_id` — so
+`BelongsToTenant`'s auto-populate-on-create hook (`bootBelongsToTenant`) would have silently written
+`tenant_id = null` for the platform's single dominant AI cost, which is exactly backwards for a table
+whose entire purpose is per-tenant cost attribution. Resolved `tenant_id` explicitly via the `tenant('id')`
+helper (safe to call unconditionally — returns `null`, doesn't throw, when tenancy isn't initialized;
+confirmed by reading `vendor/stancl/tenancy/src/helpers.php` and `TenancyServiceProvider::register()`)
+inside the service that writes the row, matching the existing "explicit tenant_id assignment" convention
+already used for API controllers and queued jobs elsewhere (project_context.md §11: "safety net for
+non-tenancy middleware routes"). Before assuming a job runs centrally, verified it by reading
+`ProcessPendingProduct::handle()` itself — it uses `Brand::withoutGlobalScopes()->where('tenant_id', ...)`
+rather than relying on the tenant global scope, which is itself evidence the codebase already knows
+queued jobs don't have live tenancy context.

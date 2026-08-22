@@ -492,3 +492,98 @@ Both are pre-existing, unrelated to the no-price delisting fix, and never previo
 **Added two tests beyond the spec's explicit Tests-section list** (`bulk_mark_as_ignored_does_not_dispatch_for_a_page_that_does_not_reference_any_selected_product` and `a_successful_rescan_updates_feature_values_and_records_no_failure`) as ordinary negative/happy-path hygiene alongside the required ones, not as scope additions to the fix itself.
 
 **Verification.** Baseline confirmed before any edits: **687 passed / 21 skipped** (matches the task's stated baseline exactly). Final, with all Spec 036 changes: **695 passed / 21 skipped** (+8 new tests: 3 in `RescanProductFeaturesTest`, 3 in `ProblemProductsBulkIgnoreTest`, 1 each in `FlagConditionProductsCommandTest`/`AiAssignCategoriesCommandTest`; 0 failures, 0 regressions). Every test that pins a specific fix (`RescanProductFeatures`'s always-rethrow; all three `is_ignored` model-level-save sites) was verified to actually fail against the unfixed code via `git stash` of the single relevant file, then pass again after `git stash pop` — not just written and trusted. No `dd()`/`var_dump()`/`dump()`/`ray()` in any changed or new file.
+
+---
+
+## Builder judgment calls — Spec 037 T1 (AI usage instrumentation), 2026-08-22
+
+**Files:** `database/migrations/2026_08_22_000001_create_ai_usage_table.php` (new), `app/Models/AiUsage.php`
+(new), `app/Services/AiUsageService.php` (new), `database/factories/AiUsageFactory.php` (new),
+`app/Services/GeminiService.php` (edited), `app/Services/AiService.php` (edited — `purpose:` added to
+all 13 `gemini->generate()` call sites), `app/Filament/Resources/ProductResource/Pages/ListProducts.php`
+(edited — T3b, the stale `~$0.03` string), `config/services.php` (edited — `gemini.pricing` map);
+`tests/Unit/AiUsageServiceTest.php` (new, 9 tests), `tests/Feature/AiUsageInstrumentationTest.php` (new,
+6 tests), `tests/Feature/Ai/GenerateCompareContentTest.php` + `GeneratePresetContentTest.php` (edited —
+5 hand-written `extends GeminiService { generate(...) }` overrides updated to the new signature, see
+below); `docs/tasks/todo.md`.
+
+**`BelongsToTenant` judgment call — did NOT add it to `AiUsage`.** The spec explicitly flagged this as
+a decision to make deliberately, and I found a direct precedent already in the codebase:
+`app/Models/SeoMetric.php`'s docblock explains it intentionally skips `BelongsToTenant` because it's a
+cross-tenant accounting/observability log, and the automatic tenant global scope would break future
+dashboards that sum across all tenants from the central console. `AiUsage` is the same shape of table.
+More importantly, the *dominant* writer — `evaluateProduct()` via the `ProcessPendingProduct` queue job,
+per spec §1 — runs where `tenancy()->initialized` is provably always `false`: `config/tenancy.php`'s
+`bootstrappers` array has no `QueueTenancyBootstrapper`, and `ProcessPendingProduct::handle()` itself
+already works around the same fact (`Brand::withoutGlobalScopes()->where('tenant_id', $product->tenant_id)`
+rather than relying on scoped queries). Had I used `BelongsToTenant`, its `creating` hook would have
+silently written `tenant_id = null` for every single Bouncer call — the platform's largest AI cost —
+which is exactly backwards for a table whose whole purpose is per-tenant cost attribution. Resolved
+`tenant_id` explicitly in `AiUsageService::record()` via the `tenant('id')` helper (confirmed safe to
+call unconditionally — returns `null` rather than throwing when no tenant is active, per
+`vendor/stancl/tenancy/src/helpers.php`), matching the project's established "explicit tenant_id
+assignment" convention for API controllers/jobs outside tenancy middleware (project_context.md §11). Net
+effect matches the spec's own description exactly: synchronous, tenant-domain-driven calls (e.g.
+`parseSearchQuery`/`chatResponse` from Livewire during a real tenant-domain request) get a real
+`tenant_id`; queued/console calls get `null`, which the spec calls the correct behavior, not a gap.
+
+**Where `purpose` and `tenant_id` are threaded — designed to touch as little as possible.** Per the task's
+explicit instruction, `AiService`'s 13 `gemini->generate()` call sites each got exactly one new trailing
+named argument (`purpose: 'evaluate_product'`, etc.) — no reordering, no signature restructuring
+elsewhere. `tenant_id` needed NO threading through `AiService` at all: `GeminiService::generate()` calls
+`AiUsageService::record()` without a `$tenantId` argument, and `record()` resolves it itself via
+`tenant('id')` unless a caller explicitly overrides — so the "console vs. tenant-domain" distinction the
+spec describes falls out of ambient ​`tenancy()` state rather than requiring 13+ call sites to know or
+care about tenant identity. `generateCategoryImage()` was deliberately left untouched — it bypasses
+`GeminiService` entirely (calls `Http::` directly for the image-generation endpoint, a pre-existing
+inconsistency predating this task), so there is no `generate()` call to attribute a purpose to, and the
+spec's own example purpose list doesn't include an image-generation entry. Flagging this pre-existing
+bypass since it means `ai_usage` will never see image-generation cost, but fixing it is outside T1's scope
+(no prompt/config values changed, no new behavior requested for that method).
+
+**Found and fixed a real bug while writing the cost-arithmetic test, not spec-mandated but load-bearing:**
+`config("services.gemini.pricing.{$model}")` (the naive dot-notation form) silently mis-parses because
+Gemini model names contain literal dots (`gemini-2.5-flash` → Laravel reads this as nested path segments
+`['gemini-2','5-flash']`, not a single key) — it returns `null` instead of throwing, so every real model
+would have been treated as "unknown, cost null" and the bug would have shipped invisibly. Fixed by
+fetching `config('services.gemini.pricing')` as a whole array and indexing by the literal `$model`
+string. Caught only because the exact-value cost-arithmetic test the spec required (`assertEquals`
+against a hand-computed number, not just `assertNotNull`) forced computing the real expected number by
+hand first — a looser "cost is truthy" assertion would have passed against the buggy code.
+
+**`GeminiService::generate()`'s new 4th parameter required updating 5 pre-existing hand-written test
+doubles, confirmed via a `php -r` repro before touching any real file.** Grepped `extends GeminiService`
+across `app/` and `tests/` first — `app(AiService::class)`-based tests and PHPUnit `createMock()` proxies
+are unaffected (they build against the current signature at resolution/mock-generation time), but two
+Feature test files each define anonymous subclasses (`GenerateCompareContentTest.php`,
+`GeneratePresetContentTest.php`, 5 override sites total) with a hardcoded 3-parameter `generate()`
+signature. PHP fatal-errors (`Declaration ... must be compatible`) on a concrete-class override that
+drops a parent's trailing optional parameter — confirmed this empirically with a throwaway script rather
+than assuming — so all 5 were updated to accept `string $purpose = 'unspecified'` (default value doesn't
+need to match the parent's; only the parameter's presence/type does). Also confirmed the new
+constructor (`AiUsageService $usage = new AiUsageService()`, needed to record usage) doesn't break the
+17+ existing zero-arg `new GeminiService()` sites in `tests/Unit/GeminiServiceTest.php` — PHP 8.1 "new in
+initializers" plus Laravel's container preferring `make()` over the literal default both resolve cleanly.
+
+**Recorded usage even when the response is truncated (`finishReason === 'MAX_TOKENS'`), not only on the
+success path.** The spec's acceptance criteria are silent on this specific case, but a truncated call
+still consumes real, billed tokens — skipping it would under-report exactly the calls most likely to be
+expensive (near the `maxOutputTokens` ceiling). `AiUsageService::record()` is called immediately after
+decoding the JSON body and before the `MAX_TOKENS` exception is thrown, so a truncation still produces an
+accurate `ai_usage` row even though `generate()` still throws afterward as before (no change to that
+exception's behavior).
+
+**Test framework: PHPUnit-style (`extends TestCase`, `/** @test */`), not Pest.** CLAUDE.md/standards.md
+say "Pest (preferred) or PHPUnit," but `composer.json` doesn't actually require `pestphp/pest` (only an
+`allow-plugins` entry) and 100% of the existing suite — including every other AI-related test file this
+task's tests sit alongside — is PHPUnit-style. Matched the existing convention per the Builder directive
+to check existing code first, rather than introducing the only Pest file in the repo.
+
+**Verification.** Baseline confirmed before any edits: **695 passed / 21 skipped** (matches the task's
+stated baseline exactly). Final, with all Spec 037 T1 changes: **710 passed / 21 skipped** (+15 new
+tests — 9 in `AiUsageServiceTest`, 6 in `AiUsageInstrumentationTest`; 0 failures, 0 regressions). `php -l`
+clean on all changed/new files; no `dd()`/`var_dump()`/`dump()` introduced. Did not run the new migration
+against the local dev MySQL database (per the task's own constraint — "the local MySQL DB is empty... do
+not try to query real data locally"); its correctness is validated by every `RefreshDatabase` test in
+the new/edited suites applying it cleanly on sqlite before each test. T2 and T3 were not started, per
+the task's explicit "T1 only" scope.

@@ -768,3 +768,58 @@ filters. Spec 033 is a net **performance win** and partially retires the deferre
   rescan lands in `failed_jobs` instead of being marked successful; model-level saves at the three
   surviving `is_ignored` mass-update sites so `ProductObserver` actually fires; closed todo Q11 WONTFIX.
   *[API, Filament]*
+
+### Spec 037 — AI model strategy (drafted 2026-08-22, AWAITING OWNER APPROVAL)
+
+`docs/specs/037-ai-model-strategy.md`. Triggered by the owner asking whether $10/category of AI spend
+justifies switching models or providers. **The $10 figure was wrong** — it came from a hardcoded
+`~$0.03/product` string in `ListProducts.php:39`; measured cost is ~$0.0103/product, so ~$3.59/category.
+
+- [x] **T1: Usage instrumentation** — `GeminiService` discards `usageMetadata` entirely, so **no token
+  count or cost has ever been recorded on this platform**. Every figure in Spec 037 is an estimate from
+  prompt length. Add an `ai_usage` table (`tenant_id`-led composite index), thread a `$purpose` string
+  from `AiService` through to the transport, compute cost from a `config/services.php` price table.
+  Usage-write failure must never fail the AI call. **No prerequisite — do this first.** *[API, Data]*
+  Done 2026-08-22: `AiUsage` model + migration (deliberately not `BelongsToTenant` — mirrors
+  `SeoMetric`, see model docblock), `AiUsageService` (cost math + the two safety rules),
+  `purpose` threaded through all 13 `AiService` → `GeminiService::generate()` call sites. Found and
+  fixed a real bug along the way: `config("services.gemini.pricing.{$model}")` silently mis-parsed
+  model names with dots (`gemini-2.5-flash`) as nested keys — fixed by indexing the pricing array
+  directly. 15 new tests, 710 passed/21 skipped (was 695/21), zero regressions.
+- [ ] **T2: `pw2d:ai:eval-model` replay harness** — re-runs `evaluateProduct()` for N already-scored
+  products against a candidate model and diffs `is_ignored` agreement, brand normalization, and feature
+  score deltas against stored output. Read-only. Ship gate for T3: ≥95% `is_ignored` agreement, ≥98%
+  brand exact-match, ≤5pt feature MAD. Must be run **against prod** — the golden set only exists there.
+  *[API, Tooling, Test]*
+- [ ] **T3: `admin_model` 2.5 Pro → 3.7 Flash** — gated on T2. 2.5 Pro bills output at $10/M, the
+  highest on the board bar 3.1 Pro, and is a generation old; 3.7 Flash is newer and 58% cheaper.
+  Change is one `.env` line + `thinkingBudget`→`thinking_level` translation **at the transport boundary
+  only** (Gemini 3 rejects both parameters together; do not touch the 15+ `AiService` call sites).
+  Re-validate all 8 `admin_model` callers. **Watch for the upside: `generateLandingPageContent`
+  currently times out on 2.5 Pro — if Flash fixes it, that retires the standing hand-authoring
+  workaround.** *[API, AI]*
+- [x] **T3b: fix the stale cost string** — `ListProducts.php:39` tells the operator "~$0.03 in Gemini
+  API usage" per retried product. ~3× too high. Drive it from the T1 pricing config. *[Filament]*
+  Done 2026-08-22 alongside T1: now reads `AiUsageService::estimateProductEvaluationCost()`, which
+  renders "~$0.0103" from the live pricing config against the spec's measured 1800in/800out shape.
+
+**Provider switch — investigated and DECLINED (§1.2/§5).** Anthropic is the most expensive option at
+every tier for this workload: Haiku 4.5 ($1/$5) costs 34% more than Gemini 3.7 Flash and 2.8× gpt-5-mini;
+Anthropic has no nano/lite tier. OpenAI's gpt-5-nano is nominally cheapest but beats Gemini Flash-Lite by
+$0.04/category. Meanwhile `GeminiService` is Gemini-shaped throughout and `AiService` leaks
+`maxOutputTokens`/`thinkingConfig` across the seam at 15+ sites — a real provider swap needs an
+`AiTransport` interface and a prompt re-validation, versus one `.env` line to change models within Gemini.
+**Batch API (50% off, all three providers) also declined** — would split the ingestion path in two to save
+~$1/category.
+
+- [ ] **Deferred (decide after T3): Claude for `generateLandingPageContent` only.** ~11 calls/quarter at
+  ~3k in / 6k out ≈ **$1.10/quarter on Sonnet 5** to automate prose the owner currently writes by hand
+  every content cycle. Needs the `AiTransport` interface that §5 says doesn't exist yet — and T3 may
+  moot it by fixing the timeout. *[AI, Content, Architect]*
+- [ ] **T1 gap: `generateCategoryImage()` bypasses `GeminiService` entirely**, so image-generation spend
+  is the one AI cost the new `ai_usage` table cannot see. Pre-existing inconsistency (it calls the Gemini
+  HTTP API on its own path), surfaced while wiring T1's `purpose` attribution through the other 13 call
+  sites. Also a standing violation of the CLAUDE.md rule that all AI calls go through `AiService`/
+  `GeminiService`. Low volume (category hero images only), so low cost impact — but it means
+  "total AI spend" from `ai_usage` is an undercount, and any future cost dashboard should say so.
+  *[API, AI]*

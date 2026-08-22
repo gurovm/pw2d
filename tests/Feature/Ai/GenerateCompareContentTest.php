@@ -49,7 +49,7 @@ class GenerateCompareContentTest extends TestCase
         $fake = new class ($responseText) extends GeminiService {
             public function __construct(private string $text) {}
 
-            public function generate(string $prompt, array $config = [], ?string $model = null): array
+            public function generate(string $prompt, array $config = [], ?string $model = null, string $purpose = 'unspecified'): array
             {
                 return [
                     'content'       => $this->text,
@@ -259,7 +259,7 @@ class GenerateCompareContentTest extends TestCase
         $throwing = new class extends GeminiService {
             public function __construct() {}
 
-            public function generate(string $prompt, array $config = [], ?string $model = null): array
+            public function generate(string $prompt, array $config = [], ?string $model = null, string $purpose = 'unspecified'): array
             {
                 throw new \Exception('Gemini rate limit hit. Please retry.');
             }

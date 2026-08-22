@@ -40,6 +40,17 @@ return [
         'site_model'  => env('AGENT_SITE_MODEL', 'gemini-2.5-flash'),
         'admin_model' => env('AGENT_ADMIN_MODEL', 'gemini-2.5-pro'),
         'image_model' => env('AGENT_IMAGE_MODEL', 'gemini-2.5-flash-image'),
+
+        // $/million tokens. Drives AiUsageService cost calculations — never
+        // hardcode a dollar figure elsewhere. An unlisted model computes a null
+        // cost rather than throwing (see spec 037 T1).
+        'pricing' => [
+            'gemini-2.5-pro'        => ['input' => 1.25, 'output' => 10.00],
+            'gemini-2.5-flash'      => ['input' => 0.30, 'output' => 2.50],
+            'gemini-2.5-flash-lite' => ['input' => 0.10, 'output' => 0.40],
+            'gemini-3.7-flash'      => ['input' => 0.75, 'output' => 3.75],
+            'gemini-3.1-flash-lite' => ['input' => 0.25, 'output' => 1.50],
+        ],
     ],
 
     'amazon' => [

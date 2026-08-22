@@ -27,6 +27,13 @@ class ListProducts extends ListRecords
     {
         $failedCount = Product::where('status', 'failed')->count();
 
+        // Driven by config('services.gemini.pricing') so this copy can never drift
+        // from reality the way the old hardcoded "~$0.03" guess did (spec 037).
+        $estimatedCost = app(\App\Services\AiUsageService::class)->estimateProductEvaluationCost();
+        $costNote = $estimatedCost !== null
+            ? 'Each product costs ~$' . number_format($estimatedCost, 4) . ' in Gemini API usage.'
+            : 'Gemini API usage costs apply.';
+
         return [
             Actions\CreateAction::make(),
 
@@ -37,7 +44,7 @@ class ListProducts extends ListRecords
                 ->visible($failedCount > 0)
                 ->requiresConfirmation()
                 ->modalHeading('Retry Failed Products')
-                ->modalDescription("This will requeue {$failedCount} failed product(s) for AI processing. Each product costs ~\$0.03 in Gemini API usage.")
+                ->modalDescription("This will requeue {$failedCount} failed product(s) for AI processing. {$costNote}")
                 ->action(function () {
                     $count = 0;
                     Product::where('status', 'failed')
