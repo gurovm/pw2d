@@ -2,9 +2,7 @@
 
 namespace App\Jobs;
 
-use App\Models\AiCategoryRejection;
-use App\Models\AiMatchingDecision;
-use App\Models\Brand;
+use App\Actions\FinalizeProductEvaluation;
 use App\Models\Category;
 use App\Models\Product;
 use Illuminate\Bus\Queueable;
@@ -13,10 +11,8 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use App\Services\AiService;
-use Illuminate\Support\Facades\Http;
+use App\Support\ProductEvaluation;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 
 class ProcessPendingProduct implements ShouldQueue
 {
@@ -74,158 +70,16 @@ class ProcessPendingProduct implements ShouldQueue
             $result = $aiService->evaluateProduct(
                 $product->name, $product->best_price, $priceNote, $ratingNote, $category->name, $featureMap, $product->tenant_id
             );
-            $parsed = $result['parsed'];
 
-            // AI identified this as an accessory — suppress it
-            if (($parsed['status'] ?? null) === 'ignored') {
-                $product->update(['status' => null, 'is_ignored' => true]);
-                Log::info('ProcessPendingProduct: marked as ignored', [
-                    'product_id' => $product->id,
-                    'reason'     => $parsed['reason'] ?? '',
-                ]);
-                return;
-            }
+            // Spec 039 T1 — single validated schema shared with the (future)
+            // operator-session producer. A response missing name/brand now
+            // surfaces as InvalidProductEvaluation instead of a bare
+            // \Exception; both are caught below with identical retry semantics.
+            $eval = ProductEvaluation::fromArray($result['parsed']);
 
-            if (empty($parsed['name']) || empty($parsed['brand'])) {
-                throw new \Exception('Invalid AI response: missing name or brand field');
-            }
-
-            // Guard: if AI returned just the brand name (e.g. "Breville") instead of a
-            // real product name, keep the original scraped title which has more detail.
-            $aiName = $parsed['name'];
-            $originalName = $product->name;
-            if (mb_strlen($aiName) < 20 && mb_strlen($originalName) > mb_strlen($aiName)) {
-                $aiName = mb_substr($originalName, 0, 255);
-            }
-
-            // Defensive cap: regardless of source (AI-returned name or the raw-title
-            // fallback above), never let a verbose marketing title become the stored
-            // name/slug. Keeps name and slug in agreement.
-            $aiName = $this->capProductName($aiName);
-
-            // AI Memory Matching: check if this product already exists under a different ASIN/offer.
-            // Uses cached decisions first, then asks AI only when needed.
-            $matchedProductId = $aiService->matchProduct($originalName, $parsed['brand'], $product->tenant_id, $product->id);
-
-            if ($matchedProductId && $matchedProductId !== $product->id) {
-                // Merge: transfer this product's offers to the matched product, then delete the duplicate stub.
-                // Handle unique constraint (product_id, store_id) — if matched product already has
-                // an offer from the same store, keep the cheaper one.
-                $existingOfferStores = \App\Models\ProductOffer::where('product_id', $matchedProductId)
-                    ->pluck('scraped_price', 'store_id');
-
-                foreach ($product->offers as $offer) {
-                    if ($existingOfferStores->has($offer->store_id)) {
-                        // Same store already exists on matched product — keep cheaper, delete other
-                        if ($offer->scraped_price < $existingOfferStores[$offer->store_id]) {
-                            \App\Models\ProductOffer::where('product_id', $matchedProductId)
-                                ->where('store_id', $offer->store_id)
-                                ->update([
-                                    'scraped_price' => $offer->scraped_price,
-                                    'url'           => $offer->url,
-                                    'raw_title'     => $offer->raw_title,
-                                    'image_url'     => $offer->image_url,
-                                ]);
-                        }
-                        $offer->delete();
-                    } else {
-                        $offer->update(['product_id' => $matchedProductId]);
-                    }
-                }
-
-                $product->forceDelete();
-
-                Log::info('ProcessPendingProduct: merged duplicate into existing product', [
-                    'duplicate_id' => $product->id,
-                    'matched_id'   => $matchedProductId,
-                    'raw_title'    => $originalName,
-                ]);
-                return;
-            }
-
-            // Category rejection check: if this product was previously swept out
-            // of this category, detach it and leave category_id null for future re-assignment.
-            $rejected = AiCategoryRejection::where('product_id', $product->id)
-                ->where('category_id', $this->categoryId)
-                ->exists();
-
-            if ($rejected) {
-                $product->update(['category_id' => null, 'status' => null]);
-                Log::info('ProcessPendingProduct: skipped — product was rejected from this category', [
-                    'product_id'  => $product->id,
-                    'category_id' => $this->categoryId,
-                ]);
-                return;
-            }
-
-            // Reuse existing brand if one matches (fuzzy: ignore apostrophes/case/accents).
-            // Prevents brand record splits when the AI returns "DeLonghi" vs "De'Longhi".
-            $normalizedIncoming = AiService::normalizeBrandForComparison($parsed['brand']);
-
-            $brand = Brand::withoutGlobalScopes()
-                ->where('tenant_id', $product->tenant_id)
-                ->get(['id', 'name'])
-                ->first(fn ($b) => AiService::normalizeBrandForComparison($b->name) === $normalizedIncoming)
-                ?? Brand::create([
-                    'name'      => $parsed['brand'],
-                    'tenant_id' => $product->tenant_id,
-                ]);
-
-            $product->update([
-                'name'                 => $aiName,
-                'slug'                 => Str::slug($aiName . '-' . Str::random(5)),
-                'brand_id'             => $brand->id,
-                'ai_summary'           => $parsed['ai_summary'] ?? null,
-                'price_tier'           => $parsed['price_tier']           ?? $product->price_tier,
-                'amazon_rating'        => $parsed['amazon_rating']        ?? $product->amazon_rating,
-                'amazon_reviews_count' => $parsed['amazon_reviews_count'] ?? $product->amazon_reviews_count,
-                'status'               => null, // fully processed
-            ]);
-
-            // Invalidate stale negative matching decisions for ALL spelling variants of this brand
-            // so future imports re-evaluate. Covers "De'Longhi", "DeLonghi", "de longhi", etc.
-            $normalizedBrand = AiService::normalizeBrandForComparison($parsed['brand']);
-
-            $brandVariants = Brand::withoutGlobalScopes()
-                ->where('tenant_id', $product->tenant_id)
-                ->get(['name'])
-                ->filter(fn ($b) => AiService::normalizeBrandForComparison($b->name) === $normalizedBrand)
-                ->pluck('name');
-
-            if ($brandVariants->isNotEmpty()) {
-                AiMatchingDecision::withoutGlobalScopes()
-                    ->where('tenant_id', $product->tenant_id)
-                    ->where('is_match', false)
-                    ->where(function ($q) use ($brandVariants) {
-                        foreach ($brandVariants as $variant) {
-                            $q->orWhere('scraped_raw_name', 'LIKE', '%' . str_replace(['%', '_'], ['\%', '\_'], $variant) . '%');
-                        }
-                    })
-                    ->delete();
-            }
-
-            foreach ($category->features as $feature) {
-                $value = $parsed['features'][$feature->name] ?? null;
-                if ($value === null) continue;
-
-                $score  = is_array($value) ? (float) ($value['score'] ?? 0) : (float) $value;
-                $reason = is_array($value) ? ($value['reason'] ?? null)      : null;
-
-                if ($score > 0) {
-                    $product->featureValues()->updateOrCreate(
-                        ['feature_id' => $feature->id],
-                        ['raw_value' => $score, 'explanation' => $reason]
-                    );
-                }
-            }
-
-            // Download and store the product image locally (non-fatal — wrapped in its own try/catch)
-            $this->downloadAndStoreImage($product, $parsed['brand'], $parsed['name']);
-
-            Log::info('ProcessPendingProduct: completed', [
-                'product_id' => $product->id,
-                'name'       => $product->name,
-            ]);
+            // Spec 039 T2 — single finalize path shared with the (future)
+            // operator-session producer.
+            app(FinalizeProductEvaluation::class)->execute($product, $category, $eval, source: 'gemini');
         } catch (\Exception $e) {
             Log::error('ProcessPendingProduct: failed', [
                 'product_id' => $this->productId,
@@ -237,122 +91,6 @@ class ProcessPendingProduct implements ShouldQueue
             } else {
                 throw $e; // Trigger queue retry with backoff
             }
-        }
-    }
-
-    /**
-     * Cap an AI/scraped product name to a concise product identity, used for both
-     * the stored `name` and the slug stem so they always agree.
-     *
-     * Truncates at the first comma or opening parenthesis (these typically start a
-     * spec/compatibility/bundle list in verbose marketing titles), falls back to the
-     * first 8 words, and strips a trailing stopword left dangling by truncation.
-     */
-    private function capProductName(string $name): string
-    {
-        $name = trim($name);
-
-        $cutPos = null;
-        foreach ([',', '('] as $delimiter) {
-            $pos = mb_strpos($name, $delimiter);
-            if ($pos !== false && $pos > 0 && ($cutPos === null || $pos < $cutPos)) {
-                $cutPos = $pos;
-            }
-        }
-        if ($cutPos !== null) {
-            $name = mb_substr($name, 0, $cutPos);
-        }
-
-        $words = preg_split('/\s+/', trim($name)) ?: [];
-        if (count($words) > 8) {
-            $words = array_slice($words, 0, 8);
-        }
-
-        $stopwords = ['with', 'for', 'and', 'the', 'of', 'in'];
-        while (!empty($words) && in_array(mb_strtolower(end($words)), $stopwords, true)) {
-            array_pop($words);
-        }
-
-        return trim(implode(' ', $words));
-    }
-
-    /**
-     * Download the product image from Amazon and store it locally.
-     * Failures are logged but never propagate — a missing image must not abort the AI job.
-     *
-     * Filename format: {brand-slug-max-4-words}-{asin}.{ext}
-     * Example: razer-seiren-mini-usb-B0D3MB36XV.jpg
-     */
-    private function downloadAndStoreImage(Product $product, string $brandName, string $productName): void
-    {
-        $amazonOffer = $product->offers->first(fn ($o) => $o->store?->slug === 'amazon') ?? $product->offers->first();
-        $imageUrl = $amazonOffer?->image_url;
-
-        if (empty($imageUrl)) {
-            return;
-        }
-
-        try {
-            // SSRF protection: allow known CDN domains + any domain from active stores
-            $host = parse_url($imageUrl, PHP_URL_HOST);
-            $allowedHosts = config('services.allowed_image_hosts', []);
-
-            // Auto-allow: if the image host matches any store's domain (or its CDN)
-            if (!in_array($host, $allowedHosts)) {
-                $storeMatch = \App\Models\Store::withoutGlobalScopes()
-                    ->where('is_active', true)
-                    ->get(['slug'])
-                    ->contains(fn ($s) => str_contains($host, str_replace('-', '', $s->slug)));
-
-                if (!$storeMatch && !str_ends_with($host, '.shopify.com') && !str_ends_with($host, '.cloudfront.net')) {
-                    Log::warning('ProcessPendingProduct: image host not allowed', ['host' => $host]);
-                    return;
-                }
-            }
-
-            $response = Http::timeout(15)->get($imageUrl);
-
-            if (!$response->successful()) {
-                Log::warning('ProcessPendingProduct: image download failed', ['status' => $response->status(), 'url' => $imageUrl]);
-                return;
-            }
-
-            $contentType = $response->header('Content-Type');
-            if (!str_starts_with($contentType, 'image/')) {
-                Log::warning('ProcessPendingProduct: URL did not return an image', ['content_type' => $contentType]);
-                return;
-            }
-
-            $extension = match (true) {
-                str_contains($contentType, 'png')  => 'png',
-                str_contains($contentType, 'webp') => 'webp',
-                default                            => 'jpg',
-            };
-
-            // Build a short, meaningful filename from brand + first words of product name
-            $allWords  = array_filter(explode(' ', "{$brandName} {$productName}"));
-            $slugWords = array_slice($allWords, 0, 4);
-            $stem      = Str::slug(implode(' ', $slugWords));
-            $asin      = $amazonOffer ? basename(parse_url($amazonOffer->url, PHP_URL_PATH)) : Str::random(10);
-            $filename  = "{$stem}-{$asin}.{$extension}";
-            $path      = "products/images/{$filename}";
-
-            Storage::disk('public')->put($path, $response->body());
-
-            // Optimize: convert to WebP, resize to 800px max width
-            $absolutePath = Storage::disk('public')->path($path);
-            $webpPath = \App\Services\ImageOptimizer::toWebp($absolutePath);
-            $path = str_replace(Storage::disk('public')->path(''), '', $webpPath);
-
-            $product->update(['image_path' => $path]);
-
-            Log::info('ProcessPendingProduct: image stored', ['path' => $path]);
-        } catch (\Exception $e) {
-            Log::warning('ProcessPendingProduct: image download skipped', [
-                'product_id' => $product->id,
-                'url'        => $imageUrl,
-                'error'      => $e->getMessage(),
-            ]);
         }
     }
 }

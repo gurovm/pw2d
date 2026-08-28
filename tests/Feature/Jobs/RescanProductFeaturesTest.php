@@ -194,4 +194,53 @@ class RescanProductFeaturesTest extends TestCase
             'raw_value'  => 90,
         ]);
     }
+
+    /**
+     * Spec 039 T2 — proves this job reaches the SAME
+     * FinalizeProductEvaluation::applyFeatureScores() ProcessPendingProduct
+     * uses (closes todo L2), not a private copy of the loop. Unlike
+     * ProcessPendingProduct, this job's AI response is never run through
+     * ProductEvaluation — a bare zero score can still legitimately arrive
+     * here, and must be skipped identically to a missing/null entry.
+     */
+    /** @test */
+    public function a_zero_score_and_a_missing_feature_are_skipped_identically_and_a_real_score_is_written(): void
+    {
+        $category = Category::factory()->create();
+        $scored   = Feature::factory()->create(['category_id' => $category->id, 'name' => 'Scored']);
+        $zeroed   = Feature::factory()->create(['category_id' => $category->id, 'name' => 'Zeroed']);
+        $missing  = Feature::factory()->create(['category_id' => $category->id, 'name' => 'Missing']);
+        $product  = Product::factory()->create(['category_id' => $category->id]);
+
+        app()->instance(AiService::class, new class extends AiService {
+            public function __construct() {}
+
+            public function rescanFeatures(
+                string $productName,
+                string $priceNote,
+                string $ratingNote,
+                array $featureMap,
+                ?string $tenantId = null,
+            ): array {
+                // 'Missing' deliberately absent — Gemini omitted it entirely.
+                return ['parsed' => ['features' => ['Scored' => 82, 'Zeroed' => 0]]];
+            }
+        });
+
+        (new RescanProductFeatures($product->id, $category->id))->handle();
+
+        $this->assertDatabaseHas('product_feature_values', [
+            'product_id' => $product->id,
+            'feature_id' => $scored->id,
+            'raw_value'  => 82,
+        ]);
+        $this->assertSame(
+            0,
+            ProductFeatureValue::where('product_id', $product->id)->where('feature_id', $zeroed->id)->count()
+        );
+        $this->assertSame(
+            0,
+            ProductFeatureValue::where('product_id', $product->id)->where('feature_id', $missing->id)->count()
+        );
+    }
 }

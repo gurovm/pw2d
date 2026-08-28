@@ -109,6 +109,44 @@ class AiUsageServiceTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // Spec 039 T4 — a zero-priced model always costs $0, even with no tokens
+    // -------------------------------------------------------------------------
+
+    /** @test */
+    public function a_zero_priced_model_prices_to_exact_zero_with_no_token_data_at_all(): void
+    {
+        config(['services.gemini.pricing' => [
+            'claude-code-session' => ['input' => 0.0, 'output' => 0.0],
+        ]]);
+
+        $service = new AiUsageService();
+
+        $cost = $service->estimateCost('claude-code-session', null, null, null);
+
+        $this->assertSame(0.0, $cost);
+    }
+
+    /** @test */
+    public function record_writes_a_zero_cost_row_with_null_tokens_for_a_zero_priced_model(): void
+    {
+        config(['services.gemini.pricing' => [
+            'claude-code-session' => ['input' => 0.0, 'output' => 0.0],
+        ]]);
+
+        $service = new AiUsageService();
+
+        $service->record('evaluate_product', 'claude-code-session', []);
+
+        $row = AiUsage::sole();
+        $this->assertSame('claude-code-session', $row->model);
+        $this->assertNull($row->input_tokens);
+        $this->assertNull($row->output_tokens);
+        $this->assertNull($row->thinking_tokens);
+        $this->assertNotNull($row->estimated_cost_usd, 'cost must be 0.0, not NULL');
+        $this->assertEquals(0.0, (float) $row->estimated_cost_usd);
+    }
+
+    // -------------------------------------------------------------------------
     // Hard safety rule 1 — unknown model never throws
     // -------------------------------------------------------------------------
 

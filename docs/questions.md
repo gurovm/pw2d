@@ -599,3 +599,106 @@ against the local dev MySQL database (per the task's own constraint — "the loc
 not try to query real data locally"); its correctness is validated by every `RefreshDatabase` test in
 the new/edited suites applying it cleanly on sqlite before each test. T2 and T3 were not started, per
 the task's explicit "T1 only" scope.
+
+## Builder judgment calls — Spec 039 T3/T4 (bouncer overflow export/apply), 2026-08-28
+
+**Found a real conflict between the spec's literal T4 step 5 and `AiUsageService`'s existing, tested
+behaviour — resolved by extending `estimateCost()`, not by changing what T4 passes it.** The spec says
+step 5 is `AiUsageService::record('evaluate_product', $source, [], $tenantId)` — literally an empty
+`$usageMetadata` array — and that this must price to `0.000000`, not `NULL`, once `claude-code-session`
+is added to the pricing map. But `estimateCost()` already had a deliberate, tested rule (`AiUsageServiceTest
+::missing_usage_metadata_logs_null_tokens_without_throwing`, pre-existing, spec 037): when all three
+token counts are null — "no data at all" — cost is `null` **regardless of whether the model is priced**,
+specifically so a real metered call whose token counts failed to arrive never silently under-reports a
+nonzero cost as `$0`. Passing `[]` unconditionally hits that exact branch, so the two requirements
+(literal `[]`, and cost `0.0` not `NULL`) are mutually exclusive under the code as it stood. Fix: added
+one guard to `estimateCost()`, checked *before* the "no token data" rule — if the model's pricing is
+`{input: 0.0, output: 0.0}`, return `0.0` immediately, independent of token presence. This only changes
+behaviour for a model an operator has explicitly zero-priced (a sunk-cost subscription, not a metered
+API — the exact scenario the null-cost safety rule doesn't need to protect against), so every existing
+`AiUsageServiceTest` case (all using nonzero-priced or unpriced models) is unaffected — confirmed by the
+full pre-existing suite staying green. Two new tests added for the zero-priced path. Recorded here
+because this is a real, if small, edit to shared T1-era logic outside T3/T4's own new files, made without
+stopping to ask — the alternative (passing fabricated zero token counts instead of `[]` to dodge the
+guard) would have satisfied the "prices to 0" requirement but silently disagreed with the spec's own
+literal call signature and produced `input_tokens: 0` rows instead of `NULL` ones, which is a worse and
+more surprising outcome for a genuinely non-metered call.
+
+**Multi-category export shape (no `category-slug`): put `rules`/`anchors`/`products` per-category, not
+hoisted to the top level.** The spec's JSON example only shows the single-category shape and says the
+no-slug case should "group products per category with their own `category`/`anchors` blocks
+(`categories: [...]`)" — it doesn't explicitly say where `rules` and `products` live. Since
+`BouncerRules::text($categoryName)` is category-name-parameterized (the category name appears twice in
+Stage 1's ignore rules), `rules` cannot be a single shared top-level field the way tenant-wide `brands`
+can — so I nested `rules`/`anchors`/`products` all under each `categories[]` entry alongside `category`,
+keeping only `meta`/`brands` at the top level. Covered by a dedicated test
+(`no_slug_exports_every_leaf_category_with_matching_products`).
+
+**`--status=processed` blindness: recomputed `price_note` from raw price + category thresholds, never
+read the stored `price_tier` column, even though the spec doesn't say this explicitly.** Confirmed via
+`OfferIngestionService` that `price_tier` is set once at import time from `Category::priceTierFor()` —
+i.e. it's a deterministic function of price, not an AI output — so it would have been safe to read
+either way for correctness, but reading the *stored* value for a "blind" export felt like it defeated
+the spirit of "only what a fresh evaluation would see," and it's one extra signal-leak surface for free
+to close. `amazon_rating`/`amazon_reviews_count`, by contrast, ARE exposed in both modes — confirmed
+these are raw scraped fields the AI evaluation never sets (`ProductEvaluation`'s own docblock: "Gemini
+leaves null; session leaves null" — `FinalizeProductEvaluation` only writes them when the evaluation
+provides a non-null value, which the Bouncer prompt never does).
+
+**T4 `--dry-run` outcome prediction: labelled a would-be `scored` result as "scored" even though it might
+turn out to be `merged` on a live run**, rather than inventing a new outcome vocabulary just for dry runs.
+`FinalizeProductEvaluation::execute()`'s scored-vs-merged branch depends on `AiService::matchProduct()`,
+an AI call `--dry-run` must never make (spec: "the action is never invoked so no AI call happens"), so
+the merge outcome is genuinely unknowable without one. The `ignored`/`rejected_from_category` predictions
+ARE fully deterministic without any AI call (no dedup check in either branch), so those are reported
+exactly as a live run would. The dry-run row's `detail` text is explicit about this ("duplicate-merge
+check requires a live run") rather than the `outcome` column silently overselling certainty.
+
+**Command tenancy: both T3 and T4 call `tenancy()->initialize($tenant)` / `tenancy()->end()` in a
+`finally` block**, matching `GenerateLandingPage`'s established pattern — even though T4's writes are
+already defended by explicit `tenant_id` checks (per spec) that don't strictly need ambient tenancy to be
+correct. Kept for consistency with every other tenant-scoped console command in the codebase and because
+it's what makes eager-loaded relations (`offers.store`, `features`) resolve through the normal
+`BelongsToTenant` scope rather than needing `withoutGlobalScopes()` threaded through every nested
+relation query too.
+
+`php artisan test`: 788 passed / 21 skipped (764 baseline + 24 new — 2 prompt-snapshot, 2 AiUsageService
+zero-priced-model, 8 export command, 12 apply command; zero regressions).
+
+---
+
+## Spec 039 T5 — `pw2d:ai:eval-model --from-file` read-only diff core (2026-08-28)
+
+**`ai_summary` word checks: used `ProductConditionGuard::summaryMarker()`, not the literally-named
+`titleCondition()`.** The task text named `titleCondition()` first, but `ai_summary` is AI-generated
+prose, not a raw scraped listing title — and `ProductConditionGuard`'s own class docblock draws exactly
+this distinction: `SUMMARY_MARKERS`/`summaryMarker()` exists specifically because a bare "used" is a
+common plain-English verb in generated prose ("designed to be used with...") and would false-positive
+under `TITLE_MARKERS`/`titleCondition()`'s substring/positional rules. Grepped `app/` for a dedicated
+landing-page banned-word class (per the task's "if one exists" instruction) — none exists; the banned
+list is inline prompt text in `AiService::generateLandingPageContent()`'s prompt string, not a reusable
+PHP source. So this falls into the task's documented fallback ("count only condition words via
+ProductConditionGuard"), and `summaryMarker()` is the technically-correct member of that class for prose.
+
+**Ignore-agreement / brand / feature denominators are each conditioned on the candidate having emitted
+that kind of data, not on the batch's total compared-row count.** The spec's worked example ("agreement
+2/3, brand 3/3") only exercises the case where every row is a scored (non-ignored) candidate, so it
+doesn't pin down what happens to the brand/feature denominators on a row where the candidate says
+`ignored` (which carries no `brand`/`features` at all — see `ProductEvaluation::buildIgnored()`). Chose:
+`is_ignored` agreement is over every compared row (always determinate, both sides are booleans); brand
+and feature comparisons are counted only for rows where the candidate is NOT ignored — an ignored
+candidate row is neither a brand match nor a mismatch, it's structurally not comparable. The gate mirrors
+this: brand/feature thresholds only fire FAIL when their own denominator is > 0 (`$brandCompared > 0`,
+`$featurePairs > 0`) — an all-ignored-candidate batch still gates purely on ignore agreement rather than
+failing brand/MAD at a meaningless 0/0.
+
+**A stored product detached by a category sweep counts as "ignored" for agreement, layered ONLY on top of
+`is_ignored = true`, checked via ANY `AiCategoryRejection` row for that product** (not scoped to the
+category the row's candidate evaluation names). The spec says "a stored product that was detached by a
+sweep (`category_id` null, `AiCategoryRejection` present) counts as 'ignored'" without saying the
+rejection must match a specific category — and since the product's `category_id` is already null at that
+point, there's no "current category" to match against for the comparison anyway. Documented on
+`CompareProductEvaluations::storedIgnored()`.
+
+`php artisan test`: 830 passed / 21 skipped (811 baseline + 19 new — 10 action-level diff tests, 9 command
+tests; zero regressions).

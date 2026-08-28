@@ -997,3 +997,180 @@ grep `function {methodName}` across the ENTIRE `tests/` and `app/` tree for that
 just `extends {ClassName}` — since a subclass can override without literally spelling "extends" on the
 same line as the method (anonymous classes, especially), and different methods on the same widely-mocked
 service need independent greps.
+
+## Spec 039 T1/T2: a value-object formalisation of an existing AI response shape must be checked against
+## every REAL response shape, not the schema table alone — the table said `status` was "required" but
+## production Gemini scored responses never send that key at all
+Before writing `ProductEvaluation::fromArray()`, grepped every `Http::fake(...)` payload actually fed
+through a real `ProcessPendingProduct::handle()` call (not `Queue::fake()`-only dispatch tests, which never
+execute the job body) — none included a `status` key for a scored response; only the `ignored` shape does.
+A strict "status required" read of the spec table would have thrown `InvalidProductEvaluation` on every
+currently-passing scored-path test. Resolved by keeping the value object's actual rule identical to the
+pre-existing job check (`($parsed['status'] ?? null) === 'ignored'`, else scored) and documenting the
+compatibility note on the class itself, rather than trusting the schema table's English over the code that
+already runs in production. General rule: when formalising an existing ad-hoc structure into a validated
+object, enumerate every REAL call site's actual payload shape first (grep `Http::fake` / fixture arrays
+feeding the code path under test) — a spec's schema table describes intent, the fixtures describe truth,
+and zero-regression extractions must side with truth when the two disagree.
+
+## Spec 039 T2: a NEW validation rule in the value object can silently make an OLD "skip, don't fail" guard
+## in the downstream code unreachable for one caller but still load-bearing for another
+`ProcessPendingProduct`'s original feature-score loop had `if ($score > 0) { ...write... }` — a soft skip,
+not a validation. Spec 039 T1 makes the value object require `score` in `1..100`, so `0` now throws
+`InvalidProductEvaluation` before the loop (now `FinalizeProductEvaluation::applyFeatureScores()`, shared
+with `RescanProductFeatures`) ever runs for the Gemini/`ProcessPendingProduct` path — the `score > 0` guard
+is dead code for that ONE caller. It's still fully live for `RescanProductFeatures`, whose AI response is
+never run through `ProductEvaluation` at all (rescan has no name/brand/summary to validate, so it was never
+in scope for the value object) and can legitimately carry a raw `0`. Wrote the "zero-score skipped" test
+against the RAW/rescan path, not the Gemini path, once I traced this — a naive dataset test with a
+zero-score feature inside a scored Gemini fixture throws at construction and never reaches the method under
+test. General rule: when a shared helper is fed pre-validated data by one caller and raw/unvalidated data by
+another, each of the helper's internal guards needs to be checked against BOTH callers' actual possible
+inputs before writing a "proves the shared path" test — a guard that's still correct code can be genuinely
+unreachable through one of the two entry points.
+
+## Pinning a prompt string byte-for-byte across a refactor (Spec 039 T3)
+When extracting part of a hand-built AI prompt string into a shared helper (`BouncerRules::text()` out of
+`AiService::evaluateProduct()`), capture the PRE-refactor bytes first as a fixture, THEN refactor, THEN
+write a permanent test asserting post-refactor output equals the fixture exactly. Capture method: a
+throwaway test using `Http::fake(function ($request) { $captured = $request->data()['contents'][0]
+['parts'][0]['text']; ... })` (this project's Gemini payload shape — `contents[0].parts[0].text` — is
+stable across every prompt-building method), `file_put_contents()` the captured string to
+`tests/Fixtures/`, run once, delete the throwaway test, keep the fixture. The permanent snapshot test
+re-captures the same way with the SAME fixed inputs and does `assertSame($fixtureContents, $captured)` —
+`assertSame` not `assertEquals`, since a single stray byte (a `–` vs `-`, a doubled space) would
+otherwise silently pass. Regenerating the fixture must only ever happen against pre-refactor code — never
+regenerate it against the current code to make a failing test pass, that defeats the entire point.
+
+## `AiUsageService::estimateCost()`'s "no token data → null cost" rule fires regardless of whether the
+## model is priced — a zero-priced model needs its own short-circuit BEFORE that check (Spec 039 T4)
+`estimateCost()` has two independent early-return-null guards: unpriced model, and "all three token
+counts are null." The second one fires even for a genuinely priced model — by design, so a real metered
+call that failed to report its token counts doesn't silently claim `$0`. This means a caller who WANTS a
+guaranteed `$0` for a model that is deliberately priced at `{input: 0, output: 0}` (a non-metered,
+sunk-cost path — e.g. `claude-code-session`) and who passes an empty `$usageMetadata` (honestly recording
+"no tokens were spent calling an external API," not "we lost the token count") gets `null`, not `0.0`,
+from the pre-existing code. Fix: add a check for `pricing['input'] == 0.0 && pricing['output'] == 0.0` that
+returns `0.0` immediately, positioned BEFORE the null-token-data guard so it's model-specific and never
+weakens the null-cost protection for any actually-metered model. Don't work around this by fabricating
+fake zero token counts at the call site instead — that satisfies "cost is 0" but produces `input_tokens:
+0` rows instead of the honest `NULL`, and disagrees with a literal, deliberate spec call signature if one
+exists.
+
+## Multi-tenant console command pair pattern: read-only export + validated apply, sharing one action per
+## command (Spec 039 T3/T4)
+When a spec calls for `Command` + a same-named `Action` class in different namespaces (e.g.
+`App\Console\Commands\ExportPendingProducts` and `App\Actions\ExportPendingProducts`), import the Action
+with an alias in the Command file (`use App\Actions\Foo as FooAction;`) rather than fighting the name
+collision — both class names ARE the spec's literal names, so don't rename either just to avoid the
+import alias. Command owns: tenant lookup + `tenancy()->initialize()`/`end()` (GenerateLandingPage's
+established pattern), option/argument parsing, file I/O, and all `$this->info/error/table()` output.
+Action owns: the actual query/assembly/validation logic, unit-testable without any Artisan/Console
+plumbing. Laravel Console signature parsing runs its `{...}` token regex across the ENTIRE `$signature`
+string including option DESCRIPTIONS — a description like `(default storage/app/bouncer/{tenant}-
+{category|all}-{Ymd_His}.json)` breaks command registration with "Cannot add a required argument ... after
+an optional one" because the braces in the prose get parsed as pseudo-arguments. Never put literal `{`/`}`
+in a signature description; spell out the pattern in plain words instead (`TENANT-CATEGORY_OR_ALL-
+TIMESTAMP.json`).
+
+## Pattern: a validated value object's strictness must match its LEAST controlled producer, not its most convenient one (Spec 039 review, 2026-08-28)
+`ProductEvaluation::fromArray()` feeds TWO producers with very different trust levels: Gemini (a model
+that occasionally drifts off an exact-vocabulary prompt, e.g. an ignore `reason` string) and a hand/AI-
+authored T4 file (fully under our control). Building the value object to the STRICTER contract (four-value
+reason enum, required non-null feature `reason`, hard length caps) "for correctness" actively breaks the
+looser producer: an off-list reason or an over-length free-text field now throws `InvalidProductEvaluation`
+after three PAID Gemini attempts, discarding a correct verdict the old bare-array code tolerated fine (the
+DB columns are `text`, unbounded). **Rule: a shared validated schema's strictness ceiling is "everything the
+LEAST controlled producer legitimately sends," derived by reading the ACTUAL prior code path (`git show
+HEAD:path/before.php`) line by line, not by re-deriving "reasonable" rules from the spec prose alone** — the
+spec table said "score must be 1..100" and "reason required ≤300," but the old job's loop
+(`is_array($value) ? extract score/reason : (float) $value`) proves 0-scores and null/missing reasons were
+always accepted and stored. Two concrete techniques used here:
+1. **Coerce/truncate instead of reject** wherever the DOWNSTREAM storage has no length constraint of its
+   own (`mb_substr($value, 0, $cap)` for free text, numeric-string/float `price_tier` coerced to
+   `int|null` rather than thrown) — reserve `throw` for genuinely unusable input (non-numeric score,
+   non-array payload).
+2. **Split strictness by call site, not by field**: the shared VO stays permissive (`ProductEvaluation::
+   VALID_REASONS` is a `public const` list, present but NOT enforced inside the class); the STRICTER
+   producer's own caller (`ApplyProductEvaluations`, T4's apply action) enforces the enum itself, right
+   after `fromArray()` succeeds, returning its own `error` row. This keeps one schema/one finalize path
+   (the spec's stated goal) while letting each producer's caller decide its own tolerance for drift.
+Also: `TypeError` (a `\Error`, not `\Exception`) escaping a `catch (\Exception $e)` is a real, reachable
+failure mode whenever a value-object factory method is typed `fromArray(array $raw)` but its caller's
+actual input type is nullable (`?array` from `json_decode()` on a non-JSON reply) — type the factory method
+`fromArray(mixed $raw)` and do the array check as the FIRST line, throwing your own typed exception, so a
+`\Throwable`-vs-`\Exception` catch-block mismatch anywhere downstream can never silently swallow a parse
+failure. Reproduce this class of bug BEFORE fixing it (a throwaway test asserting the OLD `TypeError`
+message, confirmed failing) so the fix is provably closing the exact hole, not a plausible-looking guess.
+
+## Pattern: testing "attempt N of `$tries`" behaviour differences in a job that does NOT always rethrow on the final attempt
+`RescanProductFeaturesTest`'s `dispatchAndExhaust()` pattern (real `database` queue connection, dispatch
+once, then `queue:work --once` N times with `available_at` reset between runs to skip real backoff) is the
+only way to get `$job->attempts()` to reflect a real attempt count — `Illuminate\Queue\Jobs\SyncJob::
+attempts()` is hardcoded to `1`, so calling `(new SomeJob(...))->handle()` directly can only ever exercise
+"attempt 1 of N" behavior. `ProcessPendingProduct`'s catch block is asymmetric with `RescanProductFeatures`'
+(Spec 036 H-C, which always rethrows so the queue's own `failed_jobs` mechanism records it): on the FINAL
+attempt (`attempts() >= tries`) `ProcessPendingProduct` writes `status = 'failed'` itself and does NOT
+rethrow — the job then completes normally from Laravel's point of view and is removed from `jobs`, never
+reaching `failed_jobs`. A test asserting "after 3 attempts the product is failed" for THIS job must assert
+`assertDatabaseCount('failed_jobs', 0)` (not 1) alongside `assertDatabaseCount('jobs', 0)` — copying the
+`RescanProductFeaturesTest` assertion of `failed_jobs` count 1 verbatim would be asserting behavior this job
+was never designed to have. Also: `assertDatabaseCount($table, $count, $connection = null)` has NO message
+parameter — passing a third string argument silently gets treated as a connection name and throws
+`InvalidArgumentException: Database connection [your message] not configured`, not a helpful assertion
+failure; put the explanation in a trailing `//` comment instead.
+
+## Pattern: a read-only "diff candidate vs stored" harness core (Spec 039 T5 / Spec 037 T2)
+When a spec asks for a comparison/diff harness that consumes the SAME row shape another action already
+validates (here: `ProductEvaluation::fromArray()`, already used by `ApplyProductEvaluations`), reuse that
+value object as the per-row parser rather than re-deriving field rules — an unparsable row becomes
+"unmatched" with a reason, exactly like the writer path turns it into an "error" row. Shape the action so a
+FUTURE live-runner (not yet built) can hand it the identical evaluation-row array it would otherwise write
+to a file — `execute(Tenant $tenant, array $evaluations)` doesn't know or care whether a row came from a
+file or a live model call. Concrete pieces that generalize:
+- **Explicit `tenant_id` filter, not just the global scope** — same rule as every action that runs from a
+  console command instead of per-request tenancy middleware (`Product::withoutGlobalScopes()->
+  where('tenant_id', $tenant->id)`).
+- **Denominators must be counted where they're TRUE, not assumed** — e.g. `is_ignored` agreement is over
+  every "compared" row (both scored and ignored candidates always have a determinate boolean), but brand/
+  feature comparisons are conditioned on the candidate having emitted that data at all (an `ignored`
+  `ProductEvaluation` has `brand() === null` and `features() === []`) — skip those denominators for ignored
+  rows rather than dividing by a row count that includes structurally-incomparable rows.
+- **A derived "ignored" reading, not just the raw column** — when a domain has more than one way to express
+  "excluded" (`is_ignored = true` AND a sweep-detach: `category_id NULL` + a rejection row present), a
+  comparison harness must fold them into one boolean for agreement purposes and DOCUMENT the fold on the
+  method that does it (`storedIgnored()`), not bury it in the caller.
+- **Gate a rate metric with its own denominator, not the batch's** — brand/feature thresholds should only
+  fire "FAIL" when there was actually something of that kind to compare (`$brandCompared > 0 && $rate <
+  threshold`); zero comparable pairs means "nothing to say," not "0% and failing."
+- **`json_encode(1.0)` collapses to `1`** (PHP's default `serialize_precision=-1` drops the trailing `.0`
+  when it round-trips losslessly) — a test asserting a JSON-round-tripped rate must NOT `assertSame(1.0,
+  $decoded[...])`; decode gives `int(1)`. Cast `(float)` and use `assertEqualsWithDelta()` instead.
+
+## Pattern: per-row isolation in a "one action per file row, own DB transaction" loop (Spec 039 T3/T4 review, 2026-08-28)
+When a command/action processes an array of independent rows (each in its own `DB::transaction()`), wrap
+the transaction call itself in `try { return DB::transaction(...); } catch (\Throwable $e) { Log::error(...);
+return $this->row($id, 'error', get_class($e) . ': ' . $e->getMessage()); }` — `DB::transaction()` already
+rolls the row back before rethrowing, so the catch only needs to turn the throw into that row's outcome, not
+undo anything. Without this, ANY exception (an AI call's HTTP failure, a lock-wait `QueryException`) escapes
+the loop entirely and aborts every row after it with no summary table — a batch job's per-row contract
+("this row's failure is this row's problem") is not automatically true just because each row has its own
+transaction; a throw still propagates past the loop unless caught at the call site.
+- **Completeness checks belong on the RAW input, not the validated value object**, when the VO's contract is
+  "drop what's not meaningful." `ProductEvaluation::features()` drops explicit `null` entries (they mean
+  "AI declined to score, not applicable") — checking "every category feature is present" against
+  `$eval->features()` would treat a legitimately-`null`-scored feature as missing. Check
+  `array_key_exists($name, $rawRow['features'])` instead; the raw array is a safe read at this point because
+  the VO's own construction already guaranteed `features` is an array (it would have thrown otherwise).
+- **A destructive-early-exit guard (queue depth, external lock, quota) goes at the very top of `handle()`,
+  before argument/file parsing, and is NOT skipped under `--dry-run`.** A dry run's purpose is "tell the
+  operator what a live run would do" — if the live run would be refused, the dry run must say so identically,
+  not silently validate a file that can never actually be applied. Give the refusal its own exit code
+  (not `self::FAILURE`) so callers/scripts can distinguish "some rows are bad" from "did not even attempt to
+  run."
+- **A blind/calibration export must exclude its own row set from any "reference" pool it also emits.** If an
+  export both anchors a scoring scale (already-labeled examples) and lists rows to be independently
+  evaluated, and the two pools are drawn from the same underlying table, a `whereNotIn('id', $exportedIds)`
+  on the anchor query is required — otherwise a product appears once as an unlabeled row to score and once
+  (elsewhere in the same file) as a labeled anchor, and any evaluator will silently copy the number back,
+  corrupting the very calibration the export exists to produce.

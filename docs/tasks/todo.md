@@ -202,7 +202,7 @@ Trend confirmed across 3 checkpoints (impr 276→516→928; pos 17.4→15.2→13
 ## P3 -- Low Priority (Polish)
 
 - [ ] **L1: Add N+1 eager loading in Filament resources** -- AiMatchingDecisionResource, CategoryResource, FeatureValuesRelationManager. *[Perf-Filament]*
-- [ ] **L2: Extract duplicated feature-score parsing** -- Identical in ProcessPendingProduct and RescanProductFeatures. *[Review-AI]*
+- [x] **L2: Extract duplicated feature-score parsing** -- Identical in ProcessPendingProduct and RescanProductFeatures. Closed by Spec 039 T2: both now call `FinalizeProductEvaluation::applyFeatureScores()`. *[Review-AI]*
 - [ ] **L3: Extract duplicated price-note builder** -- Same block in both jobs. *[Review-AI]*
 - [ ] **L4: Extract typewriter animation** -- Copy-pasted Alpine.js in 2 templates. *[Review-Frontend]*
 - [ ] **L5: Remove DB query from ComparisonHeader Blade** -- `Category::find()` in template. *[Review-Frontend]*
@@ -1016,7 +1016,7 @@ on 25 Aug = stale browser tab after deploy. **Nothing wrong with the log itself.
   tests, `php artisan test`: 725 passed / 21 skipped (baseline 710/21, zero regressions). Tester pass still
   to extend/harden per normal workflow. *[Test]*
 - [x] **Architect: correct Spec 037 §1 baseline** — correction note added under §1 on 2026-08-28; full table rewrite when T2 lands.
-- [x] **Review pass (2026-08-28):** reviewer verdict SHIP, 0 critical/0 high/1 medium (`docs/reviews/review-2026-08-28-spec-038.md`). M1 fixed — `ProductImportController` now clears `pending_ai` for existing products too (the "in-flight job" exclusion in the spec was wrong; lesson recorded in `docs/lessons.md`). L1 fixed — `AiUsageService::record()` body wrapped in an outer never-throw guard so a logging failure cannot escape. Tester added 11 tests (10 remaining `purpose` strings + record-before-`MAX_TOKENS`). **Final: 737 passed / 21 skipped** (baseline 710). LOW/NIT leftovers filed below. Awaiting commit + `/deploy`.
+- [x] **Review pass (2026-08-28):** reviewer verdict SHIP, 0 critical/0 high/1 medium (`docs/reviews/review-2026-08-28-spec-038.md`). M1 fixed — `ProductImportController` now clears `pending_ai` for existing products too (the "in-flight job" exclusion in the spec was wrong; lesson recorded in `docs/lessons.md`). L1 fixed — `AiUsageService::record()` body wrapped in an outer never-throw guard so a logging failure cannot escape. Tester added 11 tests (10 remaining `purpose` strings + record-before-`MAX_TOKENS`). **Final: 737 passed / 21 skipped** (baseline 710). LOW/NIT leftovers filed below. **DEPLOYED 2026-08-28 11:21 UTC, prod `c31c602`** — migration DONE (28 stuck rows cleared, 0 remain), queue workers restarted (fresh PIDs), all sites 200, no log errors. `ai_usage` still 0 rows: the headsets rescan is the first live test.
 
 **Then:** `/deploy` → headsets **rescan** (82 unchecked buyable offers ≈ 12 min; the 22 Aug import means
 headsets needs a rescan, not another import) → first `ai_usage` rows appear, attributed to pw2d, priced →
@@ -1038,3 +1038,158 @@ continue run sheet (lavalier, ergonomic) → regenerate the 5 STALE pw2d pages.
 - [ ] **N4:** five other `AiService` methods hold a tenant model and could forward `tenant_id` explicitly
   for defence-in-depth; today the `tenant('id')` fallback covers them because they run with tenancy
   initialized. Do it if any of them ever moves onto the queue. *[API]*
+
+### 2026-08-28 — headsets page rebuilt and live; pw2d top-up progress
+
+- [x] **`/best/gaming-chat-headsets` regenerated and LIVE (14:29 UTC).** Full category rescan first (161
+  buyable offers, 0 unchecked, 0 errors), then `pick_ineligible` traced to the Stinger 2's Amazon "High
+  price" flag (popup counter showed 0 — the known undercount). Dry-run selection, Claude-authored prose,
+  owner-reviewed via artifact, written through the model with a selection guard; backup
+  `/tmp/headsets_backup_20260828_142919.json` on prod. Audit FRESH. 6/7 picks changed. *[Content]*
+- [ ] **Remaining pw2d pages still STALE on `selection_drift`:** lavalier, mechanical-keyboards, mics,
+  ergonomic-keyboards. Do NOT regenerate until each category is rescanned (never re-select from an
+  unverified pool). Follow the run sheet: lavalier next (import → rescan → regenerate). *[Content]*
+- [ ] **Two unchecked stragglers keep `import_debt` red:** 1 in mechanical-gaming-keyboards, 1 in
+  podcast-studio-mics (the known Keychron C1 / Shure SM7dB+MVX2U rows). One single-scan each. *[QA]*
+- [ ] **Cost log (`ai_usage`) still has 0 rows — expected.** The extension health rescan makes NO AI calls
+  (`RescanProductFeatures` is dispatched only from Filament and `ProductObserver`); the first rows come
+  from the next import (`evaluate_product`) or a site AI search. Verify with the Spec 038 §4 query after
+  the lavalier import. *[Data]*
+
+### 2026-08-28 — lavalier top-up: cost log VERIFIED, Gemini daily cap hit, pool polluted
+
+- [x] **Spec 038 verified live.** First import after deploy: 435 `ai_usage` rows, **every one `tenant_id = pw2d`,
+  zero null cost.** `evaluate_product` on `gemini-3.1-pro-preview`: 252 calls, avg 1416 in / 315 out / 659
+  thinking → **$0.0145/product**; `match_product` on `gemini-3.5-flash`: 183 calls → $0.004/product.
+  **All-in ≈ $0.0185/product, $4.39 for the batch.** Spec 037 §1's 3.1 Pro row estimated $0.0132 — output
+  is heavier than assumed (thinking tokens ≈ 2× answer tokens). Feed into T2. *[Data, AI]*
+- [ ] **Gemini daily cap on the admin model ≈ 250 evaluate calls (observed 2026-08-28).** Throughput
+  46/57/50/45/44 per 5 min from 15:10, then 9, then 1; last 10 min = 23 completed vs 232 `429`s. 93
+  lavalier products still `pending_ai` with 93 queued jobs (68 at attempt 1, 25 at attempt 2). Each will
+  exhaust `tries=3` and land at `status='failed'` (the known swallow — not in `failed_jobs`). **Recovery:**
+  after the quota resets (~07:00 UTC, midnight Pacific), Filament → Products → "Retry Failed" (they all
+  have `category_id`, so the filter keeps them). Site-facing AI (3.5 Flash) is a separate quota, unaffected.
+  **Planning rule: ≤ ~200 new products/day on the current admin model; "2 SERP pages per search" on 13
+  phrases = 277 rows and blew it.** Confirm the exact limit in the Google AI Studio console — it is not
+  published. This is Spec 037 T3's strongest argument yet. *[AI, Ops]*
+- [ ] **Lavalier pool polluted by shotgun / on-camera mics — needs the sweep step before anything else.**
+  15 processed, non-ignored products match shotgun|videomic|on-camera|bundle|case (Sony ECM-B10/G1/M1/
+  VG1/674, RØDE VideoMicro II, VideoMic Me-C, MKE 600, "Mic 2 Bundle | Case"…), all created today. The
+  dry-run selector already puts three of them in the top slots. Sequence once processing completes:
+  `pw2d:ai-sweep-category lavalier-wireless-systems --dry-run` → review → sweep → rescan the ~190 unchecked
+  (99 processed-unchecked + 93 pending; ~30 min in the extension) → dry-run → regenerate. **Do NOT
+  regenerate before that.** Also confirms the Spec 031 amendment ("add the sweep step to Tier-3"). *[Content, QA]*
+- [ ] **Lavalier page now STALE on `selection_drift` + `price_drift`** (audit 15:40). Expected; clears on regenerate. *[Content]*
+
+### Spec 039 — Bouncer overflow path: operator-session evaluations (drafted 2026-08-28, AWAITING OWNER GO)
+
+`docs/specs/039-bouncer-in-session.md`. Owner's call: use the idle Claude Code subscription on weekend
+top-ups to finish what Gemini's daily quota leaves behind — interactively, never headless. v1 = overflow
+path only; imports keep dispatching Gemini as today.
+
+- [x] **T1: `ProductEvaluation` value object** — one validated schema for both producers; adds
+  `wrong_category` reason (maps to sweep semantics). Gemini parse path constructs it; existing tests
+  unchanged. `app/Support/ProductEvaluation.php` + `app/Exceptions/InvalidProductEvaluation.php`.
+  `status` compatibility note: Gemini's real "scored" payload has no `status` key at all — `fromArray()`
+  treats anything other than a literal `'ignored'` as scored (including the key being absent), matching
+  `ProcessPendingProduct`'s pre-existing check exactly; this is documented on the class. *[API]*
+- [x] **T2: extract `FinalizeProductEvaluation` action** from `ProcessPendingProduct` (move, not rewrite);
+  `applyFeatureScores()` shared with `RescanProductFeatures` (closes L2). Retry/`failed` semantics untouched.
+  `app/Actions/FinalizeProductEvaluation.php` + `app/Enums/FinalizeOutcome.php`. `wrong_category` (a
+  `reason` under `status=ignored`, not a 3rd status) routes to a new `rejectFromCategory()` branch:
+  `AiCategoryRejection::firstOrCreate`, `category_id`/`status` null via model-level `update()` (Spec 035:
+  fires `ProductObserver`), `is_ignored` untouched. `php artisan test`: 764 passed / 21 skipped (737
+  baseline + 27 new; zero regressions — the one pre-existing `SelectLandingPagePicksTest` failure seen
+  running the FULL suite alone is Faker-seed order-dependent, confirmed by re-running that file in
+  isolation, unrelated to this change). Reviewer pass after this step. *[API]*
+- [x] **T3: `pw2d:products:export-pending`** — read-only JSON export of pending/failed products with
+  category features, tenant brand list, N scoring anchors (deterministic: highest `amazon_reviews_count`
+  first, id tiebreak), and the gate rules via new `App\Support\BouncerRules::text()` (extracted from the
+  Gemini prompt — single source; `AiService::evaluateProduct()` now calls it, byte-identical prompt pinned
+  by `tests/Unit/Services/AiServicePromptSnapshotTest.php` against a pre-refactor fixture). `--status=
+  processed` = blind calibration export (no stored scores/brand/ai_summary/price_tier — price_note is
+  recomputed from raw price + category thresholds, never the stored column). No slug → every leaf category
+  with matching products, each under its own `category`/`rules`/`anchors`/`products` block in a top-level
+  `categories` array (rules text is category-name-dependent, so it can't be hoisted like `brands` can).
+  `app/Console/Commands/ExportPendingProducts.php` + `app/Actions/ExportPendingProducts.php` +
+  `app/Support/BouncerRules.php`. *[Tooling]*
+- [x] **T4: `pw2d:products:apply-evaluations`** — validates (schema → explicit `tenant_id` check, not just
+  the global scope → status IN pending_ai/failed → feature names known to category), runs
+  `FinalizeProductEvaluation::execute()` per product in its own `DB::transaction()`, records `ai_usage`
+  with `model=claude-code-session` at exactly `0.0` (not NULL — required a small, documented
+  `AiUsageService::estimateCost()` addition: a zero-priced model now short-circuits to `0.0` before the
+  pre-existing "no token data → null cost" rule, which otherwise fired regardless of pricing since the
+  call site passes `[]`/all-null tokens on purpose — see docs/questions.md). Idempotent (non-pending rows
+  skip — verified by re-applying the same file twice), `--dry-run` (steps 1–3 only, zero writes, zero AI
+  calls, predicts ignored/rejected deterministically and labels the scored/merged split as
+  live-run-only since `matchProduct()` is unknowable without an AI call), exit 1 iff `errors > 0`.
+  `app/Console/Commands/ApplyProductEvaluations.php` + `app/Actions/ApplyProductEvaluations.php`.
+  `php artisan test`: 788 passed / 21 skipped (764 baseline + 24 new; zero regressions). Reviewer pass
+  after this step. *[Tooling, API]*
+- [x] **T5: harness `--from-file`** on `pw2d:ai:eval-model` (Spec 037 T2) — session scores measured against
+  stored ones with the same gate (≥95% ignore agreement, ≥98% brand, ≤5pt MAD). **Session path not
+  trusted for first-pass evaluation until it passes on a 50-product calibration export.** Built as the
+  read-only diff core (Spec 037 T2's `eval-model` command didn't exist yet): `App\Actions\
+  CompareProductEvaluations` diffs a T4-shaped evaluations file against each product's stored state
+  (explicit `withoutGlobalScopes()->where('tenant_id', …)`, requires `status IS NULL`, else `unmatched`).
+  `is_ignored` agreement treats a sweep-detached product (`category_id` null + `AiCategoryRejection`
+  present) as "ignored" even though its own `is_ignored` column is false — documented on
+  `storedIgnored()`. Brand compared both raw-exact and normalized-exact (`AiService::
+  normalizeBrandForComparison()` on both sides). Feature MAD/max-delta over candidate-scored ∩
+  stored-`ProductFeatureValue` pairs only; missing-side pairs counted as skipped, not deltaed.
+  `ai_summary` condition-word hits via `ProductConditionGuard::summaryMarker()` (prose-shaped marker
+  set, not `titleCondition()` — no separate landing-page banned-word class exists in `app/`, confirmed by
+  grep). `App\Console\Commands\EvalModelCommand` ships `pw2d:ai:eval-model {tenant} {--from-file=}
+  {--json=}` only — `--model=`/`--category=`/`--limit=` (the live-model runner) are out of scope here and
+  documented as a follow-up in the class docblock; `--from-file` is required for now. Read-only — writes
+  nothing. `app/Actions/CompareProductEvaluations.php` + `app/Support/EvaluationComparison.php` +
+  `app/Console/Commands/EvalModelCommand.php`. `php artisan test`: 830 passed / 21 skipped (811 baseline +
+  19 new; zero regressions). *[Tooling, Test]*
+- [x] **T6: runbook `docs/ops/bouncer-session.md`** (drafted 2026-08-28 by architect; flags verified against the shipped commands) — operator sequence, subagent prompt template, budget
+  note, dry-run-first rule, boundary. *[Docs]*
+- [ ] **Flaky test (pre-existing, order-dependent): `SelectLandingPicksTest`** — the Spec 039 T1+T2 builder saw one failure in a full-suite run *before* touching anything; the file passes alone and did not recur. Likely shared state / ordering (cache or static). Reproduce with `php artisan test --order-by=random --seed=<n>` until it fails, then fix the isolation. *[Test]*
+- [x] **Spec 039 T1+T2 review fix pass (2026-08-28, `docs/reviews/review-2026-08-28-spec-039-t1-t2.md`).**
+  HIGH-1 fixed: `ProductEvaluation::fromArray(mixed $raw)` now throws `InvalidProductEvaluation('payload', …)`
+  for a non-array payload instead of letting a `TypeError` escape the job's `catch (\Exception)` — reproduced
+  the TypeError against pre-fix code with a throwaway test (confirmed failing), then confirmed the fix with a
+  permanent job-level test (`ProcessPendingProductEvaluationTest::a_non_json_gemini_reply_throws_on_attempt_one_and_fails_the_product_after_three_attempts`,
+  driven on the real `database` queue connection since `SyncJob::attempts()` is hardcoded to 1). MEDIUM-2:
+  `buildIgnored()` now accepts any non-empty (trimmed) reason, defaulting a missing one to `''` exactly like
+  the old job's `?? ''`; the four-value enum (`ProductEvaluation::VALID_REASONS`, now `public`) moved to
+  `ApplyProductEvaluations` (T4 file rows only — an off-list reason there is an authoring mistake, not model
+  drift). MEDIUM-3: `ai_summary`/feature `reason` truncated with `mb_substr()` at their cap instead of
+  rejected; feature `reason` nullable; bare numeric feature entries and numeric-string scores accepted
+  (mirrors the old loop's `is_array($value) ? … : (float) $value`); score `0` valid at the VO level (the
+  `score > 0` write-guard in `applyFeatureScores()` still skips it). LOW: `price_tier` coerces out-of-range/
+  non-numeric/non-integral values to `null` instead of throwing; the image-download helper's
+  `catch (\Exception)` → `catch (\Throwable)` (the `parse_url()` consumers are `TypeError`s under
+  `strict_types=1`); `$source` threaded into `FinalizeProductEvaluation`'s own `Log::info` context (was
+  accepted-but-unused). Two job-level test gaps closed: merge (offer transfer, same-store-cheaper rule,
+  `forceDelete`, via a seeded `AiMatchingDecision` cache hit — no HTTP) and pre-existing `AiCategoryRejection`
+  (product detached before any scored write) now run through `ProcessPendingProduct::handle()`, not just
+  traced; `FinalizeProductEvaluationTest`'s docblock corrected to stop claiming they were already covered.
+  `php artisan test`: **811 passed / 21 skipped** (788 baseline + 23 net new; 3 pre-existing strict-contract
+  tests flipped to the new behaviour, not left duplicated; zero failures). *[API, Test]*
+- [x] **Spec 039 T3/T4 review (2026-08-28, `docs/reviews/review-2026-08-28-spec-039-t3-t4.md`): verdict SHIP,
+  four MEDIUMs landed (fix pass 2026-08-28):** M1 per-row `try/catch` so one failing
+  row cannot abort the batch; M2 enforce "every category feature present" on scored rows (explicit null ok);
+  M3 blind calibration export must exclude exported ids from anchors; M4 apply refuses while `jobs` > 0
+  (a queued Gemini job re-processes regardless of status and would overwrite session results) unless
+  `--force`. Runbook step 2 corrected accordingly. Verified correct: tenant ownership check, status guard,
+  enum at apply time, per-product transactions, dry-run writes nothing, idempotent re-run, `ai_usage` row at
+  $0 with tenant, prompt byte-identical (fixture provenance proven), export read-only + tenant-scoped +
+  eager-loaded, all six T1/T2 fix items, no locks held across the `matchProduct()` HTTP call. *[API, Tooling]*
+- [x] **M1: per-row `try/catch` around `DB::transaction()`** in `ApplyProductEvaluations::applyRow()` — a
+  throw (e.g. `matchProduct()`'s Gemini call failing) now becomes that row's `error` outcome (`Log::error`
+  with `product_id`/`source`/exception class) instead of aborting the whole batch. *[API]*
+- [x] **M2: "every category feature present" enforced at apply time** for scored file rows — a category
+  feature name entirely absent from the raw row's `features` map is an `error` ("missing feature …"); an
+  explicit `null` still counts as present ("not applicable"). *[API]*
+- [x] **M3: blind `--status=processed` export excludes exported ids from its own anchor set** —
+  `ExportPendingProducts::buildAnchors()` takes an exclude-ids list, populated with the exported product ids
+  only in blind-calibration mode, so a product under test can never also appear as its own scoring anchor.
+  *[Tooling]*
+- [x] **M4: `apply-evaluations` refuses while the `jobs` queue is non-empty** (before doing anything,
+  including `--dry-run`) unless `--force` is passed — a still-queued `ProcessPendingProduct` job ignores
+  product status and can overwrite a product the session just finalized. Exit code 2, no table rendered.
+  `docs/ops/bouncer-session.md`'s "What can go wrong" table updated with this refusal. *[API, Docs]*

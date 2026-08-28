@@ -126,6 +126,17 @@ class AiUsageService
             return null;
         }
 
+        // Spec 039 T4 — a zero-priced model (the `claude-code-session` overflow
+        // path: a sunk-cost subscription, not a metered API) always costs $0,
+        // even when there is no usageMetadata at all to report token counts
+        // from. The "no token data" null-cost rule right below exists so a
+        // REAL metered call whose token counts failed to arrive doesn't
+        // silently under-report a nonzero cost as $0 — that risk doesn't
+        // exist when the rate itself is zero, so this check must come first.
+        if ($pricing['input'] == 0.0 && $pricing['output'] == 0.0) {
+            return 0.0;
+        }
+
         if ($inputTokens === null && $outputTokens === null && $thinkingTokens === null) {
             return null;
         }

@@ -55,6 +55,12 @@ return [
             // was recording estimated_cost_usd = NULL (spec 037 §1.1 prices).
             'gemini-3.1-pro-preview'  => ['input' => 2.00, 'output' => 12.00],
             'gemini-3.5-flash'        => ['input' => 1.50, 'output' => 9.00],
+            // Spec 039 T4 — the operator-session overflow path
+            // (`pw2d:products:apply-evaluations`). Not a metered API call: the
+            // Claude Code subscription is a sunk cost, so every row prices to
+            // exactly $0 (see AiUsageService::estimateCost()'s zero-priced-model
+            // short-circuit) rather than NULL.
+            'claude-code-session'     => ['input' => 0.0, 'output' => 0.0],
         ],
     ],
 

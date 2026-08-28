@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Actions\FinalizeProductEvaluation;
 use App\Models\Category;
 use App\Models\Product;
 use Illuminate\Bus\Queueable;
@@ -86,20 +87,8 @@ class RescanProductFeatures implements ShouldQueue
                 throw new \Exception('Invalid AI response: missing features object');
             }
 
-            foreach ($category->features as $feature) {
-                $value = $parsed['features'][$feature->name] ?? null;
-                if ($value === null) continue;
-
-                $score  = is_array($value) ? (float) ($value['score'] ?? 0) : (float) $value;
-                $reason = is_array($value) ? ($value['reason'] ?? null)      : null;
-
-                if ($score > 0) {
-                    $product->featureValues()->updateOrCreate(
-                        ['feature_id' => $feature->id],
-                        ['raw_value' => $score, 'explanation' => $reason]
-                    );
-                }
-            }
+            // Spec 039 T2 — shared with ProcessPendingProduct (closes todo L2).
+            FinalizeProductEvaluation::applyFeatureScores($product, $category, $parsed['features']);
 
             Log::info('RescanProductFeatures: completed', [
                 'product_id' => $product->id,
