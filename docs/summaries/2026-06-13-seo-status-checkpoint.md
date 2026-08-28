@@ -508,3 +508,153 @@ Judge on 202633–202634.
 2. Compare-page cleanup effect on headsets/mics (weeks 202633–34 vs the baseline above).
 3. c2d — does 202633 hold ~140 impr/day, or was 202632 a spike?
 4. First PostHog engagement read is now viable on c2d (15 clicks in 28d clears the floor).
+
+---
+
+## UPDATE — 2026-08-24 check: c2d preset-compare pages START EARNING CLICKS — the surface pw2d's authority verdict left for dead. pw2d slipped on every axis. **Positive confirmation of the authority thesis.**
+
+**Pipeline:** 4/4 HEALTHY. GSC through 2026-08-21 (normal 3-day lag), GA4 through 08-23.
+Week 202633 is **6 of 7 days** on both tenants — per-day rates used where it matters.
+
+### The headline: the preset architecture works. It just needs a domain that ranks.
+
+The Jul-10 verdict ("on-page is not the lever; pivot to authority") was inferred from a *negative* —
+pw2d presets plateaued at pos 10-15 and never converted. This week supplies the **positive** control.
+c2d's preset-compare pages sit at pos 6-22 and **earn clicks**:
+
+| Surface | impr | clicks | pos |
+|---|---|---|---|
+| `/compare/manual-coffee-grinders?preset=beginner` | 6 | **2** | 13.7 |
+| `/compare/gooseneck-kettles?preset=tea-drinker` | 2 | **1** | 6.5 |
+| `/compare/manual-coffee-grinders?preset=traveler` | 2 | **1** | 13.5 |
+| `/compare/pour-over-drippers-brewers` | 2 | **1** | 3.0 |
+| `/compare/manual-coffee-grinders` ("compare coffee grinder online 193") | 6 | **1** | 16.8 |
+
+**6 of c2d's 21 clicks came from the compare surface** (CTR 0.79%) versus **1 click on pw2d's entire
+compare surface across 495 impressions** (CTR 0.20%). Same code, same preset design, same schema —
+opposite outcomes, separated by rank. Specs 023/024/025 were not wasted; they were shipped onto a
+domain that could not rank them. **Do not re-open on-page work for pw2d presets on the strength of
+this** — the read is that the on-page work is already correct and waiting on authority.
+
+### pw2d — down on every axis
+| Metric | 07-10 | 07-19 | 08-02 | 08-09 | 08-17 | **08-24** |
+|---|---|---|---|---|---|---|
+| Pages w/ impressions | 222 | 237 | 221 | 239 | 251 | **271** |
+| Impressions (28d) | 2,040 | 2,175 | 2,199 | 2,346 | 2,402 | **2,367** |
+| Clicks (28d) | 7 | 7 | 6 | 3 | 10 | **12** |
+| Weighted pos | 16.2 | — | — | 18.4 | 19.2 | **20.2** |
+| CTR | 0.34% | — | — | — | — | **0.51%** |
+
+Weekly per-day impressions: 202632 **101/day** → 202633 **73/day** (−28%). First genuine per-day
+decline since the series began; page count still rising, so this is thinning per-page demand, not
+de-indexation. Clicks 10→12, still essentially all product pages (`aoc gk330` 188 impr / 4 clicks
+@ pos 7.5 is 8% of the tenant's impressions by itself).
+
+**Target preset queries — degraded, tenth consecutive week with zero clicks:**
+| Query | 08-09 | 08-17 | **08-24** |
+|---|---|---|---|
+| rsi keyboard | 12.8 | 12.5 | **17.4** |
+| streamer keyboards | 9.9 | 11.3 | **14.8** |
+| best ergonomic keyboard for programmers | — | 14.8 | **18.6** |
+| pro gaming keyboards | — | 35.6 | **35.6** |
+
+Every tracked query moved *down* 2-5 positions. The 10-15 band held since June has become a 15-21
+band. Consistent with authority erosion relative to competitors, not with a page-level regression.
+
+### c2d — 202632 was NOT a spike; the climb is holding
+| Metric | 08-02 | 08-09 | 08-17 | **08-24** |
+|---|---|---|---|---|
+| Pages w/ impressions | 197 | 197 | 221 | **229** |
+| Impressions (28d) | 1,468 | 1,468 | 2,112 | **2,715** |
+| Clicks (28d) | 5 | 8 | 15 | **21** |
+| Weighted pos | 37.6 | 37.6 | 29.3 | **26.6** |
+| CTR | 0.34% | 0.54% | 0.71% | **0.77%** |
+
+| wk | impr | clicks | wpos | days | per-day |
+|---|---|---|---|---|---|
+| 202631 | 564 | 5 | 30.7 | 7 | 81 |
+| 202632 | 994 | 7 | 24.2 | 7 | **142** |
+| 202633 | 807 | 8 | 25.1 | 6 | **135** |
+
+**Answer to last check's Q3: HOLDING.** 135/day vs 142/day is flat, not a retreat. Clicks rose 7→8
+on a shorter week. wpos steady at ~25. Product pages remain the engine (1,736 impr / 14 clicks /
+wpos 17.7), but compare is now genuinely contributing.
+
+### Q1 — the 8 `/best/` pages: STILL ZERO ROWS. Cause narrowed; it is not a page-level block.
+Only **3 of 11** `/best/` pages have ever recorded a GSC row:
+
+| Tenant | Page | created | first row | impr | clicks | wpos |
+|---|---|---|---|---|---|---|
+| c2d | super-automatic-espresso-machines | 08-01 | 08-02 | 91 | 0 | 53.1 |
+| pw2d | mechanical-gaming-keyboards | 08-01 | 08-03 | 24 | 1 | 44.8 |
+| pw2d | productivity-ergonomic-keyboards | 08-01 | 08-03 | 19 | 0 | 33.3 |
+
+`/best/manual-coffee-grinders` is now at **23 days with zero rows** — it was put "on notice" on 08-17
+and has failed the re-check. The other 7 (created 08-09) are at 15 days.
+
+**Ruled out this session:** HTTP 200 on all sampled pages; all 11 present in both sitemaps; canonical
+is self-referential and correct; no `noindex` meta; robots.txt clean. So this is **not** a page-level
+block — it is crawl/indexation rationing, the same constraint behind pw2d's 128 "Crawled – currently
+not indexed" pages.
+
+**New structural finding — the `/best/` pages are near-orphaned.** Verified by fetching rendered HTML:
+neither homepage links to any `/best/` URL, on either tenant. The only internal link found was
+`/compare/manual-coffee-grinders` → `/best/manual-coffee-grinders` — i.e. **one inbound internal link
+per page, from its own sibling compare page**, which itself sits at wpos 45. This does not by itself
+explain why super-auto indexed and manual-grinders did not (both are linked the same way), so it is
+not proven as *the* cause — but a one-link, no-homepage-path page is the weakest possible crawl
+signal, and it is the only lever here that is code-shaped rather than authority-shaped. Filed as F36.
+
+### Q2 — cleanup impact on headsets/mics: UNREADABLE, and the 08-17 baseline was wrong
+The baseline table recorded on 08-17 **does not reproduce**. Actual GSC impressions today:
+
+| wk | headsets (recorded → actual) | mics (recorded → actual) | lavalier (recorded → actual) |
+|---|---|---|---|
+| 202629 | 12 → 9 | **111 → 4** | 16 → 16 |
+| 202630 | 9 → 7 | **123 → 3** | 6 → 6 |
+| 202631 | 7 → 6 | **80 → 2** | 6 → 6 |
+| 202632 | 5 → 3 | **79 → 2** | 4 → 4 |
+
+Lavalier matches exactly and headsets is within GSC's normal historical revision, but **mics is wrong
+by ~25×**. Most likely cause: the 08-17 query matched `%mic%`, which catches every *microphone product
+page* slug, not the `podcast-studio-mics` compare page. **The planned cleanup diff cannot be run against
+that row.** What is readable: all three compare pages are 2-3 impressions/week and were declining
+*before* the Aug 12-16 cleanup. At this volume no attribution is possible now or later — **close the
+cleanup-impact watch as unmeasurable** rather than carrying it forward.
+
+### Q4 — PostHog engagement read: BLOCKED on a dead credential
+c2d's 21 clicks clear the volume floor, so the read was attempted. `POSTHOG_PERSONAL_API_KEY` in the
+local `.env` is well-formed (`phx_` prefix, 52 chars) but PostHog returns `authentication_failed` on
+both `us.posthog.com` and `app.posthog.com`. The key has been revoked or expired. **Owner action:
+mint a new personal API key** (PostHog → Settings → Personal API keys) and update local `.env`.
+Engagement remains unmeasured — now for a credential reason, not a traffic reason. Filed as F37.
+
+### Unplanned finding — all 5 pw2d landing pages are STALE (`selection_drift`), all 6 c2d pages FRESH
+`pw2d:landing-pages:audit` at 2026-08-24 13:02 flags every pw2d page and no c2d page. pw2d pages were
+last generated 08-14/16; c2d's were regenerated 08-21.
+
+**Verified genuine drift, NOT the H-A phantom-drift failure mode.** Audit finding H-A predicts that a
+`modelKey()` false-merge can drop a pool below `MIN_PICKS`, make `execute()` throw, and leave a page
+stamped `selection_drift` forever with nothing actually wrong. Checked directly against prod for
+`mechanical-gaming-keyboards`: `SelectLandingPagePicks::execute()` returns **7 picks without throwing**,
+and 2 of the 7 stored picks genuinely differ (slots 5 and 6: `2742→2799`, `2691→2722`). So the pages
+are really 10 days out of date. H-A remains open and unrelated to this.
+
+**Do not regenerate these pages yet.** Per the standing response rule, a drift signal detects but does
+not authorise a rebuild, and pw2d's pool is unverified — weekly pick verification has *never* been run
+for this tenant. Correct order is verify → sweep → rescan → regenerate.
+
+### Decisions (2026-08-24)
+- **pw2d authority verdict: UNCHANGED, and now positively confirmed** by the c2d control. No new
+  on-page specs for pw2d presets. Off-page/authority remains the only lever.
+- **c2d: no intervention.** Compounding on its own; do not perturb mid-climb.
+- **Cleanup-impact watch: CLOSED as unmeasurable** (2-3 impr/week surfaces).
+- **`/best/` internal linking → F36**, the one code-shaped play available. Recommend a spec.
+- **PostHog key → F37**, owner action, 5 minutes.
+- **pw2d landing-page drift feeds the existing Tier-3 top-up run sheet** — verify picks first.
+
+### Next check (~2026-08-31)
+1. Did the pw2d per-day decline (101→73) continue, or was 202633 a short-week artifact?
+2. Do c2d compare-page clicks repeat, or were the 6 a one-week cluster? This is the load-bearing signal.
+3. Any GSC row at all on the 8 silent `/best/` pages — especially if F36 linking ships.
+4. PostHog engagement read on c2d, if the key is replaced.
