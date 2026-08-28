@@ -14,6 +14,10 @@ When invoked, you must execute the following deployment steps exactly in this or
 7. Build frontend assets: `npm run build`
 8. Clear caches: `php artisan optimize:clear`
 9. Restart PHP-FPM to clear OPcache: `systemctl restart php8.3-fpm`
+   9b. Restart queue workers so they load the new code: `php artisan queue:restart` (graceful — workers finish
+   their current job and supervisor respawns them; verify with `supervisorctl status`, new PIDs / uptime ~0s).
+   Without this, `queue:work --max-time=3600` keeps running the OLD job/service code for up to an hour
+   after deploy. Found 2026-08-28 deploying Spec 038, whose changes live in job code. See docs/lessons.md.
 10. Verify Laravel scheduler cron hook is installed (idempotent read-only check):
    `sudo -u www-data crontab -l 2>/dev/null | grep -q "schedule:run" || echo "WARNING: Laravel scheduler cron hook NOT installed. Run: echo '* * * * * cd /var/www/pw2d && php artisan schedule:run >> /dev/null 2>&1' | sudo -u www-data crontab -"`
 

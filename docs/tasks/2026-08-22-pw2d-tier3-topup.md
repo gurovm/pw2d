@@ -46,11 +46,15 @@ it is accessories. Ignore rates run 35–70%, which is normal and expected.
 
 ### 1. gaming-chat-headsets — target +25–35 rows
 
-**STATUS 2026-08-28: import DONE (22 Aug 13:16–13:23) — 117 rows created, 96 accepted by the Bouncer,
-21 renewed listings ignored at import. Turtle Beach, JBL Quantum, Corsair, Logitech, HyperX, Razer all
-landed. NEXT STEP IS THE RESCAN, NOT MORE SEARCHES: 82 buyable offers have `health_checked_at = NULL`
-(~12 min). Do it only after Spec 038 is deployed — that rescan doubles as the first live test of the
-cost log (query in `docs/specs/038-ai-usage-fix-bundle.md` §4). Then `pw2d:landing-pages:audit`.**
+**STATUS 2026-08-28: import DONE (22 Aug, 117 rows, 96 accepted, 21 renewed ignored at import).
+RESCAN DONE (28 Aug 12:xx UTC, after Spec 038 deploy): updated 161, flagged 0, errors 0 — every buyable
+headsets offer is now health-checked today, 0 unchecked. Audit run: page STALE on `pick_ineligible` +
+`selection_drift`. Note: the health rescan makes NO AI calls (RescanProductFeatures is dispatched only by
+Filament actions and ProductObserver), so `ai_usage` stays empty until the next import. REGENERATED + LIVE 28 Aug 14:29 UTC:
+6 of 7 picks changed (Stinger 2 out on Amazon "High price" flag; pool 79→161). Prose by Claude to the style
+contract, machine-checked (banned/condition words, number grounding). Row backup on prod:
+`/tmp/headsets_backup_20260828_142919.json`. Audit: FRESH. **HEADSETS COMPLETE — Tier-3 import → rescan →
+regenerate all done.** Next category on the sheet: lavalier.**
 
 
 Pool skews to HyperX Cloud, Logitech G Pro, SteelSeries Arctis, Razer Kaira. These reach elsewhere:
@@ -72,6 +76,13 @@ Pool skews to HyperX Cloud, Logitech G Pro, SteelSeries Arctis, Razer Kaira. The
 Those return white-label junk and accessories — the Bouncer kills them, but you pay the AI cost.
 
 ### 2. lavalier-wireless-systems — target +20–30 rows
+
+**STATUS 2026-08-28: import DONE but overshot — 2 SERP pages × 13 phrases = 277 rows (target was +20–30).**
+125 accepted, 59 ignored, **93 stuck pending: Gemini daily cap on the admin model (~250 calls) hit at 15:35.**
+They will show as `failed`; after ~07:00 UTC next day → Filament "Retry Failed". Rescan ran too early
+(102 updated; ~190 still unchecked). **Pool has ≥15 shotgun/on-camera mics → sweep before rescan.**
+Next: retry → sweep (dry-run first) → rescan → regenerate. Cost so far .39 (log verified working).
+
 
 - `Rode Wireless PRO`
 - `Rode Wireless ME`

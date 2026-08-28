@@ -135,3 +135,15 @@ the spec, then wrote a test that *pinned the bug as intended behaviour*.
 **Rule:** when a spec scopes something *out* with a safety argument, that argument is a mechanism claim
 and needs the same two-grep verification as anything a sub-agent reports (see 2026-08-22 entry). An
 unverified exclusion is worse than an unverified inclusion — it ships with a test defending it.
+
+## 2026-08-28 — `/deploy` restarted php-fpm but not the queue workers
+
+The deploy sequence restarted php-fpm (web requests got the new code instantly) but never signalled the
+two supervisor `queue:work --max-time=3600` processes, so jobs kept running the *old* code for up to an
+hour. Spec 038's whole point lives in job code (`ProcessPendingProduct`, `RescanProductFeatures` →
+tenant on the usage row); the very next headsets rescan would have written untagged rows and looked
+like the fix had not landed. Caught only because the worker PIDs and uptime were checked after deploy.
+
+**Rule:** any deploy that touches `app/Jobs/` or a service jobs call needs `php artisan queue:restart`,
+and the verification must include `supervisorctl status` showing fresh PIDs. Added as step 9b in
+`.claude/commands/deploy.md`.
