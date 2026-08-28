@@ -33,6 +33,7 @@ class AiService
         string $ratingNote,
         string $categoryName,
         array $featureMap,
+        ?string $tenantId = null,
     ): array {
         $featureJson = json_encode($featureMap, JSON_PRETTY_PRINT);
 
@@ -95,7 +96,7 @@ class AiService
         return $this->gemini->generate($prompt, [
             'maxOutputTokens' => 8192,
             'thinkingConfig'  => ['thinkingBudget' => 128],
-        ], config('services.gemini.admin_model'), purpose: 'evaluate_product');
+        ], config('services.gemini.admin_model'), purpose: 'evaluate_product', tenantId: $tenantId);
     }
 
     /**
@@ -108,6 +109,7 @@ class AiService
         string $priceNote,
         string $ratingNote,
         array $featureMap,
+        ?string $tenantId = null,
     ): array {
         $featureJson = json_encode($featureMap, JSON_PRETTY_PRINT);
 
@@ -127,7 +129,7 @@ class AiService
 
         return $this->gemini->generate($prompt, [
             'maxOutputTokens' => 4096,
-        ], config('services.gemini.admin_model'), purpose: 'rescan_features');
+        ], config('services.gemini.admin_model'), purpose: 'rescan_features', tenantId: $tenantId);
     }
 
     /**
@@ -325,7 +327,7 @@ PROMPT;
             'thinkingConfig'  => ['thinkingBudget' => 128],
             'temperature'     => 0.1,
             'timeout'         => 15,
-        ], config('services.gemini.site_model'), purpose: 'match_product');
+        ], config('services.gemini.site_model'), purpose: 'match_product', tenantId: $tenantId);
 
         $parsed = $result['parsed'];
 

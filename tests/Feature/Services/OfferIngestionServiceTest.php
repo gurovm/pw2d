@@ -422,10 +422,15 @@ class OfferIngestionServiceTest extends TestCase
 
             $product = Product::find($result['product_id']);
             $this->assertTrue($product->is_ignored, "condition={$condition} must ignore the product");
+            // Spec 038 B3: never dispatched, so the stub status must be
+            // cleared — not left stuck at 'pending_ai' forever.
+            $this->assertNull($product->status, "condition={$condition} must clear the pending_ai stub status");
 
             $offer = ProductOffer::where('product_id', $product->id)->first();
             $this->assertSame($condition, $offer->condition);
         }
+
+        Queue::assertNothingPushed();
     }
 
     /** @test */

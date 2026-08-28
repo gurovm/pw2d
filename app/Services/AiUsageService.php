@@ -25,6 +25,15 @@ class AiUsageService
     private const TYPICAL_EVALUATE_PRODUCT_OUTPUT_TOKENS = 800;
 
     /**
+     * B2: emit the "model not in pricing map" warning once per model per
+     * service instance, not once per call — an unpriced model used inside a
+     * hot loop (e.g. a category import) would otherwise flood the log.
+     *
+     * @var array<int, string>
+     */
+    private array $warnedModels = [];
+
+    /**
      * Record one Gemini call. Never throws — failures are logged and swallowed
      * so accounting can never break the AI pipeline.
      *
@@ -32,26 +41,70 @@ class AiUsageService
      */
     public function record(string $purpose, string $model, array $usageMetadata, ?string $tenantId = null): void
     {
+        // Review fix L1 (2026-08-28): the whole body is wrapped in one outer
+        // guard. Without it, a Monolog handler failure (e.g. an unwritable
+        // storage/logs stream) inside either Log:: call below would propagate
+        // straight out of record() and into GeminiService::generate() — after
+        // a successful, billed HTTP call — breaking the very guarantee this
+        // class exists for. The inner structure (guarded cost step, guarded
+        // write, warning, error log) is unchanged; this is a last-resort net.
         try {
             $inputTokens    = $usageMetadata['promptTokenCount'] ?? null;
             $outputTokens   = $usageMetadata['candidatesTokenCount'] ?? null;
             $thinkingTokens = $usageMetadata['thoughtsTokenCount'] ?? null;
+            $resolvedTenantId = $tenantId ?? tenant('id');
 
-            AiUsage::create([
-                'tenant_id'          => $tenantId ?? tenant('id'),
-                'purpose'            => $purpose,
-                'model'              => $model,
-                'input_tokens'       => $inputTokens,
-                'output_tokens'      => $outputTokens,
-                'thinking_tokens'    => $thinkingTokens,
-                'estimated_cost_usd' => $this->estimateCost($model, $inputTokens, $outputTokens, $thinkingTokens),
-            ]);
-        } catch (\Throwable $e) {
-            Log::warning('AiUsageService: failed to record AI usage', [
-                'purpose' => $purpose,
-                'model'   => $model,
-                'error'   => $e->getMessage(),
-            ]);
+            // A2: cost is computed in its own guarded step, separate from the write
+            // below. Previously this was computed *inside* the write's try block,
+            // so a malformed pricing entry (or any other cost-calculation failure)
+            // discarded the whole row — including the token counts, the one thing
+            // that can never be reconstructed. A pricing failure must yield a
+            // null-cost row, never a missing row.
+            try {
+                $cost = $this->estimateCost($model, $inputTokens, $outputTokens, $thinkingTokens);
+            } catch (\Throwable) {
+                $cost = null;
+            }
+
+            // B2: null cost because the model genuinely isn't in the pricing map
+            // (as opposed to null because there's simply no token data) is worth
+            // a diagnosable log line — but only once per model per instance.
+            if ($cost === null && !$this->isModelPriced($model) && !in_array($model, $this->warnedModels, true)) {
+                $this->warnedModels[] = $model;
+                Log::warning('AiUsageService: model not in pricing map', [
+                    'model'   => $model,
+                    'purpose' => $purpose,
+                ]);
+            }
+
+            try {
+                AiUsage::create([
+                    'tenant_id'          => $resolvedTenantId,
+                    'purpose'            => $purpose,
+                    'model'              => $model,
+                    'input_tokens'       => $inputTokens,
+                    'output_tokens'      => $outputTokens,
+                    'thinking_tokens'    => $thinkingTokens,
+                    'estimated_cost_usd' => $cost,
+                ]);
+            } catch (\Throwable $e) {
+                // A4: carries enough (tenant, all three token counts, exception
+                // class + message) to reconstruct a lost row from the log alone —
+                // the old line only had purpose/model/getMessage().
+                Log::error('AiUsageService: failed to record AI usage', [
+                    'tenant_id'       => $resolvedTenantId,
+                    'purpose'         => $purpose,
+                    'model'           => $model,
+                    'input_tokens'    => $inputTokens,
+                    'output_tokens'   => $outputTokens,
+                    'thinking_tokens' => $thinkingTokens,
+                    'exception'       => get_class($e),
+                    'error'           => $e->getMessage(),
+                ]);
+            }
+        } catch (\Throwable) {
+            // Accounting must never break the AI call, and there is nothing
+            // left to log with — a Log:: call is what just failed.
         }
     }
 
@@ -67,13 +120,9 @@ class AiUsageService
         ?int $outputTokens,
         ?int $thinkingTokens = null,
     ): ?float {
-        // Deliberately not config("services.gemini.pricing.{$model}") — Gemini model
-        // names contain literal dots (e.g. "gemini-2.5-flash"), which Laravel's dot
-        // notation would otherwise misparse as nested keys. Fetch the whole map and
-        // index by the literal model string instead.
-        $pricing = config('services.gemini.pricing')[$model] ?? null;
+        $pricing = $this->getPricing($model);
 
-        if (!is_array($pricing) || !isset($pricing['input'], $pricing['output'])) {
+        if ($pricing === null) {
             return null;
         }
 
@@ -97,9 +146,38 @@ class AiUsageService
     public function estimateProductEvaluationCost(): ?float
     {
         return $this->estimateCost(
-            config('services.gemini.admin_model'),
+            // A2: config('services.gemini.admin_model') can resolve to null
+            // (e.g. an env var literally set to the string "null") — cast so
+            // estimateCost()'s `string $model` parameter never TypeErrors at
+            // the call boundary. That TypeError previously 500'd the entire
+            // Filament Products list page (ListProducts.php calls this method
+            // at header-render time on every page load).
+            (string) config('services.gemini.admin_model'),
             self::TYPICAL_EVALUATE_PRODUCT_INPUT_TOKENS,
             self::TYPICAL_EVALUATE_PRODUCT_OUTPUT_TOKENS,
         );
+    }
+
+    /**
+     * Look up the pricing entry for a model, validating its shape.
+     * Deliberately not config("services.gemini.pricing.{$model}") — Gemini model
+     * names contain literal dots (e.g. "gemini-2.5-flash"), which Laravel's dot
+     * notation would otherwise misparse as nested keys. Fetch the whole map and
+     * index by the literal model string instead.
+     *
+     * @return array{input: float, output: float}|null
+     */
+    private function getPricing(string $model): ?array
+    {
+        $pricing = config('services.gemini.pricing')[$model] ?? null;
+
+        return (is_array($pricing) && isset($pricing['input'], $pricing['output']))
+            ? $pricing
+            : null;
+    }
+
+    private function isModelPriced(string $model): bool
+    {
+        return $this->getPricing($model) !== null;
     }
 }

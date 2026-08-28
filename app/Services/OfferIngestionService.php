@@ -299,7 +299,11 @@ class OfferIngestionService
         // dispatch below (can't actually occur here — a brand-new product's first
         // offer has no sibling to be "clean" — but the check stays generic so the
         // product-stays-visible case would always get its normal AI pass).
-        if ($action !== ListingHealthService::ACTION_FLAGGED_CONDITION && $category->features->isNotEmpty()) {
+        if ($action === ListingHealthService::ACTION_FLAGGED_CONDITION) {
+            // Spec 038 B3: guard-ignored brand-new product — never dispatched,
+            // so status must not stay stuck at 'pending_ai' forever.
+            $product->update(['status' => null]);
+        } elseif ($category->features->isNotEmpty()) {
             ProcessPendingProduct::dispatch($product->id, $category->id);
         }
 

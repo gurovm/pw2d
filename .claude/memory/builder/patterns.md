@@ -950,3 +950,50 @@ non-tenancy middleware routes"). Before assuming a job runs centrally, verified 
 `ProcessPendingProduct::handle()` itself — it uses `Brand::withoutGlobalScopes()->where('tenant_id', ...)`
 rather than relying on the tenant global scope, which is itself evidence the codebase already knows
 queued jobs don't have live tenancy context.
+
+## Spec 038 B1 fix confirms the exact bug the SeoMetric-precedent reasoning above predicted: `tenant('id')`
+## and an initialized-tenancy-only trait are IDENTICAL on a queue worker — both resolve to null
+The `AiUsage` docblock's stated justification for skipping `BelongsToTenant` was itself half-wrong in a
+subtle way: `tenant('id')` inside `AiUsageService::record()` is "safe" (doesn't throw) but is NULL under
+the exact same condition (`tenancy()->initialized === false`) that would have made `BelongsToTenant`'s
+auto-populate hook a no-op too — so dropping the trait bought nothing on the write side for job-originated
+calls. The actual fix has nothing to do with the model/trait layer: it's threading the ALREADY-KNOWN
+tenant id (`$product->tenant_id`, read straight off the Eloquent model instance that's already loaded)
+as an explicit parameter through the whole call chain — `ProcessPendingProduct`/`RescanProductFeatures`
+→ `AiService::evaluateProduct()`/`rescanFeatures()`/`matchProduct()` → `GeminiService::generate($tenantId)`
+→ `AiUsageService::record($tenantId)` (which still falls back to `tenant('id')` for request-context
+callers where that value IS live). General lesson: when a docblock says "X is used instead of Y because Y
+is unsafe here," verify X actually behaves differently from Y in the failure case that motivated the
+comment — `tenant('id')` and an initialized-tenancy-gated auto-populate hook can both silently return/set
+null under the identical precondition, so swapping one null-producer for another isn't a fix.
+
+## Pattern reinforced: EVERY console command that calls into `AiService` initializes tenancy first —
+## so "no active tenant" test cases need a purpose that ISN'T one of the 13 real purpose strings
+Checked all 6 AI-calling console commands (`AiSweepCategory`, `AiAssignCategories`,
+`GenerateCompareContent`, `GenerateLandingPage`, `GeneratePresetContent`, `MergeDuplicateProducts`) plus
+the single Filament panel (`AdminPanelProvider::boot()` bridges Filament's OWN tenant-switcher into
+`tenancy()->initialize()` on the `TenantSet` event) — every real, named `purpose` string in the codebase
+DOES have a tenant in production except the 3 job-originated ones (`evaluate_product`, `rescan_features`,
+job-triggered `match_product`), which Spec 038 B1 just fixed. So a test asserting "no tenant → null
+tenant_id" must NOT reuse any of the 13 real purpose values (audit A3 caught exactly this: the original
+test used `'sweep_category'`, which DOES have a tenant via the console command) — use `'unspecified'`,
+`GeminiService::generate()`'s own default parameter value, which structurally never maps to a real
+production call site. Before picking a "no tenant" test fixture purpose string, grep every AI-calling
+console command AND Filament panel provider for `tenancy()->initialize`, don't assume from the purpose
+name alone whether it's tenant-bound.
+
+## Gotcha (recurrence of the pattern two entries up): adding an Nth optional trailing parameter to
+## `AiService::rescanFeatures()` (spec 038 B1, `?string $tenantId = null`) broke 3 MORE hand-written
+## anonymous-subclass overrides that weren't caught by the original `extends GeminiService` grep
+The earlier lesson only covered `extends GeminiService`; `rescanFeatures()` lives on `AiService`, a
+DIFFERENT class, so it needed its own grep (`grep -rn "function rescanFeatures" tests/ app/`) — found 3
+hand-written `extends AiService { public function rescanFeatures(...) }` overrides across
+`tests/Feature/Jobs/RescanProductFeaturesTest.php` (×2) and
+`tests/Feature/Commands/AiAssignCategoriesCommandTest.php` (×1), confirmed empirically with a real
+`php artisan test` run BEFORE fixing them (`PHP Fatal error: Declaration ... must be compatible`), fixed
+by adding the same trailing `?string $tenantId = null` to each override, then reran to confirm green.
+General rule going forward: any time a method signature gains a new parameter (even trailing + optional),
+grep `function {methodName}` across the ENTIRE `tests/` and `app/` tree for that exact method name — not
+just `extends {ClassName}` — since a subclass can override without literally spelling "extends" on the
+same line as the method (anonymous classes, especially), and different methods on the same widely-mocked
+service need independent greps.

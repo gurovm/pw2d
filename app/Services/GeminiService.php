@@ -26,14 +26,21 @@ class GeminiService
      * @param string      $purpose Caller attribution for AI usage accounting (spec 037 T1),
      *                             e.g. 'evaluate_product', 'match_product'. Never affects
      *                             the request sent to Gemini.
+     * @param string|null $tenantId Explicit tenant attribution (spec 038 B1) for callers
+     *                             running outside an initialized tenant context (queued
+     *                             jobs) — forwarded as-is to AiUsageService::record(), which
+     *                             falls back to tenant('id') when this is null.
      * @return array{content: string, parsed: ?array, finish_reason: string}
      *
      * @throws \Exception on API error or truncation
      */
-    public function generate(string $prompt, array $config = [], ?string $model = null, string $purpose = 'unspecified'): array
+    public function generate(string $prompt, array $config = [], ?string $model = null, string $purpose = 'unspecified', ?string $tenantId = null): array
     {
         $apiKey  = config('services.gemini.api_key');
-        $model   = $model ?? config('services.gemini.site_model');
+        // A2: a null/unset site_model config must never reach record()'s
+        // string $model parameter — that TypeError happens at the call
+        // boundary, before record()'s own try/catch can see it.
+        $model   = $model ?? (string) config('services.gemini.site_model');
         $timeout = (int) ($config['timeout'] ?? 30);
 
         // Separate top-level keys from generationConfig
@@ -89,7 +96,7 @@ class GeminiService
         $finishReason = $result['candidates'][0]['finishReason'] ?? 'UNKNOWN';
 
         // Record usage even on truncation below — tokens were billed either way.
-        $this->usage->record($purpose, $model, $result['usageMetadata'] ?? []);
+        $this->usage->record($purpose, $model, $result['usageMetadata'] ?? [], $tenantId);
 
         if ($finishReason === 'MAX_TOKENS') {
             throw new \Exception('Gemini response truncated (MAX_TOKENS).');

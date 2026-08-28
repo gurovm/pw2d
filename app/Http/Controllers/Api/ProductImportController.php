@@ -196,6 +196,18 @@ class ProductImportController extends Controller
 
         $listingOverride = $this->listingHealth->apply($existingOffer, $product, $effectiveCondition, $listingFlags, $validated['stock_status'] ?? null);
 
+        // Spec 038 B3 (review fix M1, 2026-08-28): whenever the guard above
+        // ignores the listing for condition, nothing gets dispatched below — so
+        // the 'pending_ai' status must be cleared regardless of $wasNew. For an
+        // existing product this status was just written by THIS SAME request at
+        // ~:134, not left over from an earlier import; ProcessPendingProduct
+        // unconditionally overwrites 'status' on every outcome it produces
+        // (ProcessPendingProduct.php:81, :153, :182, :236), so there is no
+        // in-flight job this could ever strand — clearing here is always safe.
+        if ($listingOverride === ListingHealthService::ACTION_FLAGGED_CONDITION) {
+            $product->update(['status' => null]);
+        }
+
         // Don't burn an AI evaluation on a listing we just ignored for condition.
         // Fix 2: ACTION_FLAGGED_OFFER_CONDITION deliberately falls through to the
         // dispatch below — the product stays visible (a clean offer survives

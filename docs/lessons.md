@@ -105,3 +105,33 @@ Already in use in `tests/Feature/SitemapCursorTest.php` and all `tests/Feature/S
 **Follow-up:** Upstream bug report prepared at [docs/bug-reports/stancl-tenancy-pk-leak.md](bug-reports/stancl-tenancy-pk-leak.md). Michael to file at https://github.com/archtechx/tenancy/issues/new and update this entry with the issue URL once filed. F4 in `docs/tasks/todo.md` proposes a shared `InitializesTestTenant` trait to DRY up the workaround across test files.
 
 **Impact if ignored:** Every new test that uses `Tenant::create()` directly and uses the returned object will fail with confusing FK errors. The error message never mentions the real cause — you see "tenant_id = '1' violates FK" and spend hours debugging a non-bug in your own code.
+
+## 2026-08-22 — Relaying a sub-agent's reasoning without verifying it
+
+The builder justified omitting `BelongsToTenant` from `AiUsage` with a claim that sounded better than
+the spec's own instruction, and the architect relayed it to the owner as "better than mine" without
+checking it. Three audit agents then independently found it was backwards: the trait stamps `tenant_id`
+only `if (tenancy()->initialized)` — the same condition that makes `tenant('id')` return null — so on
+the queue path both produce an identical NULL. The reasoning was confident, plausible, cited a real
+precedent (`SeoMetric`), and was wrong on the one axis that mattered: that precedent's column is
+NOT NULL and its writers take the tenant as an argument.
+
+**Rule:** when a sub-agent's report contradicts or "improves on" the spec, verify the claim against the
+actual source before relaying it. It took two greps. Verify the *mechanism*, not the plausibility.
+
+**Second-order lesson, worth more:** the acceptance query in Spec 037 §2 T1 (`GROUP BY purpose`) could
+not have detected the defect — no tenant column, so it aggregates over the NULL bucket and returns
+plausible numbers. When writing an acceptance criterion, ask what failure it would *fail to see*.
+
+## 2026-08-28 — A "leave it alone" rationale in a spec is a claim; verify it like any other
+
+Spec 038 B3 told the builder to clear the stuck `pending_ai` status for brand-new products only, and gave
+a reason: an existing product "may have a job in flight". The reviewer checked the mechanism: the job
+overwrites `status` on every outcome (`ProcessPendingProduct.php:81/:153/:182/:236`), so clearing it can
+never strand anything — and `ProductImportController:134` re-writes `pending_ai` on every re-import, so
+the excluded path recreated the exact bug the migration was clearing. The builder, correctly following
+the spec, then wrote a test that *pinned the bug as intended behaviour*.
+
+**Rule:** when a spec scopes something *out* with a safety argument, that argument is a mechanism claim
+and needs the same two-grep verification as anything a sub-agent reports (see 2026-08-22 entry). An
+unverified exclusion is worse than an unverified inclusion — it ships with a test defending it.

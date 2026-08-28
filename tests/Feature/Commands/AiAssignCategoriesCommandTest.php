@@ -79,6 +79,7 @@ class AiAssignCategoriesCommandTest extends TestCase
                 string $priceNote,
                 string $ratingNote,
                 array $featureMap,
+                ?string $tenantId = null,
             ): array {
                 return ['parsed' => ['features' => $this->featureScores]];
             }

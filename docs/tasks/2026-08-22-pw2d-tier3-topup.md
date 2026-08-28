@@ -31,9 +31,9 @@ phrases that reach the tail over segment phrases that re-return the head.
 
 ## Pre-flight
 
-- [ ] Extension reports **v1.8** (Spec 033 `offer_id` targeting). Below that, a rescan of a
-      duplicate-bearing category lets the lowest-id twin absorb every update. Ergonomic keyboards
-      is the known duplicate-bearing category.
+- [x] **Extension confirmed v1.8** (owner, 2026-08-22) and prod verified at `03d68d3`, so Spec 033's
+      `offer_id` targeting is live on both halves. The ergonomic-keyboards rescan is trustworthy —
+      this was the one open risk hanging over the top-up.
 - [ ] Extension tenant selector set to **pw2d**, not coffee2decide. The extension is tenant-scoped.
 - [ ] Weekly pick verification for pw2d has **never** been run. If you only top up 1–2 categories,
       still run "Verify Live Picks" for pw2d afterwards so the untouched pages get checked.
@@ -45,6 +45,13 @@ head of the market, which is mostly already imported. Scrape 2–3 SERP pages pe
 it is accessories. Ignore rates run 35–70%, which is normal and expected.
 
 ### 1. gaming-chat-headsets — target +25–35 rows
+
+**STATUS 2026-08-28: import DONE (22 Aug 13:16–13:23) — 117 rows created, 96 accepted by the Bouncer,
+21 renewed listings ignored at import. Turtle Beach, JBL Quantum, Corsair, Logitech, HyperX, Razer all
+landed. NEXT STEP IS THE RESCAN, NOT MORE SEARCHES: 82 buyable offers have `health_checked_at = NULL`
+(~12 min). Do it only after Spec 038 is deployed — that rescan doubles as the first live test of the
+cost log (query in `docs/specs/038-ai-usage-fix-bundle.md` §4). Then `pw2d:landing-pages:audit`.**
+
 
 Pool skews to HyperX Cloud, Logitech G Pro, SteelSeries Arctis, Razer Kaira. These reach elsewhere:
 

@@ -79,7 +79,7 @@ class RescanProductFeatures implements ShouldQueue
                 : 'no rating data available';
 
             $aiService = app(AiService::class);
-            $result = $aiService->rescanFeatures($product->name, $priceNote, $ratingNote, $featureMap);
+            $result = $aiService->rescanFeatures($product->name, $priceNote, $ratingNote, $featureMap, $product->tenant_id);
             $parsed = $result['parsed'];
 
             if (empty($parsed['features']) || !is_array($parsed['features'])) {

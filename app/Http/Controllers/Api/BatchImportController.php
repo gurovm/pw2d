@@ -207,6 +207,9 @@ class BatchImportController extends Controller
                     $override = $this->listingHealth->apply($offer, $product, $condition, $listingFlags, $p['stock_status'] ?? null);
                     if ($override === ListingHealthService::ACTION_FLAGGED_CONDITION) {
                         // Product-level ignore — don't burn an AI evaluation on it.
+                        // Spec 038 B3: never dispatched, so status must not stay
+                        // stuck at 'pending_ai' forever.
+                        $product->update(['status' => null]);
                         $flagged++;
                     } else {
                         // Fix 2: ACTION_FLAGGED_OFFER_CONDITION can't actually occur here

@@ -823,3 +823,218 @@ $0.04/category. Meanwhile `GeminiService` is Gemini-shaped throughout and `AiSer
   `GeminiService`. Low volume (category hero images only), so low cost impact — but it means
   "total AI spend" from `ai_usage` is an undercount, and any future cost dashboard should say so.
   *[API, AI]*
+
+### Spec 037 T1 audit — three-agent, 2026-08-22 (`03d68d3`, already deployed)
+
+Reports: `docs/reviews/audit-2026-08-22-review.md`, `docs/security/audit-2026-08-22-security.md`,
+`docs/performance/audit-2026-08-22-performance.md`. **1 critical, 3 high, 8 medium.** No rollback —
+nothing exploitable, no cross-tenant read path, no secret leakage, no injection.
+
+- [ ] **A1 (CRITICAL — found independently by ALL THREE agents): every queued Bouncer call records
+  `tenant_id = NULL`.** `evaluate_product` (the dominant cost, ~350 rows/category), `rescan_features`,
+  and job-originated `match_product` are all unattributable. **The docblock's justification is factually
+  wrong:** `BelongsToTenant` stamps `tenant_id` only `if (tenancy()->initialized)` — the same condition
+  that makes `tenant('id')` return null — so on the queue the trait and the explicit resolution produce
+  an *identical* NULL. Dropping the trait bought nothing on the write side. Verified: `config/tenancy.php`
+  registers zero bootstrappers; `ProcessPendingProduct` never initializes tenancy.
+  Sharpest case: `AiService::matchProduct()` resolves `$tenantId` at `:261`, uses it for every DB query
+  in the method, then calls `generate()` at `:323` without forwarding it.
+  **The `SeoMetric` precedent was misapplied** — `seo_metrics.tenant_id` is NOT NULL *and* its writers
+  take the tenant as an argument, so a null row there is a DB error. `ai_usage` copied the trait
+  omission and dropped both safeguards; Spec 037 §2 T1 said "`tenant_id` required" and the migration
+  made it nullable.
+  **Fix (~5 lines, plumbing already exists — `record()` already accepts `?string $tenantId`):** add
+  `?string $tenantId = null` to `GeminiService::generate()` and forward to `record()`; forward the
+  existing `$tenantId` in `matchProduct()`; add the param to `evaluateProduct()`/`rescanFeatures()` and
+  pass `$product->tenant_id` from the two jobs, as `ProcessPendingProduct:108` already does.
+  **Do NOT fix by calling `tenancy()->initialize()` in the jobs** — that flips `handle()` from
+  explicit-`tenant_id` to global-scope semantics and breaks the deliberate `withoutGlobalScopes()` calls.
+  Backfill of existing NULL rows is approximate; accept the gap and record the cut-over date.
+  *[API, Data]*
+- [ ] **A2 (fold into A1's fix): a null model string escapes the "accounting can never break the AI
+  call" guarantee entirely.** Under `declare(strict_types=1)` a `TypeError` on `record(string $model,…)`
+  is raised at the **call boundary**, so `record()`'s own try/catch cannot see it (verified empirically).
+  `GeminiService:36` does `$model = $model ?? config(...)`, and `env('AGENT_ADMIN_MODEL', …)` resolves to
+  null if `.env` holds the literal `null`. Two failures: every `admin_model` call dies from the
+  accounting layer, and `ListProducts.php:32` **500s the entire Filament Products list page** — the
+  operator's primary console — on a new call path this commit introduced at header-render time.
+  Fix: `(string) config(...)` at both sites. Related: `estimateCost()` is called *inside* the try block,
+  so a malformed (quoted-string) price yields **no row at all** rather than a null-cost row, discarding
+  the token counts too. Compute cost before the try. *[API, Filament]*
+- [ ] **A3 (HIGH): 11 of the 13 `purpose` strings have zero test coverage** — the field the whole table
+  exists for is unpinned. Also untested: recording *before* the `MAX_TOKENS` throw (the commit's one
+  non-obvious design decision), and T3b entirely. **And the existing tenant test validates the path that
+  works, not the one that is broken** — `AiUsageInstrumentationTest.php:152-170` manually initializes
+  tenancy before a `purpose: 'evaluate_product'` call, a state that never holds there, so it passes and
+  gives false confidence; `AiUsageServiceTest.php:171-179` labels its null case `sweep_category`, a
+  purpose that *does* have a tenant in production — the mapping is inverted. Add a test dispatching the
+  real `ProcessPendingProduct` asserting `AiUsage::sole()->tenant_id === $product->tenant_id`: fails
+  today, passes after A1. *[Test]*
+- [ ] **A4 (MEDIUM): the swallow log line cannot diagnose or reconstruct what was lost.** Carries only
+  `purpose`, `model`, `getMessage()`. Scenario: `migrate --force` half-fails, `ai_usage` missing, a
+  350-product import runs looking perfectly healthy while `laravel.log` gains 700 identical
+  `Base table not found` warnings nobody reads — and the token counts, the only irreplaceable data,
+  were never logged. Add `tenant_id`, the three token counts, and `get_class($e)`; consider `Log::error`
+  over `warning`. *[API]*
+- [ ] **A5 (MEDIUM): add an explicit query contract to `AiUsage`** so the safe form is the easy form —
+  `scopeForTenant()` + a documented `scopeAllTenants()`. Zero non-test readers exist today, so no live
+  exposure, but the first widget written will be unscoped by default. *[Models]*
+- [ ] **A6 (LOW, pre-existing, one-line): `ListProducts.php:72` passes an eager
+  `Category::pluck('name','id')` to `Select::options()`**, executing a query on every page load, sort,
+  keystroke and paginate to populate a monthly-use modal. Wrap in `fn () =>`. *[Filament, Perf]*
+
+**Validated as fine — recorded so it is not re-litigated.** The synchronous INSERT on user-facing AI
+paths is a **non-issue by ~3 orders of magnitude**: ~1ms against a 700–2500ms Gemini call (~0.08%), and
+it sits at the transport boundary so `matchProduct()`'s cache hit and heuristic short-circuit pay zero;
+these same requests already write a `SearchLog` row. No AI call runs inside a DB transaction. **Index:
+leave it alone** — a full scan is 2–10ms and nothing degrades below ~500k rows (~40 years at pipeline
+volume); fix attribution first, index work before that is wasted. **Column sizing: premature** — InnoDB
+VARCHAR is length-prefixed, so `'evaluate_product'` costs 17 bytes at any declared length. `decimal(10,6)`
+is the right money type; `const UPDATED_AT = null` is right for an append-only log; the
+default-instantiated `AiUsageService` is harmless. Both spec safety rules are correctly implemented and
+tested. The `config(...)['model']` dot-notation workaround is correct and well documented.
+
+**Cross-check between agents:** security's M3 claimed the public AI entry points have no rate limit
+(grepped only for `RateLimiter`). **False negative — a 10/min per session/IP limit does exist**, built on
+a cache counter at `GlobalSearch.php:108` and `ProductCompare.php:572` (this is shipped S11). M3
+downgrades to a low-priority `MassPrunable` suggestion.
+
+**A1 — the repair window closes when the next top-up runs.** `ai_usage` rows carry no `product_id` and
+no job back-reference, so nothing written before the fix can ever be retro-attributed. Worse, **Spec 037
+§2 T1's own acceptance query masks the defect**: `SELECT purpose, COUNT(*), AVG(...) ... GROUP BY purpose`
+has no tenant column, so it aggregates happily over the NULL bucket and returns entirely plausible
+numbers. Reading it would produce false confidence that T1 works. Either fix A1 before the pw2d Tier-3
+top-up, or accept that ~600 rows/category are permanently tenant-unattributed and note the cut-over date.
+Token counts and costs are recorded correctly either way, so **T2's validation of the §1 cost model is
+unaffected** — only per-tenant attribution is lost.
+
+Also from the reviewer, settled and not to be re-litigated: `decimal(10,6)` needs ~1 billion output
+tokens to overflow and `round(…, 6)` runs before insert — **leave it**. Record-before-`MAX_TOKENS` is
+correct, and the throw paths I suspected are all fine: the 429 retry works despite `throw: false`, and
+non-2xx correctly records nothing because those calls are unbilled; recording above the parts loop means
+billed-but-useless 200s (`SAFETY`, `RECITATION`, `blockReason`) are still captured. `tenant('id')` is
+safe on the central domain — it returns null, never throws. The `purpose` audit is **complete**: grep for
+`generativelanguage.googleapis.com` across `app/` returns exactly two hits, so `generateCategoryImage()`
+is the only bypass — and note `gemini-2.5-flash-image` is also absent from the pricing map, making that
+gap doubly invisible.
+
+## SEO checkpoint 2026-08-24 — new items
+
+Full read: `docs/summaries/2026-06-13-seo-status-checkpoint.md` (UPDATE — 2026-08-24). Verdict:
+**pw2d authority verdict unchanged and now positively confirmed** — c2d's preset-compare pages earn
+clicks at pos 6-22 while pw2d's identical pages earn none at pos 15-21. Same code, opposite outcome,
+separated only by rank. No new on-page specs for pw2d presets.
+
+- [ ] **F36: `/best/` landing pages are near-orphaned — one internal link each, none from either
+  homepage.** 8 of 11 `/best/` pages have **never** recorded a single GSC row; `/best/manual-coffee-grinders`
+  is at 23 days, the other 7 at 15. Ruled out this session: HTTP 200, present in both sitemaps,
+  self-referential canonical, no `noindex`, robots.txt clean — so this is crawl/indexation rationing,
+  not a page-level block. Verified against rendered HTML: neither homepage links to any `/best/` URL,
+  and the only inbound link found was `/compare/manual-coffee-grinders` → its own `/best/` page (that
+  compare page itself sits at wpos 45). Not proven as *the* cause — super-auto indexed and
+  manual-grinders did not, despite identical linking — but it is the weakest possible crawl signal and
+  **the only code-shaped lever available on an otherwise authority-bound problem.** Needs a spec:
+  homepage module linking all published `/best/` pages, plus reciprocal links from category/product
+  pages. *[SEO, Frontend, Architect]*
+
+- [ ] **F37: PostHog personal API key is dead — engagement measurement blocked on a credential, not on
+  traffic.** c2d's 21 clicks/28d finally cleared the volume floor that has blocked this read since June,
+  and the read failed anyway: `POSTHOG_PERSONAL_API_KEY` in local `.env` is well-formed (`phx_` prefix,
+  52 chars) but PostHog returns `authentication_failed` on both `us.posthog.com` and `app.posthog.com`.
+  **Owner action (~5 min):** mint a new personal API key in PostHog → Settings → Personal API keys,
+  update local `.env`. Project 133580. *[Owner, Analytics]*
+
+- [x] **Cleanup-impact watch (opened 2026-08-17): CLOSED as unmeasurable.** headsets/mics/lavalier
+  compare pages run 2-3 impressions/week and were already declining *before* the Aug 12-16 unbuyable
+  filter shipped. No attribution is possible at that volume, now or later. **Also a data correction:
+  the baseline table recorded on 08-17 is wrong for mics** — it recorded 111/123/80/79 impressions for
+  weeks 202629-32 where the actual figures are 4/3/2/2. Lavalier matches exactly and headsets is within
+  GSC's normal revision, so the error is specific to that row; most likely the query matched `%mic%`,
+  which catches every *microphone product page* slug rather than the `podcast-studio-mics` compare page.
+  Do not diff against that row. *[SEO]*
+
+- [ ] **All 5 pw2d landing pages are STALE (`selection_drift`) as of the 2026-08-24 audit; all 6 c2d
+  pages FRESH.** pw2d pages last generated 08-14/16, c2d regenerated 08-21. **Verified genuine drift,
+  NOT the H-A phantom** — checked `mechanical-gaming-keyboards` directly against prod:
+  `SelectLandingPagePicks::execute()` returns 7 picks without throwing, and 2 of 7 stored picks really
+  differ (slots 5 and 6: `2742→2799`, `2691→2722`). So H-A's "stamped `selection_drift` forever with
+  nothing actually wrong" failure mode is **not** what is happening here; H-A remains open and separate.
+  **Do not regenerate yet** — pw2d's pool is unverified (weekly pick verification has never been run for
+  this tenant), and the response rule forbids re-selecting from an unverified pool. Folds into the
+  existing Tier-3 top-up run sheet: verify picks → sweep → rescan → regenerate.
+  *[Content, SEO]*
+
+## 2026-08-28 — AI cost log check + pre-top-up fix bundle (AWAITING OWNER GO)
+
+**Log check result:** `ai_usage` is empty because **no AI call has run since the 22 Aug deploy** — the
+headsets import (117 rows, 96 accepted, cat 9) ran 13:16–13:23 that day, *before* T1 went live. Queue
+healthy (2 workers, 0 jobs, 0 failed_jobs), all services active, all sites 200. 26 Aug 06:14 log burst =
+`unattended-upgrade` restarting MySQL/Redis (3 harmless errors). One Livewire "array offset on null"
+on 25 Aug = stale browser tab after deploy. **Nothing wrong with the log itself.** But two real findings:
+
+- [x] **FINDING 1 — production `.env` runs models the price table doesn't know.** FIXED by Spec 038 B2 (deploy pending). Prod (unchanged since
+  2026-07-21): `AGENT_ADMIN_MODEL=gemini-3.1-pro-preview`, `AGENT_SITE_MODEL=gemini-3.5-flash`,
+  `AGENT_IMAGE_MODEL=gemini-3-pro-image`. `config/services.php` pricing map has none of them, so **every
+  row the log ever writes on prod will carry `estimated_cost_usd = NULL`** (tokens still recorded). Spec 037
+  §1.1 priced "current" as 2.5 Pro from the config *default*, never from prod's `.env`. Per the spec's own
+  table the real per-product cost is ~$0.0132 (3.1 Pro), ~$4.62/category, and 3.7 Flash saves ~67% not
+  58%. Also site_model is 3.5 Flash ($1.50/$9.00) — near Pro pricing for the user-facing model; the spec's
+  "`matchProduct` is ~$0.001, not the problem" rests on it being 2.5 Flash. *[Config, AI, Architect]*
+- [x] **FINDING 2 — 28 products stuck at `status='pending_ai'` forever (21 pw2d headsets, 7 c2d espresso).** FIXED by Spec 038 B3 + data migration (deploy pending).
+  All are **renewed listings** the extension reported with a DOM-verified `condition: renewed`.
+  `BatchImportController:208`: `ListingHealthService::apply()` returned `ACTION_FLAGGED_CONDITION` →
+  product ignored, job *deliberately* not dispatched (correct) — but `status` is never cleared from
+  `pending_ai` (bug). Harmless to the site (ignored products don't render), misleading in every
+  "pending" count, and un-clearable by any retry path (`ListProducts` retry filters `status='failed'`).
+  Same shape to check at `ProductImportController:203` and `OfferIngestionService:302`. *[API]*
+
+### Fix bundle — one builder pass + one tester pass, deploy BEFORE the next import
+
+- [x] **B1: A1 + A2 as specified above** (tenant attribution through `GeminiService::generate()`;
+  `(string) config(...)` at `GeminiService:36` + `AiUsageService::estimateProductEvaluationCost()`
+  (covers `ListProducts:32`'s call site); compute cost *before* the try in `AiUsageService::record()`).
+  Built 2026-08-28 per `docs/specs/038-ai-usage-fix-bundle.md`. *[API]*
+- [x] **B2: price map completeness.** Added `gemini-3.1-pro-preview` (2.00/12.00) and `gemini-3.5-flash`
+  (1.50/9.00) from Spec 037 §1.1. Skipped the image model (bypasses `GeminiService`, T1 gap). In
+  `AiUsageService::record()`, `Log::warning` once per unpriced model name, instance-scoped
+  (`$warnedModels`); failed-write log upgraded to `Log::error` with tenant_id + all 3 token counts +
+  `get_class($e)`. *[Config, API]*
+- [x] **B3: guard-ignored products get `status = null`** at all three import sites (`BatchImportController`,
+  `ProductImportController`, `OfferIngestionService`) when the listing guard ignores a brand-new product
+  (never dispatched → never "pending"). Existing products deliberately untouched (see `docs/questions.md`
+  2026-08-28 entry re: `ProductImportController`'s existing-product rescan path, out of scope). Idempotent
+  data migration `2026_08_28_000001_clear_status_on_guard_ignored_products.php` shipped. *[API, Data]*
+- [x] **T-bundle (builder-authored, per spec §2 "builder writes these with the code"):** A3's real-dispatch
+  test added (`ProcessPendingProduct`/`RescanProductFeatures`/`matchProduct()` → `AiUsage` row carries the
+  explicit tenant, no `tenancy()->initialize()`; verified fails-before/passes-after against the pre-fix
+  code); the two inverted tests (`AiUsageInstrumentationTest.php` tenant-isolation test,
+  `AiUsageServiceTest.php` null-tenant test) rewritten, not duplicated; unpriced-model → null-cost row +
+  exactly-one warning per model per instance; B2 exact-value cost assertions for both new models; A2 null
+  site_model / null admin_model / malformed pricing-value paths all covered; B3 batch-import + product-import
+  + offer-ingestion `condition: renewed` coverage extended with `status === null` + `Queue::assertNothingPushed()`;
+  migration test (only-the-guard-ignored-row, leaves-other-statuses-alone, idempotent-on-rerun). 15 new
+  tests, `php artisan test`: 725 passed / 21 skipped (baseline 710/21, zero regressions). Tester pass still
+  to extend/harden per normal workflow. *[Test]*
+- [x] **Architect: correct Spec 037 §1 baseline** — correction note added under §1 on 2026-08-28; full table rewrite when T2 lands.
+- [x] **Review pass (2026-08-28):** reviewer verdict SHIP, 0 critical/0 high/1 medium (`docs/reviews/review-2026-08-28-spec-038.md`). M1 fixed — `ProductImportController` now clears `pending_ai` for existing products too (the "in-flight job" exclusion in the spec was wrong; lesson recorded in `docs/lessons.md`). L1 fixed — `AiUsageService::record()` body wrapped in an outer never-throw guard so a logging failure cannot escape. Tester added 11 tests (10 remaining `purpose` strings + record-before-`MAX_TOKENS`). **Final: 737 passed / 21 skipped** (baseline 710). LOW/NIT leftovers filed below. Awaiting commit + `/deploy`.
+
+**Then:** `/deploy` → headsets **rescan** (82 unchecked buyable offers ≈ 12 min; the 22 Aug import means
+headsets needs a rescan, not another import) → first `ai_usage` rows appear, attributed to pw2d, priced →
+continue run sheet (lavalier, ergonomic) → regenerate the 5 STALE pw2d pages.
+
+### Spec 038 review follow-ups (reviewer 2026-08-28, `docs/reviews/review-2026-08-28-spec-038.md`) — all LOW/NIT, none block deploy
+
+- [ ] **L2: unpriced-model warning dedupes per `AiUsageService` instance, and the service is not a
+  singleton** — both jobs resolve `app(AiService::class)` per `handle()`, so on a worker the "once per
+  model" becomes once per job. Only matters if prod `.env` drifts to an unpriced model again; then it is
+  ~1 warning/product. Fix: bind `AiUsageService` as a singleton (and flip the "new instance warns again"
+  test). *[API]*
+- [ ] **N1:** `GeminiService.php:99` passes `$result['usageMetadata'] ?? []` without an `is_array()` guard —
+  under `strict_types` a non-array value would TypeError at `record(array $usageMetadata)`, outside the
+  guard. One-line cast. *[API]*
+- [ ] **N2:** missing `@param ?string $tenantId` PHPDoc on `evaluateProduct()`/`rescanFeatures()`. *[Docs]*
+- [ ] **N3 (pre-existing):** no `declare(strict_types=1)` in `ProcessPendingProduct`, `RescanProductFeatures`,
+  `BatchImportController` — already covered by L7 above. *[Multiple]*
+- [ ] **N4:** five other `AiService` methods hold a tenant model and could forward `tenant_id` explicitly
+  for defence-in-depth; today the `tenant('id')` fallback covers them because they run with tenancy
+  initialized. Do it if any of them ever moves onto the queue. *[API]*

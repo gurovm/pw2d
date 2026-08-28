@@ -134,6 +134,29 @@ class AiUsageInstrumentationTest extends TestCase
         $this->assertNull($row->estimated_cost_usd);
     }
 
+    /**
+     * Spec 038 A2 — a null `services.gemini.site_model` config value (e.g. an
+     * unset/misconfigured env var) must never reach record()'s `string $model`
+     * parameter as a TypeError at the call boundary. GeminiService::generate()
+     * casts to string, so a null config resolves to '' rather than throwing.
+     */
+    /** @test */
+    public function a_null_site_model_config_does_not_throw_and_records_an_empty_string_model(): void
+    {
+        config(['services.gemini.site_model' => null]);
+
+        $this->fakeGeminiWithUsage(['promptTokenCount' => 10, 'candidatesTokenCount' => 5]);
+
+        $result = (new GeminiService())->generate('Test prompt', [], null, 'evaluate_product');
+
+        $this->assertSame(['ok' => true], $result['parsed']);
+
+        $row = AiUsage::sole();
+        $this->assertSame('', $row->model);
+        $this->assertNull($row->estimated_cost_usd);
+        $this->assertSame(10, $row->input_tokens);
+    }
+
     /** @test */
     public function a_usage_write_failure_does_not_fail_the_ai_call(): void
     {
@@ -148,21 +171,71 @@ class AiUsageInstrumentationTest extends TestCase
         $this->assertSame(['ok' => true], $result['parsed']);
     }
 
+    /**
+     * Spec 038 audit A3 flagged this path as entirely untested: `GeminiService::
+     * generate()` calls `AiUsageService::record()` immediately after decoding the
+     * body — BEFORE throwing on `finishReason === 'MAX_TOKENS'` (see the comment
+     * at GeminiService.php:92, "Record usage even on truncation below — tokens
+     * were billed either way"). A truncated call still consumes real, billed
+     * tokens; if the row were only written on the success path, the calls most
+     * likely to be expensive (the ones hitting the maxOutputTokens ceiling) would
+     * be silently under-reported. This asserts both halves: the exception still
+     * propagates AND the row still lands with the real token counts.
+     */
     /** @test */
-    public function usage_row_written_under_one_tenant_is_not_attributed_to_another(): void
+    public function a_max_tokens_truncation_still_records_usage_before_the_exception_propagates(): void
+    {
+        Http::fake([
+            'generativelanguage.googleapis.com/*' => Http::response([
+                'candidates' => [[
+                    'content'      => ['parts' => [['text' => '{"partial": "data']]],
+                    'finishReason' => 'MAX_TOKENS',
+                ]],
+                'usageMetadata' => [
+                    'promptTokenCount'     => 2000,
+                    'candidatesTokenCount' => 3000,
+                ],
+            ]),
+        ]);
+
+        try {
+            (new GeminiService())->generate('Test prompt', [], 'gemini-2.5-flash', 'evaluate_product');
+            $this->fail('Expected the MAX_TOKENS truncation exception to propagate.');
+        } catch (\Exception $e) {
+            $this->assertSame('Gemini response truncated (MAX_TOKENS).', $e->getMessage());
+        }
+
+        $row = AiUsage::sole();
+        $this->assertSame('evaluate_product', $row->purpose);
+        $this->assertSame(2000, $row->input_tokens);
+        $this->assertSame(3000, $row->output_tokens);
+        // (2000 * 0.30 + 3000 * 2.50) / 1_000_000 = 0.0006 + 0.0075 = 0.0081
+        $this->assertEquals(0.0081, (float) $row->estimated_cost_usd);
+    }
+
+    /**
+     * Spec 038 (audit A3): rewritten — the original version of this test
+     * manually initialized tenancy before an `evaluate_product` call, a state
+     * that NEVER holds in production (ProcessPendingProduct never calls
+     * tenancy()->initialize(); see AiUsage's model docblock). That made the
+     * test validate the working path while giving false confidence about the
+     * broken one. `evaluate_product` is exclusively a queued-job purpose, so
+     * this now exercises it the way it's actually called: no initialized
+     * tenancy, tenant threaded explicitly through generate()'s $tenantId param
+     * (spec 038 B1).
+     */
+    /** @test */
+    public function usage_row_written_for_one_tenant_is_not_attributed_to_another(): void
     {
         Tenant::create(['id' => 'usage-tenant-a', 'name' => 'Tenant A']);
         Tenant::create(['id' => 'usage-tenant-b', 'name' => 'Tenant B']);
 
         $this->fakeGeminiWithUsage(['promptTokenCount' => 100, 'candidatesTokenCount' => 50]);
 
-        tenancy()->initialize(Tenant::find('usage-tenant-a'));
-        (new GeminiService())->generate('Test prompt', [], 'gemini-2.5-flash', 'evaluate_product');
-        tenancy()->end();
+        $this->assertFalse(tenancy()->initialized, 'precondition: evaluate_product never runs with tenancy initialized in production');
 
-        tenancy()->initialize(Tenant::find('usage-tenant-b'));
-        (new GeminiService())->generate('Test prompt', [], 'gemini-2.5-flash', 'evaluate_product');
-        tenancy()->end();
+        (new GeminiService())->generate('Test prompt', [], 'gemini-2.5-flash', 'evaluate_product', 'usage-tenant-a');
+        (new GeminiService())->generate('Test prompt', [], 'gemini-2.5-flash', 'evaluate_product', 'usage-tenant-b');
 
         $this->assertSame(1, AiUsage::where('tenant_id', 'usage-tenant-a')->count());
         $this->assertSame(1, AiUsage::where('tenant_id', 'usage-tenant-b')->count());

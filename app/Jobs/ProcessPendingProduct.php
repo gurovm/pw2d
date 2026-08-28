@@ -72,7 +72,7 @@ class ProcessPendingProduct implements ShouldQueue
 
             $aiService = app(AiService::class);
             $result = $aiService->evaluateProduct(
-                $product->name, $product->best_price, $priceNote, $ratingNote, $category->name, $featureMap
+                $product->name, $product->best_price, $priceNote, $ratingNote, $category->name, $featureMap, $product->tenant_id
             );
             $parsed = $result['parsed'];
 

@@ -270,8 +270,49 @@ class ProductImportControllerTest extends TestCase
 
         $response->assertOk()->assertJson(['success' => true, 'action' => 'flagged_condition']);
 
-        $this->assertDatabaseHas('products', ['is_ignored' => true]);
+        // Spec 038 B3: never dispatched (never "pending"), so the stub status
+        // must be cleared — not left stuck at 'pending_ai' forever.
+        $this->assertDatabaseHas('products', ['is_ignored' => true, 'status' => null]);
         $this->assertDatabaseHas('product_offers', ['condition' => 'refurbished']);
+        Queue::assertNothingPushed();
+    }
+
+    /**
+     * Review fix M1 (2026-08-28): an existing product's 'pending_ai' status
+     * (written earlier in this same request, line ~134, independent of listing
+     * health) must NOT survive an ACTION_FLAGGED_CONDITION outcome — that status
+     * was just set by THIS request and nothing will ever dispatch to clear it,
+     * so leaving it would strand the row exactly like the bug the migration
+     * cleared. ProcessPendingProduct unconditionally overwrites 'status' on
+     * every outcome, so clearing here can never strand an in-flight job.
+     */
+    /** @test */
+    public function an_existing_products_status_is_cleared_when_a_rescan_flags_its_condition(): void
+    {
+        Queue::fake();
+
+        $existing = Product::factory()->create([
+            'category_id' => $this->category->id,
+            'status'      => null,
+            'is_ignored'  => false,
+        ]);
+        $store = Store::firstOrCreate(['slug' => 'amazon', 'tenant_id' => $existing->tenant_id], ['name' => 'Amazon']);
+        ProductOffer::create([
+            'product_id' => $existing->id,
+            'tenant_id'  => $existing->tenant_id,
+            'store_id'   => $store->id,
+            'url'        => 'https://www.amazon.com/dp/B0ABC12345',
+            'raw_title'  => 'Old Name',
+        ]);
+
+        $response = $this->postJson('/api/product-import', $this->validPayload([
+            'title'     => 'A Clean-Sounding Title With No Marker',
+            'condition' => 'refurbished',
+        ]));
+
+        $response->assertOk()->assertJson(['success' => true, 'action' => 'flagged_condition']);
+
+        $this->assertDatabaseHas('products', ['id' => $existing->id, 'is_ignored' => true, 'status' => null]);
         Queue::assertNothingPushed();
     }
 

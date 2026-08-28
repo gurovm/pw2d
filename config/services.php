@@ -45,11 +45,16 @@ return [
         // hardcode a dollar figure elsewhere. An unlisted model computes a null
         // cost rather than throwing (see spec 037 T1).
         'pricing' => [
-            'gemini-2.5-pro'        => ['input' => 1.25, 'output' => 10.00],
-            'gemini-2.5-flash'      => ['input' => 0.30, 'output' => 2.50],
-            'gemini-2.5-flash-lite' => ['input' => 0.10, 'output' => 0.40],
-            'gemini-3.7-flash'      => ['input' => 0.75, 'output' => 3.75],
-            'gemini-3.1-flash-lite' => ['input' => 0.25, 'output' => 1.50],
+            'gemini-2.5-pro'          => ['input' => 1.25, 'output' => 10.00],
+            'gemini-2.5-flash'        => ['input' => 0.30, 'output' => 2.50],
+            'gemini-2.5-flash-lite'   => ['input' => 0.10, 'output' => 0.40],
+            'gemini-3.7-flash'        => ['input' => 0.75, 'output' => 3.75],
+            'gemini-3.1-flash-lite'   => ['input' => 0.25, 'output' => 1.50],
+            // Spec 038 B2 — production .env runs these two (unchanged since
+            // 2026-07-21); the pricing map didn't know either, so every row
+            // was recording estimated_cost_usd = NULL (spec 037 §1.1 prices).
+            'gemini-3.1-pro-preview'  => ['input' => 2.00, 'output' => 12.00],
+            'gemini-3.5-flash'        => ['input' => 1.50, 'output' => 9.00],
         ],
     ],
 

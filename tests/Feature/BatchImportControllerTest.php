@@ -459,7 +459,9 @@ class BatchImportControllerTest extends TestCase
 
         $response->assertOk()->assertJson(['created' => 1, 'flagged' => 1]);
 
-        $this->assertDatabaseHas('products', ['is_ignored' => true]);
+        // Spec 038 B3: never dispatched (never "pending"), so the stub
+        // status must be cleared — not left stuck at 'pending_ai' forever.
+        $this->assertDatabaseHas('products', ['is_ignored' => true, 'status' => null]);
         $this->assertDatabaseHas('product_offers', ['condition' => 'renewed']);
         Queue::assertNothingPushed();
     }
