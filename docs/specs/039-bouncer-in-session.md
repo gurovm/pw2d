@@ -1,6 +1,6 @@
 # Spec 039 — Bouncer overflow path: operator-session evaluations
 
-**Status:** APPROVED 2026-08-28 ("build"). T1–T4 built + T1/T2 review fixes applied 2026-08-28 (811 tests); T3/T4 reviewed (SHIP) + 4 mediums fixed; T5 built; T6 runbook done. **837 tests. Ready to deploy** (no migration; touches the Gemini job → deploy needs the queue restart, step 9b).
+**Status:** APPROVED 2026-08-28 ("build"). T1–T4 built + T1/T2 review fixes applied 2026-08-28 (811 tests); T3/T4 reviewed (SHIP) + 4 mediums fixed; T5 built; T6 runbook done. **837 tests. DEPLOYED 2026-08-28 ~17:25 UTC, prod `cd636cc`.** Calibration on lavalier: round 1 FAIL (scale offset −10), round 2 with calibrated brief 100% / 100% / MAD 7.08 → **PASSES the overflow-path gate the owner set on 2026-08-29** (≥95 / ≥98 / |bias| ≤3 / MAD ≤8). Session path approved as overflow route.
 **Depends on:** Spec 038 (shipped). Extends Spec 037 T2 (replay harness, not yet built).
 **Owner decision recorded:** the owner runs top-ups from VS Code on weekends, when the Claude Code
 subscription's weekly window is about to renew and its 5-hour windows are idle. Claude (the assistant in

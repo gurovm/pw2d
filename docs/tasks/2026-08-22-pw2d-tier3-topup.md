@@ -81,7 +81,15 @@ Those return white-label junk and accessories — the Bouncer kills them, but yo
 125 accepted, 59 ignored, **93 stuck pending: Gemini daily cap on the admin model (~250 calls) hit at 15:35.**
 They will show as `failed`; after ~07:00 UTC next day → Filament "Retry Failed". Rescan ran too early
 (102 updated; ~190 still unchecked). **Pool has ≥15 shotgun/on-camera mics → sweep before rescan.**
-Next: retry → sweep (dry-run first) → rescan → regenerate. Cost so far .39 (log verified working).
+Next: retry → sweep (dry-run first) → rescan → regenerate. Cost so far $4.39 (log verified working).
+**29 Aug:** 91 stuck products cleared through Gemini after the 07:00 UTC quota reset ($1.50). Sweep applied: 68 removed
+(shotgun/USB/handheld-vocal/loose components/non-mics), #4747 Shure MVL kept. Pool 193 scored / 182 buyable.
+**NEXT: rescan lavalier in the extension (106 unchecked, ~16 min) → dry-run selection → regenerate.** Category cost so
+far $5.95.
+**Rescan DONE 29 Aug (192 updated, 1 error = #4649 unchecked). Sweep pass 2: 15 more handheld/headset systems
+removed (pool 178). **LAVALIER COMPLETE — page REGENERATED + LIVE 29 Aug 10:25 UTC** (4/7 picks changed; backup
+`/tmp/lavalier_backup_20260829_102543.json`; audit FRESH). Total category cost $5.95 + $0 session work.
+Next category on the sheet: productivity-ergonomic-keyboards — ONE SERP page per phrase, ≤200 products.**
 
 
 - `Rode Wireless PRO`

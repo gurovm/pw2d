@@ -1193,3 +1193,72 @@ path only; imports keep dispatching Gemini as today.
   including `--dry-run`) unless `--force` is passed — a still-queued `ProcessPendingProduct` job ignores
   product status and can overwrite a product the session just finalized. Exit code 2, no table rendered.
   `docs/ops/bouncer-session.md`'s "What can go wrong" table updated with this refusal. *[API, Docs]*
+- [x] **Spec 039 DEPLOYED 2026-08-28 ~17:25 UTC (prod `cd636cc`, commits d63d8c8 + cd636cc).** Nothing to
+  migrate; queue workers restarted via the new step 9b (fresh PIDs); `export-pending`, `apply-evaluations`,
+  `ai:eval-model` registered on prod; all sites 200. Next: calibration gate (50 blind lavalier products)
+  → if PASS, apply the 91 `failed` lavalier products in-session. *[Deploy]*
+- [ ] **Spec 039 calibration round 1 (2026-08-28, 50 blind lavalier products, `/tmp/calib_result.json` on prod):
+  FAIL on scale only.** is_ignored agreement 98% (49/50 — the one miss: AT829cW flagged accessory, stored
+  scored), brand 100%, feature MAD 11.5 (gate ≤ 5). Deltas are a uniform offset: session scores run −7 to
+  −16 below stored on every feature, identical across the three subagent batches (−11.5 / −11.2 / −7.8);
+  MAD after per-feature offset 6.3, 81% of pairs within ±10. Cause: Gemini's stored scale is inflated (47%
+  of stored scores are 80–100) and the brief said "50 = average". Convention clash: passive wired lav Battery
+  Endurance (stored 99 / session 30). Round 2 with a calibrated brief (site bands + conventions) running.
+  If round 2 lands 5–7: owner decision whether the ≤5 gate (set for same-prompt model swaps) applies to a
+  distinct judge, or whether the overflow path applies a measured per-feature calibration. *[AI, Content]*
+- [ ] **Spec 039 calibration round 2 (calibrated brief, same 50 products): ignore 100%, brand 100%, bias
+  +1.7, MAD 7.08 → gate FAIL on the ≤5 rule only.** 84% of pairs within ±10; batches +2.1/+0.5/+2.5 (consistent).
+  Residual is mostly Gemini's own inconsistency: passive wired lav Battery Endurance stored 20 (MT830cW,
+  AT829cW, WL93) vs 95–99 (SmartLav+, Lavalier GO); Noise Isolation stored 30–40 where session gave 45–60.
+  Calibration brief written into `docs/ops/bouncer-session.md` as mandatory. **OWNER DECISION:** the ≤5 MAD
+  gate was set (Spec 037) for same-prompt model swaps; against this golden set it is unreachable without
+  mimicking noise. Options: (a) overflow-path gate = ignore ≥95% + brand ≥98% + |bias| ≤3 + MAD ≤8 → PASS
+  today, apply the 91 stuck lavalier products in-session; (b) keep ≤5, keep Gemini-first, retry the 91 via
+  Filament after 07:00 UTC. *[Owner, AI]*
+- [x] **OWNER DECISION 2026-08-29: option (a) — overflow-path gate = ignore ≥95% + brand ≥98% + |bias| ≤3 +
+  MAD ≤8.** Round 2 passes it (100% / 100% / +1.7 / 7.08). The session path is approved as the overflow
+  route with the calibrated brief (`docs/ops/bouncer-session.md`). The ≤5 MAD rule stays for Spec 037 T3
+  model swaps. Scorers run on the session model (Claude Fable 5); measured ~3k tokens/product incl. subagent
+  overhead. A different scorer model needs its own 50-product calibration before use. *[Owner, AI]*
+- [x] **2026-08-29 09:10 UTC: Gemini quota back (resets 07:00 UTC). Probe product #4796 processed in 30 s —
+  and it was a Sony shotgun mic that Gemini SCORED into lavalier.** The remaining 90 `failed` lavalier products
+  re-queued through Gemini per owner ("check with Gemini"). Sweep is mandatory afterwards. *[Ops]*
+- [x] **2026-08-29 09:10–09:18 UTC: lavalier backlog cleared through Gemini.** 91 `evaluate_product` calls,
+  0 rate-limit errors, $1.28 + 59 `match_product` $0.22 = **$1.50**, all rows tenant-tagged and priced
+  (Spec 038 holding). Lavalier: 261 processed / 256 ignored. Only remaining `failed` product platform-wide:
+  c2d #4052 (pre-existing). Next: sweep dry-run → owner review → sweep → rescan → regenerate. *[Ops]*
+- [x] **2026-08-29 lavalier sweep DRY-RUN: 69 of 261 flagged ($0.06, 11 site-model calls).** ~50 unambiguous
+  (Rode VideoMic ×6, Sony ECM ×13, MKE 600, USB/desk mics, headphones, Deity timecode ×3, Solidcom intercom ×2,
+  Pyro HDMI, PA speaker, RodeCaster, loose transmitters/capsules, wired headsets, "Mic 2 Bundle | Case");
+  ~16 handheld wireless vocal systems (Sennheiser XSW/EW-D vocal sets, BLX288, Tonor/Pyle/Phenyx UHF) —
+  out of scope per the category's own buying guide ("wireless lavalier system", vlogging/events/iPhone
+  prompts). **Architect exception: keep #4747 Shure MVL** (wired iPhone lav = the "lavalier mic for iPhone"
+  prompt; wired lavs are kept by convention). Apply = 68 ids via targeted script mirroring
+  `AiSweepCategory`'s write (rejection row + model save), backup first. **APPLIED 09:3x UTC (owner "go"): 68 removed, 68 rejection rows with grouped reasons, 0 leftover feature values (observer fired), backup `/tmp/lav_sweep_backup_20260829_092603.json`. First attempt aborted cleanly on the required `rejection_reason` column (nothing written) — fixed and rerun.** Pool now 193 scored / 182 buyable, 106 unchecked → rescan. *[Content, QA]*
+- [x] **Spec 039 three-way scorer calibration (2026-08-29, same 50 lavalier products, same calibrated brief,
+  same stored answers):** Fable 5 → verdicts 100% / brand 100% / bias +1.7 / MAD 7.08 / 84% within ±10;
+  Opus 5 → 96% / 100% / +1.8 / **6.61** / 85%; Sonnet 5 → 96% / 100% / −0.4 / 7.58 / 77%. **All three pass
+  the overflow pass mark.** The 96% for Opus/Sonnet is not a model difference: their two "misses" are #2076
+  and #2110 (handheld vocal sets) which the sweep detached *between* Fable's run and theirs, so the stored
+  answer flipped to "ignored" — on equal footing all three are 100%. The "13 skipped pairs" for Opus/Sonnet are
+  the same two swept products (stored feature values deleted on detach, 2×6) plus one Battery Endurance null —
+  identical compliance to Fable (1 null). Tokens per 17-product batch: Fable ~51k, Opus ~52k, Sonnet
+  ~63k. Recommendation: Opus 5 or Fable 5 for scoring; Sonnet 5 acceptable but no cheaper on the
+  subscription and slightly noisier. *[AI]*
+- [x] **OWNER DECISION 2026-08-29: Opus 5 is the default scorer model for Spec 039 subagents** (Fable's
+  subscription allowance is ~half of Opus's; Fable reserved for planning). Runbook + memory updated. *[Owner]*
+- [x] **2026-08-29 lavalier sweep pass 2 (owner "go"): 15 more removed** that the AI sweep missed — 12 handheld
+  vocal/karaoke/interview systems (Shure SLXD24+/BLX288/BLX24/GLXD24+ vocal sets, BASN, ULT, Comica CVM-WS50/
+  WM100H, Revo S, RØDE Interview PRO) + 3 complete headset systems (GLXD14+/SM35, GLXD14+/PGA31, BLX14/PGA31).
+  Kept 4881 (handheld+bodypack), 4862/4857 (headset+lapel kits). Found by name regex after the dry-run put a
+  headset system in the premium slot. Pool 178. New premium pick: Shure GLXD14+/93 (bodypack + WL93 lav).
+  **Lesson: the site-model sweep is inconsistent on handheld systems (removed XSW sets, kept GLXD24+/SM58) —
+  always follow a sweep with a name-pattern check on the remaining pool.** *[Content, QA]*
+- [x] **`/best/lavalier-wireless-systems` regenerated and LIVE (2026-08-29 10:25 UTC).** Full Tier-3 cycle: import
+  (277, overshoot) → Gemini + quota reset → sweep ×2 (83 removed) → rescan (192) → Claude-authored prose,
+  checker CLEAN, owner review via artifact → guarded publish (selection guard OK, backup on prod). 4/7 picks
+  changed (premium Sennheiser combo $1,070 → Shure GLXD14+/93 $690; presenter → DJI Mic 3; filmmaker → Rode
+  GO III; Lark M2 $90 → $75). Audit: headsets + lavalier FRESH; mics, mechanical-keyboards, ergonomic-keyboards
+  still STALE (`selection_drift`) pending their own rescans. *[Content]*
+- [ ] **#4649 Hollyland Lark MAX 2 OWS — the one lavalier offer the rescan errored on; still unchecked.** One
+  single-scan clears it. *[QA]*

@@ -42,7 +42,7 @@ The export file carries everything needed: `rules` (the same gate rules Gemini g
 tenant), `anchors` (already-scored products with their scores — calibration, not templates), and
 `products`.
 
-Work in **batches of ~20 products, one subagent per batch, all subagents given the identical brief**.
+Work in **batches of ~20 products, one subagent per batch (`model: opus`), all subagents given the identical brief**.
 The brief is the export's `rules` + `features` + `anchors` + `brands` + the batch's `products`, and this
 output contract:
 
@@ -73,8 +73,29 @@ Rules that matter most:
 Merge the batches into one `{"evaluations": [...]}` file. Validate before applying — the `--dry-run`
 prints every row's outcome; fix or drop `error` rows, never hand-edit product ids.
 
-**Budget:** roughly 1–1.5k tokens per product all-in with subagent overhead; a 277-product backlog is
-~300–400k tokens and 10–20 minutes of wall time. Plan it inside one 5-hour window.
+**Budget (measured 2026-08-28):** ~50–58k tokens per 17-product subagent batch ≈ **3k tokens per product**
+all-in; a 91-product backlog ≈ 6 batches ≈ 300k tokens and ~5 minutes of wall time with batches in parallel.
+Plan it inside one 5-hour window.
+
+## Calibration brief (mandatory — learned 2026-08-28)
+
+Round 1 of the lavalier calibration scored a uniform **~10 points below** the site's stored scale on every
+feature while agreeing on brand (100%) and keep/ignore (98%). The site's scale is *not* "50 = average":
+Gemini's stored scores cluster high (47% of them 80–100). Every scoring brief must therefore carry a
+`calibration` block, derived from the category's stored means (`export-pending` anchors show them):
+
+- **Bands on this site:** 88–95 category-leading feature on a top-brand flagship · **78–87 solid mainstream
+  product from a reputable brand (the most common band — use it freely)** · 65–77 decent budget-brand
+  product or a weak feature on a good one · 50–64 no-name gear · 20–49 only for a genuinely poor or
+  missing capability.
+- **Conventions:** passive wired lavaliers (no battery) get Battery Endurance 90–99 ("nothing to run
+  out", SmartLav+ anchor = 95); Noise Isolation is the one feature kept low (unprocessed omni capsules
+  40–60); "budget brands never 80+ on quality features" still holds; wired lavaliers are in-category.
+- **Anchors are the scale**, not templates. Unknown model → brand tier + price, default 55–65.
+
+With that block, round 2 on the same 50 products came back: ignore 100%, brand 100%, bias +1.7, MAD 7.1
+(84% of scores within ±10; batches within 2 points of each other). The residual is dominated by Gemini's
+own inconsistency (it scored three passive wired lavs' Battery Endurance at 20 and two others at 95–99).
 
 ## Trust gate (Spec 039 T5)
 
@@ -87,9 +108,13 @@ php artisan pw2d:products:export-pending pw2d <slug> --status=processed --limit=
 php artisan pw2d:ai:eval-model pw2d --from-file=calibration.json
 ```
 
-Pass = `is_ignored` agreement ≥ 95 %, brand exact-match ≥ 98 %, feature-score mean absolute delta ≤ 5.
-Record the result in `docs/tasks/todo.md` under Spec 039. Two passing runs on different categories
-before proposing session-first (Spec 039 §6).
+**Overflow-path pass mark (owner decision 2026-08-29):** `is_ignored` agreement ≥ 95 %, brand exact-match
+≥ 98 %, mean signed bias within ±3, feature-score mean absolute delta ≤ 8. (The stricter ≤ 5 rule remains
+for Spec 037 model swaps.) Lavalier round 2 passed: 100 % / 100 % / +1.7 / 7.08. Record every run in
+`docs/tasks/todo.md` under Spec 039. Two passing runs on different categories before proposing session-first
+(Spec 039 §6). Scorer model: calibrated 2026-08-29 on the same 50 products — Fable 5 MAD 7.08, Opus 5 6.61, Sonnet 5 7.58 (all pass;
+verdicts and brands equal on equal footing). **Default: Opus 5 (`model: opus` on every scoring subagent — owner decision 2026-08-29; Fable's subscription
+allowance is half of Opus's and is reserved for planning).** Sonnet 5 passes but used more tokens per batch, not fewer. Any other model needs its own run.
 
 ## What can go wrong
 
