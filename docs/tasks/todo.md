@@ -1358,7 +1358,7 @@ $130→$160 (+23%), Cocinare kettle $50→$60 (+20%), Philips 3200 LatteGo $300�
 - [ ] **c2d cold-brew-makers: full rescan → regenerate.** Dead premium pick + overall pick +40%. Pool is
   the thinnest on either site (44 buyable, 13.7% unbuyable, verdict `stale, thin`) and is first in line for
   quarterly discovery — consider a top-up import before the rescan. *[Owner sweep, Claude regenerate]*
-- [ ] **pw2d headsets + lavalier went stale 3 weeks after a full rebuild** (premium pick → `high_price` with
+- [ ] **(headsets half fixed 09-21; lavalier still open) pw2d headsets + lavalier went stale 3 weeks after a full rebuild** (premium pick → `high_price` with
   a NULL price on both). Both pools are still inside the month, so this is a regenerate-from-current-pool
   case, not a re-sweep. Watch whether premium-tier picks are systematically the first to die — if it
   repeats next month, the selector may need to prefer picks with a second offer or a stabler listing. *[Architect, watch]*
@@ -1372,15 +1372,69 @@ $130→$160 (+23%), Cocinare kettle $50→$60 (+20%), Philips 3200 LatteGo $300�
   would not catch them, and one-offer-per-store means a "merge" just deletes one Amazon listing. Dry-run
   selection after the 09-21 rescan confirms: no Q11 in the new seven. (Already tracked as the editorial
   note near line 318.) *[Closed]*
-- [ ] **Ergonomic keyboards — rescan DONE 2026-09-21 (99/99; 19 now unbuyable), page ready to regenerate.**
-  Dry-run picks: overall Mistel Barocco MD770 · budget YMDK BORNE Corne · premium Kinesis Advantage360
-  Pro ($480) · rsi-sufferer Kinesis Freestyle Edge RGB Plus ($200, NEW) · programmer Keychron K8 HE TKL
-  White · office-professional Logitech MX Keys Combo for Business Gen 2 ($200, NEW) · second overall
-  Keychron K2 V3. Four of seven carry over. Next: Claude writes the prose (style contract + banned-word
-  check) → owner review → publish. *[Claude, then Owner review]*
-- [ ] **Clive Coffee pick offers are never health-checked by the weekly run** (4 offers, last 08-20). Low
-  risk today — 3 of 4 products also carry a verified Amazon offer — but La Marzocco Linea Mini's only offer
-  is unverified. Decide: accept, or spot-check non-Amazon pick offers by hand monthly. *[Owner decision]*
+- [x] **`/best/productivity-ergonomic-keyboards` REBUILT AND LIVE 2026-09-21 16:25 UTC — audit FRESH.**
+  Sequence followed: top-up import (67 → 47 accepted) → full category rescan (146/146, 0 errors) → pool
+  cleanup → dry-run selection → Claude-authored prose (style + grounding contract; machine-checked: 0 banned
+  phrases, 0 condition words, every number traced to the payload, 15 comparisons verified one by one) →
+  owner review (`docs/drafts/2026-09-21-ergonomic-keyboards-page-draft.md`, two rounds) → saved through the
+  model behind a selection guard (server selection == draft, id for id). Backup of the old page:
+  `/root/backups/landing_page_ergonomic_20260921_162519.json`. Verified live: HTTP 200, new headlines
+  present, no Q11 / YMDK text, 7 buy buttons, 3 JSON-LD blocks.
+  Picks: Mistel MD770 $110 (overall) · Logitech Wave Keys $70 (budget) · Kinesis Advantage360 Pro $480
+  (premium) · Kinesis Freestyle Edge RGB Plus $200 (rsi-sufferer) · Keychron K8 HE TKL $140 (programmer) ·
+  RK Royal Kludge A70 Alice $100 (office-professional) · Keychron B3 Pro 75% $35 (second overall slot —
+  scores 35 on Ergonomic Adjustability; the text says so). Pool after cleanup: 128 scored.
+  **21 products marked ignored today, all owner-approved, all per-record through the model, all backed up
+  under `/root/backups/products_before_ignore_*_2026-09-21.sql`:** 2 mice + 1 numpad (4903, 4911, 4914) ·
+  8 keyboard+mouse combos / accessory bundles from today's import (4902, 4944, 4943, 4960, 4913, 4959, 4978,
+  4976) · the older MX Keys Combo for Business (2980) · 3 gaming-category non-keyboards (5066, 5075 barebones
+  kits, 5036 membrane) · 4 switchless split kits (2883 — the old budget pick — 2888, 2891, 4969; only 2883
+  was explicitly named to the owner beforehand, the other three were applied on the same principle and
+  reported immediately after) · 2 duplicate Wave Keys editions (4904 Mac, 4912 Business). *[Done]*
+- [x] **`/best/gaming-chat-headsets` REBUILT AND LIVE 2026-09-21 17:12 UTC — audit FRESH.** Full category
+  rescan first (161/161, 135 buyable, HEALTHY; 15 unavailable + 9 high_price listings in the pool). Selection
+  changed in one slot only: premium Beyerdynamic MMX 300 (Amazon "high price" flag) → **Beyerdynamic MMX 300
+  PRO, $380**. The other six picks kept their owner-approved 08-28 prose word for word; 22 sentences were
+  updated for prices and price differences by exact string replacement (every replacement asserted present),
+  and one new premium body was written from the pick's score notes. Checks: every dollar figure equals a
+  current price or a difference of two; no old price left; 12 score claims re-verified; 0 banned/condition
+  words. Owner-reviewed (`docs/drafts/2026-09-21-gaming-chat-headsets-page-draft.md`), saved through the
+  model behind a selection guard AND a price guard; backup
+  `/root/backups/landing_page_headsets_20260921_171248.json`. Verified live: 200, new text present, no
+  "$400"/"Thirty dollars" left, 7 buy buttons. New snapshots: 70/40/380/380/150/250/90. *[Done]*
+- [x] **`/best/mechanical-gaming-keyboards` REBUILT AND LIVE 2026-09-21 17:21 UTC — audit FRESH.** Top-up
+  import (86 → 46 accepted; 3 hidden as non-keyboards; 1 auto-ignored by the condition guard when the rescan
+  found its listing refurbished — GMMK 3 75%, the popup's "flagged 1") → full rescan (203/204, 185 buyable) →
+  dry-run → draft → owner review (`docs/drafts/2026-09-21-mechanical-gaming-keyboards-page-draft.md`) →
+  saved behind selection + price guards; backup `/root/backups/landing_page_mech_keyboards_20260921_172111.json`.
+  Four picks kept with their prose (K8 HE $140, Q2 Max $210, Azoth Extreme $440→$400, Q6 Max $200→$220);
+  three replaced: budget Keychron C3 Pro (unavailable) → **AULA F87 $60**; streamer Keychron Q5 Pro (+47%)
+  → **Glorious GMMK 3 PRO HE $250**; second overall ROG Falchion RX → **NuPhy Air75 HE $130**. Intro
+  rewritten (Hall Effect 3 of 7; Keychron 3 of 7, was 5). Checks: all dollar figures traced, no stale pick
+  references, 19 score claims verified, 0 banned/condition words. Product 5061 renamed (display name only,
+  slug untouched, owner-approved) from a chopped Amazon title to "NuPhy Air75 HE". Verified live: 200, new
+  headlines present, no C3 Pro / Q5 Pro / Falchion text, 7 buy buttons. *[Done]*
+- [ ] **pw2d page status after 2026-09-21: 3 of 5 FRESH** (ergonomic keyboards, headsets, mechanical gaming
+  keyboards). Still STALE: `podcast-studio-mics` (`selection_drift`; category last swept 08-14, never topped
+  up — run sheet §5 phrases ready) and `lavalier-wireless-systems` (premium Shure GLXD14+ flagged
+  `high_price`; pool swept 08-31, so inside the month — regenerate from the current pool, no re-sweep
+  needed). c2d: all six categories need their monthly sweep; 4 pages need only the surgical price patch,
+  cold-brew needs the full path. *[Next session]*
+- [x] **SteelSeries Apex 9 TKL JP (2770) marked ignored 2026-09-21 (owner's call)** — no price, last checked
+  08-14, skipped by the category rescan. mechanical-gaming-keyboards now reads HEALTHY; page still FRESH.
+  Backup `/root/backups/products_before_ignore_2770_2026-09-21.sql`. *[Done]*
+- [ ] **Import name cap produced a brandless, chopped product name** ("Air75 HE Rapid Trigger Wired Custom
+  Magnetic Gaming" for the NuPhy Air75 HE): the raw Amazon title started with a lowercase brand ("nuphy …")
+  and the 8-word cap kept marketing words instead of the model. Same root as the Wave Keys naming
+  inconsistency that defeated the same-model pick guard. Worth one look at `capProductName()` + the Bouncer
+  NAME RULE: require "Brand Model" shape. *[AI, Import]*
+- [ ] **Ergonomic pool — leftovers, none blocking:** (a) 11 older keyboard+mouse combos are still visible
+  (2842, 2902, 2783, 2942, 2957, 2964, 2971, 2979, 2989, 2999, 3007) — a what-if showed they do not change
+  today's seven, so they were left alone; hide them for consistency when convenient. (b) 4985 LEOBOG A80 RT
+  is a gaming board sitting in the ergonomic category. (c) The selector chose the same keyboard twice because
+  the three Wave Keys listings have inconsistent names (`Logitech Wave Keys Rose` vs `Wave Keys for Business
+  …`), so the same-model guard saw different models — the open `modelKey()` weakness, now with a second
+  concrete case: brand missing from the product name. *[Data, Architect]*
 - [x] **Close: pw2d stable-cohort position decline watch (09-01).** Reversed 27.6 → 9.9; see checkpoint.
 - [x] **Close: `/best/manual-coffee-grinders` zero-rows watch.** First GSC row 09-07 (10 impr, 1 click).
 - [ ] **Look at the live SERP snippet for `/compare/gaming-chat-headsets?preset=remote-worker`** — pos 6.4,
@@ -1421,6 +1475,33 @@ $130→$160 (+23%), Cocinare kettle $50→$60 (+20%), Philips 3200 LatteGo $300�
   regression tests. **After deploy:** `pw2d:seo:pull pw2d --gsc-window-days=7` to recover 09-18 onward.
   Follow-up worth a line in the status command: surface a per-tenant "latest GSC date lags the other tenant"
   hint, since HEALTHY hid this. *[Builder → owner /deploy → re-pull]*
+- [x] **GSC top-query overflow FIXED + DEPLOYED 2026-09-21 (prod `a667f2d`).** Top query truncated to 500
+  chars on write; a row whose URL exceeds the column is skipped + logged instead of failing the statement;
+  5 regression tests (suite 858 green). Backed up pw2d GSC rows ≥ 09-10
+  (`/root/backups/seo_metrics_gsc_pw2d_before_repull_2026-09-21.sql`), re-pulled `--gsc-window-days=7`:
+  264 rows, 0 errors; 09-18 (37 rows, query stored at exactly 500 chars) and 09-19 restored. *[Done]*
+- [ ] **2026-09-21 top-up imports — pool pollution review (Claude read all 93 accepted titles).**
+  Imported 153 (ergonomic 67 → 47 accepted; gaming 86 → 46 accepted), queue drained clean, no Gemini cap.
+  Ergonomic rescan done (146/146, HEALTHY, 127 buyable); gaming rescan pending (46 unchecked).
+  **The first post-import dry-run picked a MOUSE as the ergonomic budget pick** — caught before any page
+  was written. Wrong-type products the Bouncer accepted:
+  - *Not keyboards (ergonomic):* 4903 Logitech Lift Vertical Mouse · 4911 Logitech Ergo M575S Trackball ·
+    4914 Keychron V0 Ultra 8K (number pad — Keychron's "0" models are numpads; was picked as 2nd overall).
+  - *Not finished mechanical keyboards (gaming):* 5066 GMMK 3 Barebones · 5075 GMMK 3 PRO Barebones Kit ·
+    5036 Corsair K55 RGB PRO (membrane).
+  - *Owner's call — keyboard+mouse combos and accessory bundles (ergonomic, 8):* 4902 Logitech MK850 ·
+    4944 MS Sculpt Comfort Desktop ($390) · 4943 MS Sculpt Ergonomic Desktop ($569) — both discontinued at
+    scalper prices · 4960 / 4913 / 4959 Perixx PERIDUO combos · 4978 Goldtouch + laptop-stand bundle ·
+    4976 Goldtouch + cloth bundle. Pre-existing pool has the same issue: **Logitech MX Keys Combo for
+    Business Gen 2 is the current office-professional pick.**
+  - *Wrong category:* 4985 LEOBOG A80 RT Hall Effect **Gaming** keyboard landed in ergonomic.
+  Removal must go through Eloquent per record (`is_ignored` flip → `ProductObserver` → freshness audit),
+  never a bulk `UPDATE`. *[Owner decision → Claude applies]*
+- [ ] **Bouncer category-fit miss rate on this import: ~11 of 47 accepted ergonomic products are not a
+  standalone keyboard** (2 mice, 1 numpad, 8 combos/bundles). Mice in a keyboards category is a Stage-1
+  failure, not a judgment call. Check what `AiService::evaluateProduct()` is told about the category
+  (name + description + negative examples?) — likely needs an explicit "product type must be X; reject
+  mice, numpads, combos, barebones kits" line per category. Spec candidate after the pages are rebuilt. *[AI, Architect]*
 - [ ] **pw2d GA4 shows 1,753 sessions in 28 days but only 245 in the last 14** — so ~1,500 sessions fell in
   08-24 → 09-06, against 85 PostHog visitors for the whole 28 days. Almost certainly bot traffic GA4 did not
   filter. Check the source/medium and country split at the 09-28 check before quoting any pw2d GA4 session
@@ -1441,7 +1522,7 @@ $130→$160 (+23%), Cocinare kettle $50→$60 (+20%), Philips 3200 LatteGo $300�
 - [ ] **c2d traffic jumped ~5× on 2026-09-17** — GA4 sessions/day went from 2–9 to 19 / 33 / 26 / 30
   (09-17 → 09-20, live GA4 figures). Seen while verifying S3; source not yet checked (organic vs bot vs
   referral). Look at it in the 09-28 SEO check, after the backfill makes the stored data trustworthy. *[SEO]*
-- [ ] **Ergonomic keyboards: top-up import BEFORE writing the page (owner's call 2026-09-21, matches run
+- [x] **(DONE — see the rebuild entry) Ergonomic keyboards: top-up import BEFORE writing the page (owner's call 2026-09-21, matches run
   sheet §3).** Pool is 99 with only 80 buyable after today's rescan (19% dead). 14 phrases ready in
   `docs/tasks/2026-08-22-pw2d-tier3-topup.md` §3, one SERP page each, stop at ~200 products (Gemini daily
   cap). Then a second category rescan — the extension has no "new products only" mode, so it re-checks all
