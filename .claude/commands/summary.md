@@ -93,11 +93,6 @@ Do, in order:
    wrote into `todo.md` may still be a `[x]` or a paragraph.
 3. Owner actions ("needs you, 2 min") stay in `todo.md` under one `## Owner` heading so they are
    seen at boot, not buried.
-4. **Legacy monolith guard.** Until the one-time migration has been done, `todo.md` is a
-   ~1,500-line history file (150+ closed items). Do **not** restructure it inside this command —
-   that is its own reviewed task. In that state: apply rules 1–3 to **today's section only**, and
-   put `- [ ] **Migrate todo.md** — split into todo / backlog / archive` at the top of `todo.md`
-   if it is not already there. Once `todo.md` is under ~150 lines, delete this rule.
 
 ## Step 5: Standing records this project keeps outside git history
 

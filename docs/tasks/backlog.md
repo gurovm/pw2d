@@ -48,6 +48,7 @@ the code in brackets. Codes (Q5, F12, H-E…) are kept only so the old text can 
 - [ ] **Category-intent skew on podcast mics** — weighting rewards noise rejection, so handheld vocal mics dominate a page readers expect to be broadcast mics
 - [ ] **Homepage and tile counts are unfiltered** — owner asked 08-20: "remember to fix homepage numbers later"; four callers count raw rows
 - [ ] **`/best/` pages are near-orphaned** — one internal link each; downgraded 09-01 to an optional accelerant [F36]
+- [ ] **Re-read the kept pick bodies against fresh score notes** — on 09-21 the six kept headset bodies and four kept keyboard bodies were re-verified for prices and score comparisons only; descriptive claims date from 08-14 / 08-28
 - [ ] **Flaky, order-dependent `SelectLandingPicksTest`**
 
 ## SEO pipeline & dashboard

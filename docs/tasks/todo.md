@@ -8,20 +8,22 @@ work and session narratives go to `archive/` (moved by `/summary`). Full pre-202
 
 - [ ] **Weekly picks run + SEO check** — due ~2026-09-28, both tenants (two extension runs), then `/seo-status` → memory `maintenance-cadence`
 - [ ] **Monthly sweep: all six c2d categories** — last checked 08-16 → 08-21, overdue; ~40 min a week, oldest first → `docs/specs/031-content-maintenance-cadence.md`
+- [ ] **22 leftover files in prod `/tmp` from 08-28 → 29** — calibration results plus two page backups that a reboot would erase; move the two backups to `/root/backups/` or delete the lot → `docs/summaries/2026-09-21-healthy-status-hid-two-data-bugs-three-pages-rebuilt.md` §3
 
 ## Content & maintenance — next, in order
 
 - [ ] **pw2d podcast-studio-mics: top-up → rescan → rebuild** — page STALE, category last swept 08-14 and never topped up; add broadcast and USB mics, not more handhelds; clears the one unchecked straggler (Shure SM7dB + MVX2U) → `docs/tasks/2026-08-22-pw2d-tier3-topup.md` §5
-- [ ] **pw2d lavalier: rebuild only** — premium pick (Shure GLXD14+) carries a high-price flag; pool swept 08-31, so no re-sweep; single-scan the one unchecked offer (#4649 Hollyland Lark MAX 2) first → `docs/summaries/2026-09-21-session-handoff.md`
+- [ ] **pw2d lavalier: rebuild only** — premium pick (Shure GLXD14+) carries a high-price flag; pool swept 08-31, so no re-sweep; single-scan the one unchecked offer (#4649 Hollyland Lark MAX 2) first → `docs/summaries/2026-09-21-healthy-status-hid-two-data-bugs-three-pages-rebuilt.md` §3
 - [ ] **c2d: surgical price patch on four pages** — gooseneck-kettles, manual-coffee-grinders, pour-over, super-automatic: `price_drift` only, selection unchanged; re-price the text and re-stamp snapshots, after that category's sweep → snapshot "2026-09-21 — weekly picks run"
 - [ ] **c2d cold-brew-makers: full path** — dead premium pick, overall pick +40%, thinnest pool on either site (44 buyable); top-up before the rescan → same section
-- [ ] **Read every accepted title after an import** — standing step until the import-quality spec ships; on 09-21 the first dry-run picked a mouse as the budget keyboard → `docs/summaries/2026-09-21-session-handoff.md` §Findings 5
+- [ ] **Read every accepted title after an import** — standing step until the import-quality spec ships; on 09-21 the first dry-run picked a mouse as the budget keyboard → `docs/summaries/2026-09-21-healthy-status-hid-two-data-bugs-three-pages-rebuilt.md` §2 "Import pollution"
 
 ## Specs & engineering — next
 
 - [ ] **Import quality (spec candidate, before the next import)** — four linked defects: the Bouncer accepts the wrong product type (mice, numpads, combos, switchless kits in keyboard categories); product names are not forced into "Brand Model" shape; the same-model pick guard false-merges and false-splits (`modelKey()`, open since 08-21, live on pages); picks do not require a health check, so a never-verified listing reads as clean → snapshot "Audit 2026-08-21" H-A, "2026-08-20" findings, "2026-09-21" import review
 - [ ] **Product page content depth (Spec 028 candidate)** — product pages carry ~70% of impressions and clicks and produced every store click of the last 28 days; promoted to "next spec" on 08-17 and never written → snapshot "SEO checkpoint 2026-08-17"
-- [ ] **Surface nightly pull failures** — both data bugs found on 09-21 were invisible: errors go to cron's /dev/null and `pw2d:seo:status` stayed HEALTHY; log them and flag a tenant whose latest GSC date lags the other → `docs/summaries/2026-09-21-session-handoff.md` §Findings 3
+- [ ] **Surface nightly pull failures** — both data bugs found on 09-21 were invisible: errors go to cron's /dev/null and `pw2d:seo:status` stayed HEALTHY; log them and flag a tenant whose latest GSC date lags the other → `docs/summaries/2026-09-21-healthy-status-hid-two-data-bugs-three-pages-rebuilt.md` §2 "GA4 undercount", "GSC freeze"
+- [ ] **`/architect` boot: read the weekly roll-up, drop the "Erate v2" leftovers** — the weekly file exists from 2026-09-21 but nothing reads it at boot yet → `.claude/commands/architect.md`, `docs/summaries/weekly-*.md`
 
 ## SEO — for the ~2026-09-28 check
 
