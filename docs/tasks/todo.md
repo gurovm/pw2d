@@ -1403,6 +1403,28 @@ $130→$160 (+23%), Cocinare kettle $50→$60 (+20%), Philips 3200 LatteGo $300�
   count) — see `docs/lessons.md`. **Post-deploy (owner or Claude on owner's go):**
   `pw2d:seo:pull {tenant} --ga4-window-days=56` per tenant, then check 28-day store-click sums are ≥ the
   probe (c2d 5, pw2d 1). *[Builder fix round → owner /deploy → backfill]*
+- [x] **Spec 040 DEPLOYED + BACKFILLED 2026-09-21 (prod `b3a9781`).** Deploy verified (migration ran,
+  schedule shows `--ga4-window-days=3`, fresh workers, 4 live pages 200). 56-day backfill run for both
+  tenants after a `mysqldump` of all GA4 rows (`/root/backups/seo_metrics_ga4_before_spec040_backfill_2026-09-21.sql`).
+  **Acceptance passed:** 28-day store clicks c2d 5 / pw2d 1 — identical to the live probe; 0 click-fetch
+  warnings; last-14-day stored sessions repaired c2d 100 → 154, pw2d 103 → 245 (pw2d now equals GA4 live).
+  56-day picture: c2d **21 store clicks** — compare pages produced 9 of them in August
+  (manual-coffee-grinders 6, gooseneck-kettles 3) and `/best/super-automatic` 2, so "only product pages
+  convert" was a 28-day artefact. pw2d's 9 clicks on `/best/mechanical-gaming-keyboards` are all on
+  2026-08-01 — launch-day QA, not readers. *[Done]*
+- [ ] **BUG FOUND DURING THE BACKFILL — pw2d Search Console data frozen at 2026-09-17.** A 795-character
+  "query" (someone pasted an AI system prompt into Google; 2 impressions on `/product/keychron-k2-v2-vl7ai`,
+  2026-09-18) overflows `seo_metrics.gsc_top_query` VARCHAR(500). MySQL strict mode rejects the whole
+  multi-row upsert, so **all 37 pw2d GSC rows for 09-18 are dropped**, again every night while the date is in
+  the 4-day window. Errors only reach the command's stdout (cron → /dev/null), so nothing was logged and
+  `pw2d:seo:status` still said HEALTHY. Fix in progress (builder): truncate the top query at write time +
+  regression tests. **After deploy:** `pw2d:seo:pull pw2d --gsc-window-days=7` to recover 09-18 onward.
+  Follow-up worth a line in the status command: surface a per-tenant "latest GSC date lags the other tenant"
+  hint, since HEALTHY hid this. *[Builder → owner /deploy → re-pull]*
+- [ ] **pw2d GA4 shows 1,753 sessions in 28 days but only 245 in the last 14** — so ~1,500 sessions fell in
+  08-24 → 09-06, against 85 PostHog visitors for the whole 28 days. Almost certainly bot traffic GA4 did not
+  filter. Check the source/medium and country split at the 09-28 check before quoting any pw2d GA4 session
+  figure. *[SEO]*
 - [ ] **FOUND 2026-09-21 (reviewer S3, confirmed on prod): every GA4 number since April is undercounted.**
   The 03:00 nightly pull reads each date once, before GA4 finishes processing it: over the last 14 days the
   stored sessions are **69% (c2d) and 42% (pw2d)** of what GA4 reports for the same dates now. Fix rides

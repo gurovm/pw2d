@@ -29,6 +29,21 @@ use Illuminate\Support\Facades\Log;
 final class PullGscMetrics
 {
     /**
+     * Max length of the `gsc_top_query` column (VARCHAR(500) in the seo_metrics
+     * migration). One over-long value fails the whole multi-row upsert and
+     * drops every row for that date's batch, so truncate defensively on write.
+     */
+    private const MAX_TOP_QUERY_LENGTH = 500;
+
+    /**
+     * Max length of the `url` column (VARCHAR(500) in the seo_metrics
+     * migration). Same failure mode as MAX_TOP_QUERY_LENGTH, but a URL cannot
+     * be truncated safely (it would desync url_hash and could merge distinct
+     * pages), so an over-long URL causes that single row to be skipped instead.
+     */
+    private const MAX_URL_LENGTH = 500;
+
+    /**
      * Execute the GSC pull for a single tenant over a window of dates.
      *
      * Sorts $dates ascending, derives startDate/endDate for a single ranged
@@ -116,20 +131,50 @@ final class PullGscMetrics
                     continue;
                 }
 
-                $batch = $rows->map(fn (array $row) => [
-                    'tenant_id'       => $tenant->getTenantKey(),
-                    'source'          => 'gsc',
-                    'url'             => $row['url'],
-                    'url_hash'        => hash('sha256', $row['url']),
-                    'metric_date'     => $dateKey,
-                    'gsc_impressions' => $row['impressions'],
-                    'gsc_clicks'      => $row['clicks'],
-                    'gsc_ctr'         => $row['ctr'],
-                    'gsc_position'    => $row['position'],
-                    'gsc_top_query'   => $topQueriesByDateUrl[$dateKey][$row['url']] ?? null,
-                    'updated_at'      => now(),
-                    'created_at'      => now(),
-                ])->all();
+                $batch = [];
+
+                foreach ($rows as $row) {
+                    $url = $row['url'];
+
+                    // A URL longer than the `url` column would fail the whole
+                    // upsert statement just like an over-long top query. Unlike
+                    // the top query, it cannot be truncated without desyncing
+                    // url_hash and risking merged pages, so skip this row only.
+                    if (mb_strlen($url) > self::MAX_URL_LENGTH) {
+                        Log::warning('PullGscMetrics: skipping row with over-long URL', [
+                            'tenant'     => $tenant->getTenantKey(),
+                            'date'       => $dateKey,
+                            'url_length' => mb_strlen($url),
+                        ]);
+
+                        continue;
+                    }
+
+                    $topQuery = $topQueriesByDateUrl[$dateKey][$url] ?? null;
+
+                    $batch[] = [
+                        'tenant_id'       => $tenant->getTenantKey(),
+                        'source'          => 'gsc',
+                        'url'             => $url,
+                        'url_hash'        => hash('sha256', $url),
+                        'metric_date'     => $dateKey,
+                        'gsc_impressions' => $row['impressions'],
+                        'gsc_clicks'      => $row['clicks'],
+                        'gsc_ctr'         => $row['ctr'],
+                        'gsc_position'    => $row['position'],
+                        'gsc_top_query'   => $topQuery !== null
+                            ? mb_substr($topQuery, 0, self::MAX_TOP_QUERY_LENGTH)
+                            : null,
+                        'updated_at'      => now(),
+                        'created_at'      => now(),
+                    ];
+                }
+
+                if (empty($batch)) {
+                    // Every row for this date was skipped (over-long URL).
+                    $dailyCounts[$dateKey] = 0;
+                    continue;
+                }
 
                 // The unique constraint (tenant_id, source, url_hash, metric_date)
                 // ensures re-running the same day is idempotent.
