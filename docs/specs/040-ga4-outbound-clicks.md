@@ -82,8 +82,9 @@ the check already reads everything else from `seo_metrics` with one SQL statemen
 
 ## How the weekly check uses it
 
-Add to the procedure (owner applies to `.claude/commands/seo-status.md` — the command file is guarded
-against self-edits; until then the query lives in the checkpoint doc):
+Added to `.claude/commands/seo-status.md` on 2026-09-21 (step 2b). An earlier draft of this spec said the
+command file was guarded against edits — that was a stale claim from 2026-06-19, never re-tested; the edit
+went through on the first try once the owner asked why it was blocked:
 
 ```sql
 SELECT tenant_id,
@@ -121,5 +122,5 @@ Report line: **Google clicks → store clicks** per tenant, plus which pages pro
       parity with HEAD verified by the architect via `git diff` (the reviewer has no shell).
 - [x] builder — review fix round: nightly window 3 days, comment accuracy, single `buildRow()`, fetch-then-merge
       (architect re-ran the full suite: 853 passed / 21 skipped / 0 failed)
-- [ ] owner — `/deploy`, then one **56-day** backfill per tenant + the acceptance check; add the SQL to the
-      seo-status command file
+- [x] owner — `/deploy`, then one **56-day** backfill per tenant + the acceptance check — DONE 2026-09-21.
+      Store-click SQL added to the seo-status command file the same day (by Claude, owner-authorised)

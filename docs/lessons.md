@@ -163,6 +163,13 @@ itself uses for that service (`config/services.php`, the tenant `settings` rows)
 (2) if a service has regional hosts (PostHog us/eu, AWS, Google Cloud), try the other one. Re-running an
 identical failing request is not re-verification.
 
+**Same mistake, same day, second instance.** The session told the owner that
+`.claude/commands/seo-status.md` was "guarded against self-edits" and listed the edit as his to-do. That
+came from a 2026-06-19 todo note about a different file, copied forward into a spec and a handoff without
+ever attempting the edit. When he asked why it was blocked, the edit succeeded on the first try. The rule
+above covers inherited claims too: **a blocker read from an old note is a claim — try the action (when it
+is safe and authorised) before assigning the work to someone else.**
+
 ## 2026-09-21 — A spec stated how an external API dimension behaves, from memory; the data said otherwise
 
 Spec 040 told the builder to use GA4's `pagePathPlusQueryString` "because the existing rows come from

@@ -96,5 +96,7 @@ guard) with a JSON backup of the old page under `/root/backups/`.
 - Backups on prod under `/root/backups/` — GA4 rows before the backfill, pw2d GSC rows before the re-pull,
   every ignored/renamed product row, and the three old landing pages as JSON.
 - `docs/drafts/` holds the three owner-reviewed page drafts as the record of what was approved.
-- Owner to-do: add the two store-click queries from Spec 040 to `.claude/commands/seo-status.md` (the
-  command file is guarded against self-edits).
+- `.claude/commands/seo-status.md` updated the same evening: position-bucket query, store-click queries
+  (step 2b), cross-tenant GSC date check, PostHog EU host, report format. It had been listed as an owner
+  to-do on the belief that the command file was guarded against edits — a stale 2026-06-19 claim that was
+  never re-tested. It was not blocked.
