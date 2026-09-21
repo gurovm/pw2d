@@ -50,3 +50,9 @@ reason, so nothing disappears silently. Full original text: `2026-09-21-todo-mon
 | **S7: Q2/Q3 are overdue** · **N3: missing `strict_types`** | Duplicates of Q2/Q3 and L7, which are in the backlog. |
 | **S8: test gaps** `[~]` | Its own text marks every sub-item done. |
 | **Gemini daily cap ≈ 250 evaluate calls** | A fact, not a task; kept in the `gemini-daily-cap` memory. |
+
+## Closed later the same day, after the split
+
+| Item | Outcome |
+|---|---|
+| **`/architect` boot: read the weekly roll-up, drop the "Erate v2" leftovers** | `.claude/commands/architect.md` rewritten 2026-09-21: lazy boot from the role file, `todo.md`, `lessons.md` and the current weekly roll-up; `$ARGUMENTS` handled; pw2d boundaries replace the copied Erate text; points to `/summary` for closing. |

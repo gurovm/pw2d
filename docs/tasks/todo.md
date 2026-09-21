@@ -23,7 +23,6 @@ work and session narratives go to `archive/` (moved by `/summary`). Full pre-202
 - [ ] **Import quality (spec candidate, before the next import)** — four linked defects: the Bouncer accepts the wrong product type (mice, numpads, combos, switchless kits in keyboard categories); product names are not forced into "Brand Model" shape; the same-model pick guard false-merges and false-splits (`modelKey()`, open since 08-21, live on pages); picks do not require a health check, so a never-verified listing reads as clean → snapshot "Audit 2026-08-21" H-A, "2026-08-20" findings, "2026-09-21" import review
 - [ ] **Product page content depth (Spec 028 candidate)** — product pages carry ~70% of impressions and clicks and produced every store click of the last 28 days; promoted to "next spec" on 08-17 and never written → snapshot "SEO checkpoint 2026-08-17"
 - [ ] **Surface nightly pull failures** — both data bugs found on 09-21 were invisible: errors go to cron's /dev/null and `pw2d:seo:status` stayed HEALTHY; log them and flag a tenant whose latest GSC date lags the other → `docs/summaries/2026-09-21-healthy-status-hid-two-data-bugs-three-pages-rebuilt.md` §2 "GA4 undercount", "GSC freeze"
-- [ ] **`/architect` boot: read the weekly roll-up, drop the "Erate v2" leftovers** — the weekly file exists from 2026-09-21 but nothing reads it at boot yet → `.claude/commands/architect.md`, `docs/summaries/weekly-*.md`
 
 ## SEO — for the ~2026-09-28 check
 

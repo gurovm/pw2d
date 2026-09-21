@@ -49,6 +49,8 @@
 - coffee2decide now sends PostHog events (owner pasted the project token; verified in the live page source).
 
 **Tooling and docs**
+- `/architect` rewritten after this summary's first run: it now boots from the role file, `todo.md`, `lessons.md`
+  and the current weekly roll-up (it had been a copy from another project, still saying "Erate v2").
 - `/summary` command added (this run is its first). `/seo-status` procedure gained position buckets, store-click
   queries, a cross-tenant GSC date check and the PostHog EU host.
 - `docs/tasks/todo.md` split: 1,539 lines → 33 (16 active items); `backlog.md` 51 lines; 47 stale unticked items closed
@@ -111,6 +113,5 @@ All figures are production, measured 2026-09-21, unless marked.
   exports, and two page backups — `headsets_backup_20260828_142919.json`, `lavalier_backup_20260829_102543.json`). `/tmp`
   does not survive a reboot; move the two backups to `/root/backups/` or delete the lot — owner's call.
 - **Not done:** pw2d podcast mics and lavalier pages, all six c2d category sweeps, four c2d price patches, cold-brew.
-  The `/architect` command still says "Erate v2" and does not read the weekly roll-up.
 
 Queue at close: 0 jobs waiting, 0 failed today, 0 products pending AI.
