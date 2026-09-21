@@ -147,3 +147,38 @@ like the fix had not landed. Caught only because the worker PIDs and uptime were
 **Rule:** any deploy that touches `app/Jobs/` or a service jobs call needs `php artisan queue:restart`,
 and the verification must include `supervisorctl status` showing fresh PIDs. Added as step 9b in
 `.claude/commands/deploy.md`.
+
+## 2026-09-21 — "The PostHog key is dead" was the wrong host, reported to the owner for four weeks
+
+From 2026-08-24 to 2026-09-21 every SEO checkpoint tested `POSTHOG_PERSONAL_API_KEY` against
+`us.posthog.com`, got HTTP 401, logged "credential dead" (F37) and handed the owner a recurring 5-minute
+action. The key was fine. The project lives on **PostHog EU Cloud** — `config/services.php:85` and
+`layouts/app.blade.php:52` both default to `https://eu.posthog.com`, and the same key returns 200 there.
+It was caught only when the owner opened the PostHog settings page and the screenshot showed
+`Region: EU Cloud`. Four checkpoints re-"verified" the failure by re-running the same wrong request.
+
+**Rule:** a 401/403/404 from an external API is a claim about *one request*, not about the credential.
+Before logging a credential as dead or assigning the owner an action: (1) read the host/region the app
+itself uses for that service (`config/services.php`, the tenant `settings` rows) and test against *that*;
+(2) if a service has regional hosts (PostHog us/eu, AWS, Google Cloud), try the other one. Re-running an
+identical failing request is not re-verification.
+
+## 2026-09-21 — A spec stated how an external API dimension behaves, from memory; the data said otherwise
+
+Spec 040 told the builder to use GA4's `pagePathPlusQueryString` "because the existing rows come from
+`landingPage`, which includes the query string". It does not — that is `landingPagePlusQueryString`. The
+builder followed the spec faithfully. Shipped as written, outbound clicks on `/compare/x?preset=…` would
+never have merged with the `/compare/x` landing row, and `?srsltid=` / `?fbclid=` tracking params would
+have fragmented the counts — silently, with every test green, because the tests would have been written
+to the same wrong spec. Caught only by the post-build verification query against prod:
+`SELECT SUM(url LIKE '%?%') FROM seo_metrics WHERE source='ga4'` → 0 of 1,959.
+
+The same pass found a second gap in the spec: seeding the new column with 0 and always listing it in the
+upsert's update-columns meant a failed click fetch on a re-pulled date would overwrite a good stored
+count with 0.
+
+**Rule:** a claim in a spec about the *shape of existing data* ("rows include X", "URLs are stored as Y")
+costs one SELECT to verify — run it **before** writing the spec, not after the build. This is the
+2026-08-28 rule ("a rationale in a spec is a claim; verify it") applied to data shape. And for any new
+column that joins an upsert: ask "what does this write on the failure path, on a row that already has a
+value?"

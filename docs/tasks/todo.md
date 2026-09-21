@@ -925,7 +925,7 @@ Full read: `docs/summaries/2026-06-13-seo-status-checkpoint.md` (UPDATE — 2026
 clicks at pos 6-22 while pw2d's identical pages earn none at pos 15-21. Same code, opposite outcome,
 separated only by rank. No new on-page specs for pw2d presets.
 
-- [ ] **F36: `/best/` landing pages are near-orphaned — one internal link each, none from either
+- [~] **F36 — DOWNGRADED 2026-09-01, do not spec (see below). `/best/` landing pages are near-orphaned — one internal link each, none from either
   homepage.** 8 of 11 `/best/` pages have **never** recorded a single GSC row; `/best/manual-coffee-grinders`
   is at 23 days, the other 7 at 15. Ruled out this session: HTTP 200, present in both sitemaps,
   self-referential canonical, no `noindex`, robots.txt clean — so this is crawl/indexation rationing,
@@ -954,7 +954,9 @@ separated only by rank. No new on-page specs for pw2d presets.
   Do not diff against that row. *[SEO]*
 
 - [ ] **All 5 pw2d landing pages are STALE (`selection_drift`) as of the 2026-08-24 audit; all 6 c2d
-  pages FRESH.** pw2d pages last generated 08-14/16, c2d regenerated 08-21. **Verified genuine drift,
+  pages FRESH.** *(Update 2026-09-01: gaming-chat-headsets and lavalier-wireless-systems rebuilt 08-28/29 and
+  now read FRESH. Three remain stale: podcast-studio-mics `selection_drift`; mechanical-gaming-keyboards and
+  productivity-ergonomic-keyboards `selection_drift` + `price_drift`.)* pw2d pages last generated 08-14/16, c2d regenerated 08-21. **Verified genuine drift,
   NOT the H-A phantom** — checked `mechanical-gaming-keyboards` directly against prod:
   `SelectLandingPagePicks::execute()` returns 7 picks without throwing, and 2 of 7 stored picks really
   differ (slots 5 and 6: `2742→2799`, `2691→2722`). So H-A's "stamped `selection_drift` forever with
@@ -1262,3 +1264,173 @@ path only; imports keep dispatching Gemini as today.
   still STALE (`selection_drift`) pending their own rescans. *[Content]*
 - [ ] **#4649 Hollyland Lark MAX 2 OWS — the one lavalier offer the rescan errored on; still unchecked.** One
   single-scan clears it. *[QA]*
+
+## SEO checkpoint 2026-09-01 — new items
+
+Full read: `docs/summaries/2026-06-13-seo-status-checkpoint.md` (UPDATE — 2026-09-01). Pipeline 4/4
+HEALTHY. Verdict: **pw2d authority verdict unchanged and now proven on the stable page cohort** —
+restricted to pages that already had GSC rows before the window (zero new entrants), pw2d's weighted
+position went 18.5 → 27.6 in four weeks. Every earlier checkpoint could blame long-tail entrants for
+the drift; that defence is now dead. c2d compare-page clicks repeated (6 again in a fresh 14-day
+window), so the positive control holds.
+
+- [ ] **Watch: pw2d stable-cohort position decline (18.5 → 27.6 over weeks 202631–202634).** Broad, not
+  page-specific — the tenant's biggest page (`/product/aoc-gk330-eeydn`) is flat at pos ~7 while a tail
+  of product pages collapsed from 15-16 impressions/week to 1. Consistent with the standing authority
+  verdict, so **no on-page work is authorised by this**. But if the cohort keeps falling for two more
+  weeks, escalate: check crawl budget, sitemap submission state, and whether internal linking changed.
+  Re-read at the next checkpoint. *[SEO]*
+
+- [x] **F36 DOWNGRADED — do not spec the `/best/` internal-linking module.** The 08-24 hypothesis was that
+  near-orphaned `/best/` pages were being crawl-rationed and that homepage linking was "the one
+  code-shaped lever". Three more `/best/` pages have since recorded their first GSC rows **without F36
+  shipping** (c2d gooseneck-kettles 08-26, pw2d lavalier 08-24, pw2d podcast-studio-mics 08-29), taking
+  the format from 3 of 11 to 6 of 11. They also did **not** enter at pos 30–50 as expected — entry
+  positions were 4.8, 6.0 and 8.0. The orphan description still stands; it is falsified as *the* blocker.
+  F36 is now a cheap optional accelerant, not a priority. *[SEO, Architect]*
+
+- [ ] **`/best/manual-coffee-grinders` — 31 days, still zero GSC rows.** Sole remaining outlier; its 7
+  siblings created 08-09 are at 23 days with 2 of 7 now through. Was put "on notice" 08-17 and has failed
+  two re-checks. No action while the rest of the format is indexing normally — just re-check. *[SEO]*
+
+- [ ] **First pw2d preset-compare click in ~11 weeks — logged, not a signal reversal.**
+  `/compare/mechanical-gaming-keyboards?preset=wireless`, query `"g515 lightspeed tkl" "battery life"
+  "lighting off"`, 3 impressions / 1 click / pos 10.3. A quoted operator-style query from someone who
+  already knew the model and the exact spec. It validates that the preset surface converts at pos ~10;
+  it does not show the surface working. pw2d's whole compare surface is 143 impr / 1 click per 14 days
+  against c2d's 599 / 6. **Do not re-open on-page preset work on the strength of it.** *[SEO]*
+
+- [ ] **`/compare/productivity-ergonomic-keyboards` has slid three straight weeks** — wpos 18.3 → 22.3 →
+  33.5 → 38.3, impressions 65 → 76 → 40 → 34; its tracked query "best ergonomic keyboard for programmers"
+  went 18.6 → 55.9. The page is also stale (`selection_drift` + `price_drift`) and last regenerated
+  08-14/16. Correlation only — the same slide appears on pages that were never stale. It is already the
+  next category on the Tier-3 top-up run sheet, so **the rebuild proceeds on the run sheet's schedule,
+  not as an SEO intervention** — and doubles as the test of whether staleness costs rank. *[SEO, Content]*
+
+- [ ] **F37 (PostHog key) still dead — re-verified 2026-09-01, HTTP 401 on `us.posthog.com`.** Same
+  52-char `phx_` key in local `.env`. c2d is now at 28 clicks/28d, far past the volume floor, so this
+  credential is the only thing blocking the first engagement read. **Owner action, ~5 min.** *[Owner, Analytics]*
+
+## 2026-09-21 — weekly picks run (both tenants) + SEO checkpoint
+
+Owner ran "Verify Live Picks" on both tenants (pw2d 35/35 offers, done 12:31 UTC; c2d 44/48, done 13:16
+UTC — the 4 unchecked are Clive Coffee offers the Amazon-only run does not cover, last checked 08-20; one
+of them is the **only** offer on the La Marzocco Linea Mini pick). Then `pw2d:landing-pages:audit` and
+`pw2d:categories:health` on prod. SEO read: `docs/summaries/2026-06-13-seo-status-checkpoint.md`
+(UPDATE — 2026-09-21).
+
+**Result: 10 of 11 landing pages STALE** (only c2d semi-automatic is FRESH).
+
+Six picks a reader cannot buy (all Amazon, price now NULL):
+
+| Page | Role | Product | Flag |
+|---|---|---|---|
+| pw2d productivity-ergonomic-keyboards | premium | Keychron Q11 Split (2859) | unavailable |
+| pw2d productivity-ergonomic-keyboards | rsi-sufferer | Keychron Q11 QMK/VIA (2831) | unavailable |
+| pw2d mechanical-gaming-keyboards | budget | Keychron C3 Pro (2721) | unavailable |
+| pw2d gaming-chat-headsets | premium | Beyerdynamic MMX 300 (4530) | high_price |
+| pw2d lavalier-wireless-systems | premium | Shure GLXD14+/93 (4778) | high_price |
+| c2d cold-brew-makers | premium | Service Ideas Cold Brew N' Serv (4014) | unavailable |
+
+These cards still render — no price, no "Check Current Price" button, and body copy that still quotes the
+old price.
+
+Eight picks past the 15% price-drift line: pw2d Keychron Q5 Pro $150→$220 (+47%, mech-keyboards
+streamer), Razer BlackShark V2 X $30→$40 (+33%, headsets budget); c2d Melitta 42oz $35→$50 (+43%),
+County Line Kitchen $25→$35 (+40%), Timemore Fish Smart $100→$130 (+30%), Timemore Chestnut S3
+$130→$160 (+23%), Cocinare kettle $50→$60 (+20%), Philips 3200 LatteGo $300→$360 (+20%).
+
+**Monthly sweep is OVERDUE on 9 of 11 categories.** Oldest category check: pw2d mechanical-gaming-keyboards
+/ podcast-studio-mics / productivity-ergonomic-keyboards 08-14 (38 days); c2d six categories 08-16 →
+08-21 (31–36 days). Only headsets (08-28) and lavalier (08-31) are inside the month.
+
+- [ ] **Sweep + rebuild the three pw2d categories last checked 08-14** — ergonomic keyboards (2 of 7 picks
+  dead — do first), mechanical gaming keyboards (dead budget pick + streamer pick +47%; its streamer compare
+  page is now pw2d's biggest page), podcast mics (`selection_drift` only). These are also the three that
+  never got the Tier-3 top-up. Order per category: (top-up import, optional) → full category rescan →
+  regenerate → owner review → publish. **Never re-select before the rescan** (response rule). *[Owner sweep, Claude regenerate]*
+- [ ] **c2d: surgical price patch on four price-only pages** — gooseneck-kettles, manual-coffee-grinders,
+  pour-over-drippers-brewers, super-automatic-espresso-machines. Audit shows `price_drift` alone, so
+  selection is unchanged: rewrite the affected pick copy + re-stamp all `est_price_snapshot`s, guarded by
+  stored picks == `SelectLandingPagePicks` output. Back up rows first; confirm with owner before writing to
+  prod. Their pools are 31–36 days old, so do this *after* that category's monthly sweep if the sweep is
+  happening the same week. *[Claude]*
+- [ ] **c2d cold-brew-makers: full rescan → regenerate.** Dead premium pick + overall pick +40%. Pool is
+  the thinnest on either site (44 buyable, 13.7% unbuyable, verdict `stale, thin`) and is first in line for
+  quarterly discovery — consider a top-up import before the rescan. *[Owner sweep, Claude regenerate]*
+- [ ] **pw2d headsets + lavalier went stale 3 weeks after a full rebuild** (premium pick → `high_price` with
+  a NULL price on both). Both pools are still inside the month, so this is a regenerate-from-current-pool
+  case, not a re-sweep. Watch whether premium-tier picks are systematically the first to die — if it
+  repeats next month, the selector may need to prefer picks with a second offer or a stabler listing. *[Architect, watch]*
+- [ ] **Ergonomic page picks two listings of the same keyboard** — Keychron Q11 Split (2859) and Keychron
+  Q11 QMK/VIA TKL Split (2831) hold the premium and rsi-sufferer slots. Same duplicate-variant problem as
+  F29. ~~Check for a merge before regenerating that page, or the rebuild can pick the pair again.~~
+  **RESOLVED same day — no merge, no prod write.** Owner approved a merge, but inspection showed it is
+  unnecessary: (1) both listings (ASINs B0FSL3MDFF / B0C9Q7S8CB) are `unavailable`, so neither is
+  selectable; (2) this page was last built 08-14/16, *before* the same-model pick guard (Spec 034) shipped —
+  the current selector would not take both; (3) `pw2d:merge-duplicates` matches on identical name so it
+  would not catch them, and one-offer-per-store means a "merge" just deletes one Amazon listing. Dry-run
+  selection after the 09-21 rescan confirms: no Q11 in the new seven. (Already tracked as the editorial
+  note near line 318.) *[Closed]*
+- [ ] **Ergonomic keyboards — rescan DONE 2026-09-21 (99/99; 19 now unbuyable), page ready to regenerate.**
+  Dry-run picks: overall Mistel Barocco MD770 · budget YMDK BORNE Corne · premium Kinesis Advantage360
+  Pro ($480) · rsi-sufferer Kinesis Freestyle Edge RGB Plus ($200, NEW) · programmer Keychron K8 HE TKL
+  White · office-professional Logitech MX Keys Combo for Business Gen 2 ($200, NEW) · second overall
+  Keychron K2 V3. Four of seven carry over. Next: Claude writes the prose (style contract + banned-word
+  check) → owner review → publish. *[Claude, then Owner review]*
+- [ ] **Clive Coffee pick offers are never health-checked by the weekly run** (4 offers, last 08-20). Low
+  risk today — 3 of 4 products also carry a verified Amazon offer — but La Marzocco Linea Mini's only offer
+  is unverified. Decide: accept, or spot-check non-Amazon pick offers by hand monthly. *[Owner decision]*
+- [x] **Close: pw2d stable-cohort position decline watch (09-01).** Reversed 27.6 → 9.9; see checkpoint.
+- [x] **Close: `/best/manual-coffee-grinders` zero-rows watch.** First GSC row 09-07 (10 impr, 1 click).
+- [ ] **Look at the live SERP snippet for `/compare/gaming-chat-headsets?preset=remote-worker`** — pos 6.4,
+  93 impressions, 0 clicks in 14 days on "gaming headset for remote workers". Observation only; no spec
+  until the pattern holds two more weeks. *[SEO]*
+- [x] **F37 (PostHog key) — CLOSED 2026-09-21: the key was never dead.** Every check since 08-24 hit
+  `us.posthog.com`; the project is on **EU Cloud** and the same key returns 200 on `eu.posthog.com`. No
+  owner action needed. Lesson in `docs/lessons.md`. All future reads use
+  `https://eu.posthog.com/api/projects/133580/query/`. *[Closed]*
+- [ ] **coffee2decide sends NOTHING to PostHog — `posthog_key` setting is EMPTY for that tenant.** Found
+  during the first engagement read: PostHog has events from `pw2d.com` only, ever. c2d is the site with the
+  clicks (26 per 28d) and it is completely untracked. Fix: Filament → Settings on the **c2d** admin →
+  paste the same project token pw2d uses (one project is fine; events separate by `$host`). Host is already
+  set. No deploy. *[Owner, ~2 min]*
+- [ ] **Spec 040 — store clicks (GA4 outbound `click` event) into the nightly SEO pull — owner approved;
+  BUILT, TESTED (16 new tests, suite 853 green), REVIEWED (SHIP WITH FIXES, 0 blockers), FIX ROUND DONE —
+  READY FOR OWNER `/deploy` (needs a commit first).** `docs/specs/040-ga4-outbound-clicks.md`,
+  `docs/reviews/review-2026-09-21-spec-040.md`. Two architect spec errors were caught by post-build
+  verification and fixed before tests were written (query-string dimension; failed fetch zeroing a stored
+  count) — see `docs/lessons.md`. **Post-deploy (owner or Claude on owner's go):**
+  `pw2d:seo:pull {tenant} --ga4-window-days=56` per tenant, then check 28-day store-click sums are ≥ the
+  probe (c2d 5, pw2d 1). *[Builder fix round → owner /deploy → backfill]*
+- [ ] **FOUND 2026-09-21 (reviewer S3, confirmed on prod): every GA4 number since April is undercounted.**
+  The 03:00 nightly pull reads each date once, before GA4 finishes processing it: over the last 14 days the
+  stored sessions are **69% (c2d) and 42% (pw2d)** of what GA4 reports for the same dates now. Fix rides
+  with Spec 040: schedule passes `--ga4-window-days=3`; the 56-day backfill repairs history. Every GA4
+  session/engagement figure quoted in earlier checkpoints is low by roughly that factor. *[Seo, Pipeline]*
+- [ ] **Spec 040 follow-ups (reviewer, none block deploy):** (S4) GA4 reports use `limit 500` with no
+  pagination or `order_bys` — real volume today is ~7–30 rows/day so it cannot bite yet; add an offset loop
+  like `GoogleSearchConsoleService` before either tenant passes ~300 landing pages/day. (S1) extract a
+  protected `runReport()` seam in `GoogleAnalyticsService` so row parsing can be tested end-to-end (the
+  SDK client is `final`) and `close()` runs on exceptions; delete the unreachable array-fallback after.
+  (N5) redact exception messages in the click-failure warning like the outer path does. (N8) the KPI
+  widget's six copy-pasted delta blocks → one `deltaStat()` helper; "no prior data" should not render as a
+  red down-arrow. *[Review, low]*
+- [ ] **c2d traffic jumped ~5× on 2026-09-17** — GA4 sessions/day went from 2–9 to 19 / 33 / 26 / 30
+  (09-17 → 09-20, live GA4 figures). Seen while verifying S3; source not yet checked (organic vs bot vs
+  referral). Look at it in the 09-28 SEO check, after the backfill makes the stored data trustworthy. *[SEO]*
+- [ ] **Ergonomic keyboards: top-up import BEFORE writing the page (owner's call 2026-09-21, matches run
+  sheet §3).** Pool is 99 with only 80 buyable after today's rescan (19% dead). 14 phrases ready in
+  `docs/tasks/2026-08-22-pw2d-tier3-topup.md` §3, one SERP page each, stop at ~200 products (Gemini daily
+  cap). Then a second category rescan — the extension has no "new products only" mode, so it re-checks all
+  ~99 + new (~25 min) — then audit → dry-run picks → Claude writes → owner review → publish. *[Owner import + rescan, Claude regenerate]*
+- [ ] **Idea, low priority: "unchecked only" rescan mode in the extension.** Every top-up currently forces a
+  full re-check of a category that was just swept. Would touch the rescan endpoint + `popup.js` together.
+  Only worth it if top-ups become monthly. *[Extension, parked]*
+- [ ] **First pw2d engagement read (28d to 09-21) — logged, sample too small to act on.** 85 visitors / 98
+  pageviews; 20 sessions from Google at 1.15 pages per session; **1 "Check Current Price" click site-wide**,
+  0 from Google visitors. Re-read once c2d has two weeks of data. *[SEO, Analytics]*
+- [ ] **Extension popup shows garbled punctuation** (`â€"` for an em dash, `Â·` for a middle dot — seen in
+  the owner's 2026-09-21 screenshot of the Rescan panel). Cause: `chrome_extension/popup.html` has no
+  `<meta charset="utf-8">`, so UTF-8 text renders as Latin-1. One-line fix, cosmetic, no endpoint change.
+  Bundle with the next extension change (the `flagged` counter bug is in the same panel). *[Extension]*

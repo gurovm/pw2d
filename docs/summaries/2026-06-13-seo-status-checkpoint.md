@@ -658,3 +658,280 @@ for this tenant. Correct order is verify → sweep → rescan → regenerate.
 2. Do c2d compare-page clicks repeat, or were the 6 a one-week cluster? This is the load-bearing signal.
 3. Any GSC row at all on the 8 silent `/best/` pages — especially if F36 linking ships.
 4. PostHog engagement read on c2d, if the key is replaced.
+
+---
+
+## UPDATE — 2026-09-01 check: c2d compare clicks REPEAT (Q2 answered YES) and `/best/` pages break through on both tenants (Q3). pw2d's slide is REAL, not a composition artifact — first same-page-cohort proof.
+
+**Pipeline:** 4/4 HEALTHY. GSC through 2026-08-29 (normal 3-day lag), GA4 through 08-30/31. Week 202634
+is a full 7 days on both tenants, and GSC backfilled c2d 202633 to 7 days (807→948 impr) — last check's
+"6 of 7 days" caveat is now closed.
+
+### pw2d — the decline is genuine; the composition-artifact defence no longer holds
+| Metric | 07-10 | 08-02 | 08-09 | 08-17 | 08-24 | **09-01** |
+|---|---|---|---|---|---|---|
+| Pages w/ impressions | 222 | 221 | 239 | 251 | 271 | **314** |
+| Impressions (28d) | 2,040 | 2,199 | 2,346 | 2,402 | 2,367 | **2,187** |
+| Clicks (28d) | 7 | 6 | 3 | 10 | 12 | **14** |
+| Weighted pos | 16.2 | — | 18.4 | 19.2 | 20.2 | **23.1** |
+| CTR | 0.34% | — | — | — | 0.51% | **0.64%** |
+
+Weekly: 202631 614 · 202632 709 · 202633 502 · 202634 **577** (82/day). So last check's Q1 — was the
+101→73/day drop a short-week artifact? — resolves as **partly**: 202633 was a genuine trough, 202634
+recovered to 82/day, still below the 101/day of 202632. Impressions are roughly flat-to-down; position
+is the axis that moved.
+
+**The finding that matters: this is not new pages dragging the average.** Restricting the series to the
+*stable cohort* (pages that already had GSC rows before the 28-day window — no new entrants at all):
+
+| wk | impr (stable cohort) | wpos (stable cohort) |
+|---|---|---|
+| 202630 | 497 | 20.5 |
+| 202631 | 571 | **18.5** |
+| 202632 | 658 | 19.9 |
+| 202633 | 428 | 23.6 |
+| 202634 | 434 | **27.6** |
+
+The same pages that ranked at 18.5 four weeks ago rank at 27.6 today. Every prior checkpoint could
+attribute pw2d's weighted-position drift to long-tail entrants; that explanation is now ruled out.
+The all-pages series (18.3 → 20.2 → 23.4 → 29.9) and the stable-cohort series move together.
+
+**It is broad, not one page.** Per-page 202631 → 202634 impressions: the tenant's biggest single page
+`/product/aoc-gk330-eeydn` is *stable* (63 → 60 impr, pos 7.3 → 6.8), while a tail of product pages
+collapsed (`aula-hero-68` 16 → 1, `skyloong-gk104-pro` 15 → 1, `redragon-k668` 15 → 11 with pos 16.7 →
+26.5). Nothing here looks like a page-level regression; it looks like tail demand being reallocated away
+from a domain that does not rank.
+
+**Target preset queries — one click, the first on this surface in ~11 weeks:**
+| Query | 08-17 | 08-24 | **09-01** |
+|---|---|---|---|
+| rsi keyboard | 12.5 | 17.4 | **15.7** |
+| streamer keyboards | 11.3 | 14.8 | **18.7** |
+| best ergonomic keyboard for programmers | 14.8 | 18.6 | **55.9** |
+| best mechanical keyboard for gaming | — | — | **22.5** |
+| `"g515 lightspeed tkl" "battery life" "lighting off"` | — | — | **10.3 → 1 CLICK** |
+
+The click is on `/compare/mechanical-gaming-keyboards?preset=wireless` (3 impr / 1 click / pos 10.3).
+**Do not over-read it** — it is a quoted, operator-style query from a user who already knew the model
+and the exact spec they wanted. It is a validation that the preset surface *can* convert at pos ~10, not
+evidence that the surface has started working. pw2d's whole compare surface: 143 impr / 1 click over 14
+days, versus c2d's 599 impr / 6 clicks.
+
+`best ergonomic keyboard for programmers` at 18.6 → 55.9 is the single worst move. The page behind it
+(`/compare/productivity-ergonomic-keyboards`) has slid for three straight weeks: wpos 18.3 (202631) →
+22.3 → 33.5 → **38.3**, impressions 65 → 76 → 40 → 34. That page is also one of the three carrying
+`selection_drift` + `price_drift` and was last regenerated 08-14/16. Correlation only — the same slide
+appears on pages that were never stale — but it is the next category on the top-up run sheet anyway,
+so the rebuild will double as the test.
+
+### c2d — Q2 ANSWERED: compare clicks repeat. The climb is now nine weeks old.
+| Metric | 08-02 | 08-09 | 08-17 | 08-24 | **09-01** |
+|---|---|---|---|---|---|
+| Pages w/ impressions | 197 | 197 | 221 | 229 | **253** |
+| Impressions (28d) | 1,468 | 1,468 | 2,112 | 2,715 | **3,367** |
+| Clicks (28d) | 5 | 8 | 15 | 21 | **28** |
+| Weighted pos | 37.6 | 37.6 | 29.3 | 26.6 | **26.3** |
+| CTR | 0.34% | 0.54% | 0.71% | 0.77% | **0.83%** |
+
+| wk | impr | clicks | wpos | per-day |
+|---|---|---|---|---|
+| 202631 | 564 | 5 | 30.7 | 81 |
+| 202632 | 994 | 7 | 24.2 | 142 |
+| 202633 | 948 | 8 | 25.9 | 135 |
+| 202634 | **988** | **9** | 27.2 | **141** |
+
+Three consecutive weeks at 135–142 impressions/day with clicks stepping 7 → 8 → 9. Position has stopped
+improving (24.2 → 27.2) while volume holds, which is what consolidation looks like after a climb.
+
+**Q2 — do compare clicks repeat? YES.** 14-day surface split:
+
+| Tenant | surface | impr | clicks | wpos |
+|---|---|---|---|---|
+| c2d | product | 1,023 | 7 | 18.1 |
+| c2d | **compare** | **599** | **6** | 42.3 |
+| c2d | best | 24 | 1 | 23.3 |
+| pw2d | product | 742 | 4 | 25.5 |
+| pw2d | **compare** | **143** | **1** | 41.3 |
+| pw2d | best | 24 | 0 | 20.7 |
+
+Six compare clicks again, in a fresh 14-day window — the 08-24 cluster was not a one-week event. Top
+converter this period: `/compare/semi-automatic-manual-espresso-machines?preset=beginner-hobbyist`
+("semi-automatic espresso for beginners", 7 impr / 1 click / pos 8.6). The authority thesis holds its
+positive control: identical code, opposite outcome, separated only by rank.
+
+### Q3 — the silent `/best/` pages: BREAKTHROUGH. 3 of 11 → 6 of 11, without F36 shipping.
+| Tenant | Page | first row | last row | impr | clicks | wpos |
+|---|---|---|---|---|---|---|
+| c2d | super-automatic-espresso-machines | 08-02 | 08-27 | 99 | **1** | 50.6 |
+| c2d | **gooseneck-kettles** | **08-26** | 08-29 | 6 | 0 | **4.8** |
+| pw2d | mechanical-gaming-keyboards | 08-03 | 08-29 | 33 | **1** | 38.7 |
+| pw2d | productivity-ergonomic-keyboards | 08-03 | 08-29 | 28 | 0 | 28.1 |
+| pw2d | **lavalier-wireless-systems** | **08-24** | 08-24 | 1 | 0 | **8.0** |
+| pw2d | **podcast-studio-mics** | **08-29** | 08-29 | 1 | 0 | **6.0** |
+
+Three new pages crossed into GSC since the last check, and c2d's super-auto page earned the format's
+first click. Two observations:
+
+1. **The new entrants did NOT enter at pos 30–50.** Gooseneck kettles 4.8, podcast mics 6.0, lavalier
+   8.0. Tiny volume, but these are top-of-page-one positions on whatever narrow query matched. The
+   `/best/` format is not being suppressed; it was waiting to be crawled.
+2. **F36 (internal linking) never shipped, and the pages indexed anyway.** The near-orphan finding from
+   08-24 stands as a description, but it is now falsified as *the* blocker. F36 drops from "the one
+   code-shaped play available" to a cheap, optional accelerant. **Recommendation: do not spec it now.**
+
+`/best/manual-coffee-grinders` is now at **31 days with zero rows** and is the sole remaining outlier —
+its 7 siblings created 08-09 are at 23 days with 2 of 7 through. No action; note it and move on.
+
+### Q4 — PostHog: STILL BLOCKED, unchanged
+`POSTHOG_PERSONAL_API_KEY` in local `.env` is the same 52-char `phx_` key and still returns HTTP 401 on
+`us.posthog.com`. F37 remains an owner action (5 minutes: PostHog → Settings → Personal API keys).
+c2d's 28 clicks are well over the volume floor, so this is the only thing standing between us and the
+first engagement read.
+
+### Decisions (2026-09-01)
+- **pw2d authority verdict: UNCHANGED, and now proven on the stable cohort.** Same pages, 18.5 → 27.6 in
+  four weeks. No new on-page specs for pw2d. This is the strongest evidence yet that the constraint is
+  off-page.
+- **The one pw2d preset click is not a signal reversal.** Logged, not acted on.
+- **F36 (`/best/` internal linking): DOWNGRADED, do not spec.** Pages are indexing without it.
+- **Cleanup-impact watch stays closed** (2–3 impr/week surfaces, unmeasurable).
+- **c2d: still no intervention.** Nine weeks of compounding; do not perturb.
+- **Ergonomic-keyboards compare page** is sliding *and* stale *and* next on the top-up sheet — the
+  rebuild proceeds on the run sheet's schedule, not as an SEO intervention.
+
+### Next check (~2026-09-07/08)
+1. Does the pw2d stable-cohort wpos keep falling past 27.6, or stabilise? Two more weeks of decline
+   would justify re-examining whether anything site-wide changed (crawl budget, sitemap, internal links).
+2. Do c2d compare clicks hold a third consecutive period at ~6?
+3. Do the three new `/best/` entrants accumulate rows, and does `/best/manual-coffee-grinders` ever appear?
+4. PostHog engagement read on c2d — if the key is finally replaced.
+5. Does the ergonomic-keyboards rebuild (Tier-3 top-up) show up on that page's slide?
+
+---
+
+## UPDATE — 2026-09-21 check: the 09-01 pw2d alarm is CANCELLED. Page-one impressions more than doubled on BOTH tenants in the same three weeks — a common (Google-side) cause, not our work. Clicks have not followed.
+
+*(The 09-07/08 and 09-14 checks were skipped; this read covers three weeks.)*
+
+**Pipeline:** 4/4 HEALTHY. GSC through 09-17 (pw2d) / 09-18 (c2d), GA4 through 09-20. Week 202637 is
+partial (5 days pw2d, 6 days c2d).
+
+### Trajectory
+| Metric (28d) | pw2d 09-01 | **pw2d 09-21** | c2d 09-01 | **c2d 09-21** |
+|---|---|---|---|---|
+| Pages w/ impressions | 314 | **386** | 253 | **288** |
+| Impressions | 2,187 | **2,406** | 3,367 | **4,459** |
+| Clicks | 14 | **17** | 28 | **26** |
+| Weighted pos | 23.1 | **16.7** | 26.3 | **17.8** |
+| CTR | 0.64% | **0.71%** | 0.83% | **0.58%** |
+
+Weekly, all pages:
+
+| wk | pw2d impr | pw2d wpos | c2d impr | c2d clicks | c2d wpos |
+|---|---|---|---|---|---|
+| 202634 | 577 | 29.9 | 988 | 9 | 27.2 |
+| 202635 | 647 | 16.2 | 990 | 5 | 20.4 |
+| 202636 | 672 | 12.2 | 1,347 | 6 | 13.8 |
+| 202637 (partial) | 573 | 10.0 | 1,247 | 8 | 13.3 |
+
+### pw2d stable cohort — the slide fully reversed
+Same cohort definition as 09-01 (pages with GSC rows before 08-04, no new entrants):
+
+| wk | impr | wpos |
+|---|---|---|
+| 202634 | 434 | 27.6 |
+| 202635 | 450 | 16.8 |
+| 202636 | 417 | 13.3 |
+| 202637 | 448 | **9.9** |
+
+The escalation trigger set on 09-01 ("two more weeks of decline → check crawl budget / sitemap / internal
+links") did not fire. Close that watch.
+
+### Do NOT read the average position — read the buckets
+Impressions by position bucket, per week:
+
+| tenant | wk | ≤10 | 11–20 | 21–50 | 50+ |
+|---|---|---|---|---|---|
+| pw2d | 202634 | 196 | 95 | 130 | 156 |
+| pw2d | 202635 | 363 | 149 | 83 | 52 |
+| pw2d | 202636 | 427 | 157 | 81 | 7 |
+| pw2d | 202637 | 464 | 71 | 34 | 4 |
+| c2d | 202634 | 385 | 201 | 135 | 267 |
+| c2d | 202635 | 507 | 229 | 110 | 144 |
+| c2d | 202636 | 921 | 211 | 161 | 54 |
+| c2d | 202637 | 849 | 283 | 86 | 29 |
+
+Two things happened at once, on both tenants, starting the week of 08-30:
+1. **Deep (50+) impressions all but vanished** (pw2d 156 → 4, c2d 267 → 29). That alone flatters the
+   weighted average and is not a ranking gain.
+2. **Page-one impressions more than doubled** (pw2d 196 → 464/wk, c2d 385 → ~850–920/wk). That part is
+   real visibility.
+
+Identical timing on two unrelated niches means a **common cause** — a Google ranking or reporting change,
+not anything shipped here (last deploy was `cd636cc`, 08-29, Bouncer-only). A web check found no confirmed
+event for these dates (results conflated it with the Sept-2025 `num=100` reporting change), so the cause
+is unattributed. Whatever it was, the honest KPI going forward is **page-one impressions and clicks**, not
+weighted position.
+
+**Clicks have not followed:** pw2d 14 → 17, c2d 28 → 26 per 28d. Doubling page-one impressions at
+pos 6–9 with flat clicks is what bottom-of-page-one looks like.
+
+### Target preset queries (14d)
+| Query | 08-24 | 09-01 | **09-21** |
+|---|---|---|---|
+| mechanical keyboard for streamers (`?preset=streamer`) | — | — | **8.5** (109 impr, 1 click) |
+| gaming headset for remote workers (`?preset=remote-worker`) | — | — | **6.4** (93 impr, 0 clicks) |
+| streamer keyboards | 14.8 | 18.7 | **10.7** |
+| rsi keyboard | 17.4 | 15.7 | **19.0** |
+| ergonomic keyboard for programmers | 18.6 | 55.9 | **21.3** |
+
+`/compare/mechanical-gaming-keyboards?preset=streamer` is now pw2d's biggest page (23 → 170 impr/14d,
+pos 15.7 → 8.9), displacing `/product/aoc-gk330-eeydn` (112 → 52). `/compare/gaming-chat-headsets?preset=remote-worker`
+went 1 → 115 impr at pos 6.4 — the headsets category was rebuilt 08-28, the only one of the two with a
+plausible local cause. **93 impressions at pos 6.4 with zero clicks** is the one thing here worth a look:
+check that page's title/snippet in a live SERP before concluding anything.
+
+14-day surface split: pw2d compare **352 impr / 1 click / wpos 9.1** (was 143 / 1 / 41.3); c2d compare
+473 / 3 / 19.0 (was 599 / 6 / 42.3). c2d's compare clicks did **not** hold a third period at ~6 (Q2 from
+09-01: answer is no — 3).
+
+### `/best/` pages — 8 of 11 now have rows
+New since 09-01: pw2d gaming-chat-headsets (08-31, pos 6.5) and c2d **manual-coffee-grinders** (09-07 —
+the 31-day outlier finally appeared: 10 impr, 1 click). Still silent: c2d cold-brew-makers,
+pour-over-drippers-brewers, semi-automatic-manual-espresso-machines. Format total to date: 306 impr /
+5 clicks. Close the manual-coffee-grinders watch.
+
+### PostHog — CORRECTION (same day): the key was never dead; we were calling the wrong region
+Every check since 08-24 hit `us.posthog.com` → 401. The project is on **EU Cloud**; the same key returns
+200 on `eu.posthog.com`. F37 is closed with no owner action. Lesson logged in `docs/lessons.md`.
+Use `https://eu.posthog.com/api/projects/133580/query/` (HogQL) from now on.
+
+**First engagement read, pw2d, 28 days to 09-21:**
+- 85 visitors / 98 pageviews (~3 visitors a day). 73 views direct, 22 from Google (20 people) — in line
+  with GSC's 17 clicks.
+- Google visitors: 20 sessions, 23 pageviews → **1.15 pages per session**. They land and leave.
+- **One "Check Current Price" click site-wide in 28 days; zero from Google visitors.**
+- Sample is far too small for a conversion verdict. What it does settle: there is no hidden engagement
+  the GSC numbers were missing.
+
+**The real gap: coffee2decide is not tracked at all.** Its `posthog_key` tenant setting is EMPTY; PostHog
+has never received a c2d event. The 08-24 plan ("c2d is past the volume floor, read its engagement") was
+unachievable for a second reason nobody had seen. Owner fix, ~2 min: c2d admin → Settings → paste the
+project token. Two weeks after that, c2d gives the first meaningful read.
+
+### Decisions (2026-09-21)
+- **Cancel the 09-01 "pw2d decline is genuine" escalation.** Stable cohort 27.6 → 9.9.
+- **Stop using weighted position as the headline KPI.** Use page-one impressions + clicks; add the bucket
+  table to every future check.
+- **No new on-page specs.** The move is unattributed and three weeks old; per the decision tree this is
+  "churning → wait". The authority verdict is neither confirmed nor overturned by it.
+- **One cheap look authorised:** the remote-worker headsets snippet (pos 6.4, 0/93 CTR).
+- **Landing-page freshness is now the bigger exposure** — 10 of 11 `/best/` pages are STALE and 6 picks are
+  unbuyable (see `docs/tasks/todo.md`, 2026-09-21). The pages are starting to get impressions while
+  recommending products a reader cannot buy.
+
+### Next check (~2026-09-28, with the weekly picks run)
+1. Do page-one impressions hold (pw2d ≥ 400/wk, c2d ≥ 800/wk) for a fourth week?
+2. Do clicks move at all? If page-one impressions hold two more weeks with flat clicks, the question
+   becomes snippet/title CTR — that would be the first on-page work justified since June.
+3. Do the last three silent c2d `/best/` pages appear?

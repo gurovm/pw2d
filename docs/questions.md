@@ -702,3 +702,69 @@ point, there's no "current category" to match against for the comparison anyway.
 
 `php artisan test`: 830 passed / 21 skipped (811 baseline + 19 new — 10 action-level diff tests, 9 command
 tests; zero regressions).
+
+---
+
+## Spec 040 — GA4 outbound clicks in the nightly SEO pull (builder, 2026-09-21)
+
+**`docs/database-schema.md` never had a `seo_metrics` entry at all** — the spec's step 1 says "Update
+`docs/database-schema.md`" as if adding one column to existing documentation, but the table (added in Spec
+014/016) was never documented there in the first place. Added a full `seo_metrics` entry under Core Tables
+(columns, the `ga4_outbound_clicks` addition, the unique constraint) rather than a one-line diff, since
+there was nothing to diff against. Not a design question — just noting the gap is now closed.
+
+**Metric-extraction helper fallback key for outbound clicks: `'clicks'`.** The shared
+`extractMetricValue($row, $index, $fallbackKey)` helper's array-fixture path addresses a metric by name, and
+`fetchLandingPageMetrics()`'s existing fallback keys already mirror its own output array's field names
+(`'sessions'` → `sessions`, `'bounce_rate'` → `bounce_rate`). No naming convention was specified for the new
+method, so `fetchOutboundClicks()` follows the same convention: fallback key `'clicks'` matches its output
+key `clicks`.
+
+**Click-fetch failure is logged only, never added to `PullResult::$errors`** — mirrors
+`PullGscMetrics`'s top-query try/catch exactly (`Log::warning` with tenant + date, then continue), per the
+spec's explicit instruction to copy that pattern. This keeps the Spec 017/F25 exit-code rule (errors only)
+unaffected by a clicks-report outage.
+
+**Did the optional widget stat** — "Store Clicks (28d)" added to `KpiCardsWidget` (7 lines: one extra
+`SUM(ga4_outbound_clicks)` per existing GA4 query + one delta calc + one `Stat::make`), same explicit
+`tenant_id` filter as the widget's other queries.
+
+**8 anonymous test fakes needed a `fetchOutboundClicks()` override** to stay offline — `PullGa4Metrics` now
+calls it unconditionally after `fetchLandingPageMetrics()`, and every existing fake that extends
+`GoogleAnalyticsService` without overriding the new method would otherwise fall through to the real SDK
+client construction (caught safely by the caller's try/catch, but slow/fragile for a unit test). Added
+`return collect();` to all 8: `tests/Feature/Seo/Actions/PullGa4MetricsTest.php` (1),
+`tests/Feature/Seo/Actions/PullSeoMetricsTest.php` (2), `tests/Feature/Seo/Commands/PullSeoMetricsCommandTest.php`
+(5).
+
+`php artisan test`: 837 passed / 21 skipped (830 baseline + 7 net new lines of test-fixture changes, no new
+test cases added by the builder — tester adds Spec 040's actual test cases next; zero regressions).
+
+**Post-build correction (coordinator-flagged, applied same day):** two architect-error fixes per the
+updated spec — (1) `fetchOutboundClicks()` dimension changed `pagePathPlusQueryString` → `pagePath`
+(the original claim that `landingPage` carries the query string was wrong; prod has 0/1,959 rows with a
+`?`); (2) `PullGa4Metrics::execute()` now tracks `$clicksFetchSucceeded` and drops `ga4_outbound_clicks`
+from the upsert's update-columns list when the click fetch throws, so a failed re-pull of an
+already-stored date can't clobber a good count with the batch's seeded 0. No test cases of my own added
+(tester's job); confirmed the existing suite is unaffected by re-running `php artisan test --filter=Seo`
+(156 passed / 2 pre-existing skips, one run hit `SeoBrandBleedTest`'s known Livewire-random-`wire:id`
+flake — reproduced-clean on 3 immediate re-runs, unrelated to this change) and the full suite (837 passed /
+21 skipped, 0 failed).
+
+**Second post-build correction (review fix round, same day):** applied all four items from
+`docs/reviews/review-2026-09-21-spec-040.md` (S3, N1-N4). `routes/console.php`'s nightly schedule now
+passes `--ga4-window-days=3` with a rewritten comment stating the measured 42-69% completeness reason;
+the command's own `--ga4-window-days=1` signature default is untouched (coordinator's explicit call — no
+existing test or doc requires it to match the schedule). Confirmed no existing test asserts the schedule
+definition (grepped `tests/` for `Schedule::`/`dailyAt`/`routes/console` — no matches), so nothing else
+needed updating for that item. Rewrote the four flagged comments (N1-N3) to drop changelog narration and
+false claims. For N4, extracted `PullGa4Metrics::buildRow(Tenant, CarbonImmutable, string $url, array
+$overrides = [])` as the single 13-key row shape, and replaced the `$clicksFetchSucceeded` boolean with
+`$clicksByUrl = $service->fetchOutboundClicks($date)->pluck('clicks', 'url')->all()` (stays `null` on
+throw), with the batch merge moved to after the inner try/catch. Did not touch
+`extractDimensionValue()`/`extractMetricValue()` signatures — the tester's new
+`GoogleAnalyticsServiceTest` calls them by reflection.
+
+`php artisan test --filter=Seo`: 172 passed / 2 pre-existing skips (up from 156 — the tester's 12 new
+`PullGa4OutboundClicksTest` cases + 4 new `GoogleAnalyticsServiceTest` cases, all green, none weakened).
+`php artisan test`: 853 passed / 21 skipped, 0 failed.
