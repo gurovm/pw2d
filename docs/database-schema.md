@@ -72,6 +72,14 @@
 **`settings`**
 - `key` (unique), `value` (text) — key/value store for site-wide config (e.g. AI model overrides).
 
+**`seo_metrics`** *(nightly `pw2d:seo:pull` — GSC + GA4 per-URL, per-day metrics)*
+- `id`, `tenant_id` (string, no `BelongsToTenant` — status command/widgets read cross-tenant with explicit `WHERE tenant_id`)
+- `source` (enum `gsc|ga4`), `url` (string 500), `url_hash` (char 64, `sha256(url)` — drives the unique index), `metric_date` (date)
+- GSC columns (null for `ga4` rows): `gsc_impressions`, `gsc_clicks`, `gsc_ctr` (decimal 6,4), `gsc_position` (decimal 6,2), `gsc_top_query`
+- GA4 columns (null for `gsc` rows): `ga4_sessions`, `ga4_users`, `ga4_engaged_sess`, `ga4_conversions`, `ga4_bounce_rate` (decimal 6,4)
+- `ga4_outbound_clicks` (unsigned int, default `0`, not nullable — GA4 Enhanced Measurement `click` event count, i.e. clicks on outbound/buy-button links; Spec 040)
+- Unique: `(tenant_id, source, url_hash, metric_date)` — drives idempotent upserts from `PullGscMetrics`/`PullGa4Metrics`.
+
 > **Legacy fields DROPPED (Phase 2 complete):** `products.scraped_price`, `products.external_id`, `products.external_image_path` have been migrated to `product_offers` and removed from the products table.
 
 ## Laravel System Tables

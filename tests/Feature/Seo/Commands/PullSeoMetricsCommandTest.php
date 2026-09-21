@@ -73,6 +73,13 @@ class PullSeoMetricsCommandTest extends TestCase
                         ['url' => '/', 'sessions' => 50, 'users' => 40, 'engaged_sessions' => 35, 'conversions' => 2, 'bounce_rate' => 0.3],
                     ]);
                 }
+
+                // Spec 040: not under test here — PullGa4Metrics calls this after
+                // fetchLandingPageMetrics(), so the fake must implement it too.
+                public function fetchOutboundClicks(CarbonImmutable $date): Collection
+                {
+                    return collect();
+                }
             };
         });
     }
@@ -248,6 +255,13 @@ class PullSeoMetricsCommandTest extends TestCase
                         ['url' => '/', 'sessions' => 50, 'users' => 40, 'engaged_sessions' => 35, 'conversions' => 2, 'bounce_rate' => 0.3],
                     ]);
                 }
+
+                // Spec 040: not under test here — PullGa4Metrics calls this after
+                // fetchLandingPageMetrics(), so the fake must implement it too.
+                public function fetchOutboundClicks(CarbonImmutable $date): Collection
+                {
+                    return collect();
+                }
             };
         });
 
@@ -318,6 +332,13 @@ class PullSeoMetricsCommandTest extends TestCase
                     return collect([
                         ['url' => '/', 'sessions' => 50, 'users' => 40, 'engaged_sessions' => 35, 'conversions' => 2, 'bounce_rate' => 0.3],
                     ]);
+                }
+
+                // Spec 040: not under test here — PullGa4Metrics calls this after
+                // fetchLandingPageMetrics(), so the fake must implement it too.
+                public function fetchOutboundClicks(CarbonImmutable $date): Collection
+                {
+                    return collect();
                 }
             };
         });
@@ -424,6 +445,13 @@ class PullSeoMetricsCommandTest extends TestCase
                 {
                     return collect(); // no rows
                 }
+
+                // Spec 040: not under test here — PullGa4Metrics calls this after
+                // fetchLandingPageMetrics(), so the fake must implement it too.
+                public function fetchOutboundClicks(CarbonImmutable $date): Collection
+                {
+                    return collect();
+                }
             };
         });
 
@@ -470,6 +498,13 @@ class PullSeoMetricsCommandTest extends TestCase
                     return collect([
                         ['url' => '/', 'sessions' => 50, 'users' => 40, 'engaged_sessions' => 35, 'conversions' => 2, 'bounce_rate' => 0.3],
                     ]);
+                }
+
+                // Spec 040: not under test here — PullGa4Metrics calls this after
+                // fetchLandingPageMetrics(), so the fake must implement it too.
+                public function fetchOutboundClicks(CarbonImmutable $date): Collection
+                {
+                    return collect();
                 }
             };
         });

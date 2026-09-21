@@ -50,6 +50,13 @@ class PullGa4MetricsTest extends TestCase
                         ['url' => '/product/widget-pro', 'sessions' => 175, 'users' => 160, 'engaged_sessions' => 140, 'conversions' => 8, 'bounce_rate' => 0.2],
                     ]);
                 }
+
+                // Spec 040: not under test here — PullGa4Metrics calls this after
+                // fetchLandingPageMetrics(), so the fake must implement it too.
+                public function fetchOutboundClicks(CarbonImmutable $date): Collection
+                {
+                    return collect();
+                }
             };
         });
     }

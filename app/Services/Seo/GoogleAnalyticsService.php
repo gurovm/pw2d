@@ -8,12 +8,17 @@ use Carbon\CarbonImmutable;
 use Google\Analytics\Data\V1beta\Client\BetaAnalyticsDataClient;
 use Google\Analytics\Data\V1beta\DateRange;
 use Google\Analytics\Data\V1beta\Dimension;
+use Google\Analytics\Data\V1beta\Filter;
+use Google\Analytics\Data\V1beta\Filter\StringFilter;
+use Google\Analytics\Data\V1beta\Filter\StringFilter\MatchType;
+use Google\Analytics\Data\V1beta\FilterExpression;
 use Google\Analytics\Data\V1beta\Metric;
 use Google\Analytics\Data\V1beta\RunReportRequest;
 use Illuminate\Support\Collection;
 
 /**
- * Reads per-landing-page metrics from the Google Analytics 4 Data API.
+ * Reads per-landing-page metrics and outbound (buy-button) click counts from
+ * the Google Analytics 4 Data API.
  *
  * The underlying GA4 client is created via the protected makeClient() method
  * so that tests can subclass this service and return a fake client without
@@ -21,7 +26,8 @@ use Illuminate\Support\Collection;
  *
  * Usage:
  *   $service = new GoogleAnalyticsService('properties/123456789', $serviceAccountPath);
- *   $rows = $service->fetchLandingPageMetrics(CarbonImmutable::yesterday());
+ *   $rows   = $service->fetchLandingPageMetrics(CarbonImmutable::yesterday());
+ *   $clicks = $service->fetchOutboundClicks(CarbonImmutable::yesterday());
  */
 class GoogleAnalyticsService
 {
@@ -75,44 +81,18 @@ class GoogleAnalyticsService
         return $rows->map(function (mixed $row) {
             // GA4 response: dimension values[0] = landingPage path
             // metric values correspond to the order declared above.
-            if (is_object($row) && method_exists($row, 'getDimensionValues')) {
-                $dimValues    = $row->getDimensionValues();
-                $metricValues = $row->getMetricValues();
-
-                $path         = data_get($dimValues, '0') ?? '';
-                if (is_object($path) && method_exists($path, 'getValue')) {
-                    $path = $path->getValue();
-                }
-
-                $getMetric = function (int $idx) use ($metricValues): float {
-                    $mv = data_get($metricValues, $idx);
-                    if ($mv && is_object($mv) && method_exists($mv, 'getValue')) {
-                        return (float) $mv->getValue();
-                    }
-
-                    return 0.0;
-                };
-
-                $sessions       = (int) $getMetric(0);
-                $users          = (int) $getMetric(1);
-                $engagedSessions = (int) $getMetric(2);
-                $conversions    = (int) $getMetric(3);
-                $bounceRate     = $getMetric(4);
-            } else {
-                // Array fallback (used by fake clients in tests)
-                $path            = data_get($row, 'dimensions.0', '');
-                $sessions        = (int) data_get($row, 'metrics.sessions', 0);
-                $users           = (int) data_get($row, 'metrics.users', 0);
-                $engagedSessions = (int) data_get($row, 'metrics.engaged_sessions', 0);
-                $conversions     = (int) data_get($row, 'metrics.conversions', 0);
-                $bounceRate      = (float) data_get($row, 'metrics.bounce_rate', 0.0);
-            }
+            $path            = $this->extractDimensionValue($row);
+            $sessions        = (int) $this->extractMetricValue($row, 0, 'sessions');
+            $users           = (int) $this->extractMetricValue($row, 1, 'users');
+            $engagedSessions = (int) $this->extractMetricValue($row, 2, 'engaged_sessions');
+            $conversions     = (int) $this->extractMetricValue($row, 3, 'conversions');
+            $bounceRate      = $this->extractMetricValue($row, 4, 'bounce_rate');
 
             // GA4 landing page paths are relative ("/compare/espresso"). Prepend
             // nothing here — the action that calls this service can prefix the
             // tenant domain if needed for cross-source URL matching.
             return [
-                'url'              => (string) $path,
+                'url'              => $path,
                 'sessions'         => $sessions,
                 'users'            => $users,
                 'engaged_sessions' => $engagedSessions,
@@ -120,6 +100,117 @@ class GoogleAnalyticsService
                 'bounce_rate'      => $bounceRate,
             ];
         })->values();
+    }
+
+    /**
+     * Fetch outbound (buy-button) click counts for a single calendar day.
+     *
+     * GA4 Enhanced Measurement automatically fires a `click` event for every
+     * outbound link — this is the "site → store" step the whole project exists
+     * to move (Spec 040). Filtered to `eventName = click` (EXACT match).
+     *
+     * Uses `pagePath`, matching the `landingPage` dimension used above — both
+     * are path-only, so `url`/`url_hash` are byte-identical between the two
+     * methods for the same page and PullGa4Metrics can merge their rows by
+     * URL. A query-string-carrying dimension here would fork a click on
+     * `/compare/x?preset=streamer` away from the `/compare/x` landing row, and
+     * let tracking params (`?srsltid=`, `?fbclid=`) fragment the count.
+     *
+     * @param  CarbonImmutable $date The calendar day to pull (UTC).
+     * @return Collection<int, array{url: string, clicks: int}>
+     *
+     * @throws \Google\ApiCore\ApiException On API-level errors (quota, auth, invalid property).
+     */
+    public function fetchOutboundClicks(CarbonImmutable $date): Collection
+    {
+        $client  = $this->makeClient();
+        $dateStr = $date->format('Y-m-d');
+
+        $request = new RunReportRequest([
+            'property'   => $this->propertyId,
+            'dimensions' => [new Dimension(['name' => 'pagePath'])],
+            'metrics'    => [new Metric(['name' => 'eventCount'])],
+            'dimension_filter' => new FilterExpression([
+                'filter' => new Filter([
+                    'field_name'    => 'eventName',
+                    'string_filter' => new StringFilter([
+                        'match_type' => MatchType::EXACT,
+                        'value'      => 'click',
+                    ]),
+                ]),
+            ]),
+            'date_ranges' => [
+                new DateRange(['start_date' => $dateStr, 'end_date' => $dateStr]),
+            ],
+            'limit' => (int) config('seo.pull.chunk_size', 500),
+        ]);
+
+        $response = $client->runReport($request);
+        $client->close();
+
+        $rows = collect($response->getRows());
+
+        return $rows->map(function (mixed $row) {
+            $path   = $this->extractDimensionValue($row);
+            $clicks = (int) $this->extractMetricValue($row, 0, 'clicks');
+
+            return [
+                'url'    => $path,
+                'clicks' => $clicks,
+            ];
+        })->values();
+    }
+
+    /**
+     * Extract the first dimension value from a GA4 report row.
+     *
+     * Shared by fetchLandingPageMetrics() and fetchOutboundClicks() so the two
+     * methods read the page path identically — their `url` output must be
+     * byte-for-byte the same for a given page so PullGa4Metrics can merge rows
+     * from both calls by URL.
+     *
+     * Handles both the real SDK row object and the flexible array shape used
+     * by fake clients in tests.
+     */
+    private function extractDimensionValue(mixed $row): string
+    {
+        if (is_object($row) && method_exists($row, 'getDimensionValues')) {
+            $dimValues = $row->getDimensionValues();
+
+            $value = data_get($dimValues, '0') ?? '';
+            if (is_object($value) && method_exists($value, 'getValue')) {
+                $value = $value->getValue();
+            }
+
+            return (string) $value;
+        }
+
+        // Array fallback (used by fake clients in tests)
+        return (string) data_get($row, 'dimensions.0', '');
+    }
+
+    /**
+     * Extract a single metric value from a GA4 report row.
+     *
+     * $index selects the metric by its declared position in the request (real
+     * SDK rows carry metrics positionally). $fallbackKey selects the same
+     * metric by name in the flexible array shape used by fake clients in tests.
+     */
+    private function extractMetricValue(mixed $row, int $index, string $fallbackKey): float
+    {
+        if (is_object($row) && method_exists($row, 'getMetricValues')) {
+            $metricValues = $row->getMetricValues();
+            $mv           = data_get($metricValues, $index);
+
+            if ($mv && is_object($mv) && method_exists($mv, 'getValue')) {
+                return (float) $mv->getValue();
+            }
+
+            return 0.0;
+        }
+
+        // Array fallback (used by fake clients in tests)
+        return (float) data_get($row, "metrics.{$fallbackKey}", 0.0);
     }
 
     /**

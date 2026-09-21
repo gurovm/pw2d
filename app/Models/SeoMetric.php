@@ -11,8 +11,9 @@ use Illuminate\Database\Eloquent\Model;
  * Eloquent model for the `seo_metrics` table.
  *
  * Represents a single per-URL, per-date, per-source (GSC or GA4) SEO metric row.
- * Each source ('gsc' or 'ga4') populates its own column group; the other group
- * remains null.
+ * Each source ('gsc' or 'ga4') populates its own column group; the other
+ * group's columns are null — except `ga4_outbound_clicks`, which is `0`
+ * (its NOT NULL column default) on `gsc` rows, not null.
  *
  * In production, writes go exclusively through DB::table('seo_metrics')->upsert()
  * inside PullGscMetrics / PullGa4Metrics so that idempotent upserts use the
@@ -39,6 +40,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property int|null    $ga4_engaged_sess
  * @property int|null    $ga4_conversions
  * @property string|null $ga4_bounce_rate  decimal:4 (0.0000 – 1.0000)
+ * @property int         $ga4_outbound_clicks GA4 Enhanced Measurement `click` events (Spec 040), default 0
  */
 class SeoMetric extends Model
 {
@@ -63,13 +65,15 @@ class SeoMetric extends Model
         'ga4_engaged_sess',
         'ga4_conversions',
         'ga4_bounce_rate',
+        'ga4_outbound_clicks',
     ];
 
     /** @var array<string, string> */
     protected $casts = [
-        'metric_date'     => 'date:Y-m-d',
-        'gsc_ctr'         => 'decimal:4',
-        'gsc_position'    => 'decimal:2',
-        'ga4_bounce_rate' => 'decimal:4',
+        'metric_date'         => 'date:Y-m-d',
+        'gsc_ctr'             => 'decimal:4',
+        'gsc_position'        => 'decimal:2',
+        'ga4_bounce_rate'     => 'decimal:4',
+        'ga4_outbound_clicks' => 'integer',
     ];
 }

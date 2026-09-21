@@ -65,7 +65,8 @@ class KpiCardsWidget extends BaseWidget
             ->whereBetween('metric_date', [$current28, $now])
             ->selectRaw('
                 SUM(ga4_sessions) as sessions,
-                SUM(ga4_conversions) as conversions
+                SUM(ga4_conversions) as conversions,
+                SUM(ga4_outbound_clicks) as outbound_clicks
             ')
             ->first();
 
@@ -75,7 +76,8 @@ class KpiCardsWidget extends BaseWidget
             ->whereBetween('metric_date', [$prior28, $prior28End])
             ->selectRaw('
                 SUM(ga4_sessions) as sessions,
-                SUM(ga4_conversions) as conversions
+                SUM(ga4_conversions) as conversions,
+                SUM(ga4_outbound_clicks) as outbound_clicks
             ')
             ->first();
 
@@ -100,6 +102,11 @@ class KpiCardsWidget extends BaseWidget
         $currentConversions = (int) ($currentGa4->conversions ?? 0);
         $priorConversions   = (int) ($priorGa4->conversions ?? 0);
         $conversionsDelta   = $priorConversions > 0 ? round(($currentConversions - $priorConversions) / $priorConversions * 100, 1) : null;
+
+        // Store clicks: outbound (buy-button) clicks — the "site → store" step (Spec 040).
+        $currentClicksOut = (int) ($currentGa4->outbound_clicks ?? 0);
+        $priorClicksOut   = (int) ($priorGa4->outbound_clicks ?? 0);
+        $clicksOutDelta   = $priorClicksOut > 0 ? round(($currentClicksOut - $priorClicksOut) / $priorClicksOut * 100, 1) : null;
 
         return [
             Stat::make('GSC Clicks (28d)', number_format($currentClicks))
@@ -136,6 +143,13 @@ class KpiCardsWidget extends BaseWidget
                     : 'No comparison data')
                 ->descriptionIcon($conversionsDelta !== null && $conversionsDelta >= 0 ? 'heroicon-m-arrow-trending-up' : 'heroicon-m-arrow-trending-down')
                 ->color($conversionsDelta !== null && $conversionsDelta >= 0 ? 'success' : 'danger'),
+
+            Stat::make('Store Clicks (28d)', number_format($currentClicksOut))
+                ->description($clicksOutDelta !== null
+                    ? ($clicksOutDelta >= 0 ? "+{$clicksOutDelta}% vs prior 28d" : "{$clicksOutDelta}% vs prior 28d")
+                    : 'No comparison data')
+                ->descriptionIcon($clicksOutDelta !== null && $clicksOutDelta >= 0 ? 'heroicon-m-arrow-trending-up' : 'heroicon-m-arrow-trending-down')
+                ->color($clicksOutDelta !== null && $clicksOutDelta >= 0 ? 'success' : 'danger'),
         ];
     }
 }
