@@ -67,6 +67,7 @@ the code in brackets. Codes (Q5, F12, H-E…) are kept only so the old text can 
 
 ## Data cleanup & QA stragglers
 
+- [ ] **93 live products carry a rejection row for their own category** — some right (keyboard combos, membrane boards still live), some wrong (SM58 pick, Jabra Evolve2); decide per category during its sweep / model backfill → `docs/summaries/2026-10-04-import-gate-shipped-and-our-stars-were-amazons-rating.md`
 - [ ] **Ergonomic pool leftovers** — 11 older keyboard+mouse combos still visible (do not affect today's picks); LEOBOG A80 RT gaming board sits in the ergonomic category
 - [ ] **c2d duplicates** — 4 Breville Oracle Jet rows, 5 Jura Z10-family rows; owner decision whether the two Z10 rows are one machine or two generations
 - [ ] **c2d detached products** — 8 rows, owner decision (4 look right, 3 are grain mills, 1 Oracle Jet)
@@ -75,6 +76,7 @@ the code in brackets. Codes (Q5, F12, H-E…) are kept only so the old text can 
 
 ## Frontend & polish
 
+- [ ] **"coffee2decide score" label is lowercase** — uses the tenant `brand_name` as stored; owner asked, no answer yet → `docs/summaries/2026-10-04-import-gate-shipped-and-our-stars-were-amazons-rating.md`
 - [ ] **N+1 in Filament resources** [L1] · **eager `Category::pluck` in a modal** [A6] · **6 missing DB indexes** [L8]
 - [ ] **Duplicated price-note builder** [L3] · **duplicated typewriter animation** [L4] · **DB query in a Blade template** [L5]
 - [ ] **Static pages hardcode "Pw2D"** [L6] · **hardcoded Amazon orange** [Q10] · **missing `strict_types` in ~15 files** [L7]
@@ -82,5 +84,6 @@ the code in brackets. Codes (Q5, F12, H-E…) are kept only so the old text can 
 
 ## Growth & owner
 
+- [ ] **Join affiliate programs (Whole Latte Love, Clive Coffee, then Amazon) + open osek patur** — owner waits until `/seo-status` 2c estimates ≥ $50/month for ~a month; baseline c2d ≈ $20 → `docs/summaries/2026-10-04-import-gate-shipped-and-our-stars-were-amazons-rating.md` + memory `amazon-associates-strategy`
 - [ ] **c2d leaf #5: Electric Burr Grinders** — owner decision 08-09; launch checklist in the snapshot
 - [ ] **File the stancl/tenancy bug upstream** — report is ready at `docs/bug-reports/stancl-tenancy-pk-leak.md` [F5]

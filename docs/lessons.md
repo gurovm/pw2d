@@ -189,3 +189,17 @@ costs one SELECT to verify — run it **before** writing the spec, not after the
 2026-08-28 rule ("a rationale in a spec is a claim; verify it") applied to data shape. And for any new
 column that joins an upsert: ask "what does this write on the failure path, on a row that already has a
 value?"
+
+## 2026-10-04 — Ask where a number comes from before optimising it; three wrong claims caught in one day
+
+1. **The stars.** For months the SEO checks tracked CTR and position on product pages without asking where the
+   gold stars came from. They were Amazon's rating in our `aggregateRating` — forbidden by Google's review-snippet
+   guidelines — on half our impressions and most clicks. One URL-inspection call and one `searchAppearance` query
+   answered it. **Rule:** when a rich result or metric matters to traffic, trace its source in the markup/data once.
+2. **An identity normaliser that strips symbols.** Spec 041 said "lowercase, alphanumerics only" for model names;
+   that makes `MV7+` equal `MV7`. The backfill `--dry-run` group report caught it before any write. **Rule:**
+   identity keys keep the characters the domain uses as identity (`+`); and a dry-run that shows the groups to a
+   human is worth keeping for every bulk identity change.
+3. **`ORDER BY tenant_id … LIMIT 20` across tenants** returned only the first tenant's rows, and the SEO log briefly
+   said pw2d had no preset-query rows. **Rule:** per-tenant questions get per-tenant queries (or a window function),
+   never one capped query sorted by tenant.
