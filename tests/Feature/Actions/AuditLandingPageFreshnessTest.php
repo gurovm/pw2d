@@ -92,6 +92,7 @@ class AuditLandingPageFreshnessTest extends TestCase
 
             ProductOffer::create([
                 'product_id'    => $product->id,
+                'health_checked_at' => now(),
                 'url'           => "https://example.com/{$slug}-{$i}",
                 'raw_title'     => $product->name,
                 'image_url'     => "https://images.example.com/{$slug}-{$i}.jpg",
@@ -143,6 +144,7 @@ class AuditLandingPageFreshnessTest extends TestCase
 
         ProductOffer::create([
             'product_id'    => $product->id,
+            'health_checked_at' => now(),
             'url'           => "https://example.com/{$slug}",
             'raw_title'     => $product->name,
             'image_url'     => "https://images.example.com/{$slug}.jpg",

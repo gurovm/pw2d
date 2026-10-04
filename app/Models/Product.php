@@ -30,6 +30,7 @@ class Product extends Model
         'category_id',
         'brand_id',
         'name',
+        'model',
         'slug',
         'ai_summary',
         'image_path',

@@ -48,6 +48,11 @@ class ProductResource extends Resource
                             ->label('Product Name')
                             ->required()
                             ->maxLength(255),
+
+                        Forms\Components\TextInput::make('model')
+                            ->label('Model')
+                            ->maxLength(120)
+                            ->helperText('Model identity without brand, colour or size (e.g. "Oracle Jet"). Two products of the same brand and model never fill two picks on a Best-of page.'),
                             
                         Forms\Components\Textarea::make('ai_summary')
                             ->label('AI Summary')
@@ -145,6 +150,10 @@ class ProductResource extends Resource
                     ->sortable()
                     ->weight('bold')
                     ->limit(60),
+
+                Tables\Columns\TextColumn::make('model')
+                    ->searchable()
+                    ->toggleable(),
 
                 Tables\Columns\TextColumn::make('brand.name')
                     ->label('Brand')

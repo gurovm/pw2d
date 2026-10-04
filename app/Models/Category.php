@@ -24,6 +24,7 @@ class Category extends Model
         'buying_guide',
         'image',
         'sample_prompts',
+        'bouncer_notes',
     ];
 
     /**

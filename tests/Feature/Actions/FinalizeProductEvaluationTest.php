@@ -14,6 +14,7 @@ use App\Models\ProductFeatureValue;
 use App\Services\AiService;
 use App\Support\ProductEvaluation;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 /**
@@ -106,6 +107,114 @@ class FinalizeProductEvaluationTest extends TestCase
             1,
             AiCategoryRejection::where('product_id', $product->id)->where('category_id', $category->id)->count()
         );
+    }
+
+    // -------------------------------------------------------------------
+    // Spec 041 — names, model, generic-brand guard
+    // -------------------------------------------------------------------
+
+    /** @param array<string, mixed> $payload */
+    private function finalizeScored(Product $product, Category $category, array $payload): void
+    {
+        Http::fake();
+
+        $eval = ProductEvaluation::fromArray(array_merge([
+            'name' => 'x', 'brand' => 'Shure', 'ai_summary' => 'Fine.', 'features' => [],
+        ], $payload));
+
+        $this->action()->execute($product, $category, $eval, source: 'gemini');
+    }
+
+    private function pendingProduct(Category $category, string $rawTitle): Product
+    {
+        return Product::factory()->create([
+            'category_id' => $category->id,
+            'name'        => $rawTitle,
+            'status'      => 'pending_ai',
+            'is_ignored'  => false,
+        ]);
+    }
+
+    /** @test */
+    public function a_short_ai_name_is_kept_and_never_replaced_by_the_raw_title(): void
+    {
+        $category = Category::factory()->create();
+        $product  = $this->pendingProduct($category, 'Shure MV7+ Podcast Dynamic Microphone with USB-C and XLR Outputs, Black');
+
+        $this->finalizeScored($product, $category, ['name' => 'Shure MV7+', 'model' => 'MV7+']);
+
+        $product->refresh();
+        $this->assertSame('Shure MV7+', $product->name);
+        $this->assertSame('MV7+', $product->model);
+        $this->assertNull($product->status);
+    }
+
+    /** @test */
+    public function a_brand_only_name_is_rebuilt_from_brand_and_model(): void
+    {
+        $category = Category::factory()->create();
+        $product  = $this->pendingProduct($category, 'Breville Oracle Jet Espresso Machine, Black Truffle');
+
+        $this->finalizeScored($product, $category, ['name' => 'Breville', 'brand' => 'Breville', 'model' => 'Oracle Jet']);
+
+        $this->assertSame('Breville Oracle Jet', $product->refresh()->name);
+    }
+
+    /** @test */
+    public function a_brand_only_name_without_a_model_is_not_replaced_by_the_raw_title(): void
+    {
+        $category = Category::factory()->create();
+        $product  = $this->pendingProduct($category, 'Breville Oracle Jet Espresso Machine, Black Truffle');
+
+        $this->finalizeScored($product, $category, ['name' => 'Breville', 'brand' => 'Breville']);
+
+        $this->assertSame('Breville', $product->refresh()->name);
+    }
+
+    /** @test */
+    public function the_name_is_shaped_to_start_with_the_brand(): void
+    {
+        $category = Category::factory()->create();
+        $product  = $this->pendingProduct($category, 'UWP-D Wireless Lavalier Bundle');
+
+        $this->finalizeScored($product, $category, ['name' => 'UWP-D', 'brand' => 'Sony']);
+
+        $this->assertSame('Sony UWP-D', $product->refresh()->name);
+    }
+
+    /** @test */
+    public function a_scored_payload_without_a_model_keeps_the_stored_model(): void
+    {
+        $category = Category::factory()->create();
+        $product  = $this->pendingProduct($category, 'Rode NT-USB Mini');
+        $product->update(['model' => 'NT-USB Mini']);
+
+        $this->finalizeScored($product, $category, ['name' => 'Rode NT-USB Mini', 'brand' => 'Rode']);
+
+        $this->assertSame('NT-USB Mini', $product->refresh()->model);
+    }
+
+    /**
+     * @test
+     * @dataProvider genericBrandProvider
+     */
+    public function a_generic_brand_is_ignored_whatever_the_ai_returned(string $brand): void
+    {
+        $category = Category::factory()->create();
+        $product  = $this->pendingProduct($category, 'Wireless Lavalier Microphone Kit');
+
+        $this->finalizeScored($product, $category, ['name' => "{$brand} Lavalier", 'brand' => $brand]);
+
+        $product->refresh();
+        $this->assertTrue($product->is_ignored);
+        $this->assertNull($product->status);
+        $this->assertSame(0, \App\Models\Brand::where('name', $brand)->count(), 'no brand row may be created for a placeholder brand');
+    }
+
+    /** @return array<string, array{string}> */
+    public static function genericBrandProvider(): array
+    {
+        return ['Generic' => ['Generic'], 'Unbranded' => ['Unbranded'], 'padded + cased' => ['  NO BRAND '], 'Unknown' => ['unknown']];
     }
 
     // -------------------------------------------------------------------

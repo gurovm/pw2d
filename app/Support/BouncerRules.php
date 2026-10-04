@@ -5,32 +5,39 @@ declare(strict_types=1);
 namespace App\Support;
 
 /**
- * Spec 039 T3 — the Stage 1 / 2 / 2.5 / 3 gate-rules text, extracted verbatim
- * (byte-for-byte, pinned by tests/Unit/Services/AiServicePromptSnapshotTest.php)
- * from what used to be inlined directly in {@see \App\Services\AiService::evaluateProduct()}.
- * That method now builds its prompt as its own preamble (persona + the specific
+ * Spec 039 T3 — the Stage 1 / 2 / 2.5 / 3 gate-rules text, extracted from what
+ * used to be inlined directly in {@see \App\Services\AiService::evaluateProduct()}.
+ * That method builds its prompt as its own preamble (persona + the specific
  * product's name/price/rating/feature-list context) followed by
- * `self::text($categoryName)` — nothing about the rules themselves changed.
+ * `self::text($categoryName, $categoryNotes)`.
  *
  * One source of truth for the gate rules, consumed by two callers:
  *   - `AiService::evaluateProduct()` — feeds it straight into the Gemini prompt.
  *   - `App\Actions\ExportPendingProducts` (Spec 039 T3) — feeds it into the
- *     `rules` field of the operator-session export file, WITH
- *     {@see self::sessionAddendum()} appended. That addendum must never reach
- *     the Gemini prompt — `wrong_category` is a session-only vocabulary
- *     addition (see {@see \App\Support\ProductEvaluation}'s docblock).
+ *     `rules` field of the operator-session export file.
+ *
+ * Spec 041: `wrong_category` (rule D) now lives in the shared text, so the
+ * former session-only addendum is gone and both producers see identical rules.
+ * The assembled prompt is pinned by tests/Unit/Services/AiServicePromptSnapshotTest.php;
+ * re-capture the fixture deliberately when the text changes.
  */
 final class BouncerRules
 {
     /**
-     * Byte-identical to the text formerly inlined in `evaluateProduct()`
-     * starting at "=== STAGE 1" through the closing JSON-shape instruction.
-     * Do not reformat/reflow this string — the snapshot test compares the
-     * assembled prompt byte-for-byte against a fixture captured before this
-     * extraction.
+     * "=== STAGE 1" through the closing JSON-shape instruction. Do not
+     * reformat/reflow this string — the snapshot test compares the assembled
+     * prompt byte-for-byte against a fixture.
+     *
+     * @param ?string $categoryNotes Per-category owner-approved notes
+     *   (`categories.bouncer_notes`): what does not belong, and what counts as
+     *   a different model. Emitted right after rule D; a blank value leaves the
+     *   line out entirely.
      */
-    public static function text(string $categoryName): string
+    public static function text(string $categoryName, ?string $categoryNotes = null): string
     {
+        $notes = trim((string) $categoryNotes);
+        $notesBlock = $notes === '' ? '' : "Category-specific rules: {$notes}\n\n";
+
         return "=== STAGE 1: DATA QUALITY GATE ===\n\n"
             . "CRITICAL: Only ignore products that are CLEARLY not a main device in the \"{$categoryName}\" category.\n"
             . "When in doubt, SCORE the product — do NOT ignore it. False ignores are worse than scoring a marginal product.\n\n"
@@ -49,6 +56,11 @@ final class BouncerRules
             . "IGNORE RULE C — LISTING CONDITION: Ignore if the product name, title, or any provided context "
             . "indicates the listing is Renewed, Refurbished, Open Box, or otherwise not brand-new/first-party.\n"
             . 'To ignore, return EXACTLY: {"status": "ignored", "reason": "renewed_or_refurbished"}' . "\n\n"
+            . "IGNORE RULE D — WRONG PRODUCT TYPE: Ignore if the product is clearly a different kind of product than \"{$categoryName}\" "
+            . "(e.g. a mouse in a keyboard category, a shotgun microphone in a lavalier category), or matches the category-specific rules below. "
+            . "It may be a real, well-branded item; it simply does not belong in this category.\n"
+            . 'To ignore, return EXACTLY: {"status": "ignored", "reason": "wrong_category"}' . "\n\n"
+            . $notesBlock
             . "=== STAGE 2: BRAND NORMALIZATION ===\n\n"
             . "Unify brand names to their most common, clean English-language form. Strict rules:\n"
             . "- Strip non-ASCII characters used as stylistic affectations: 'RØDE' → 'Rode', 'Beyerdynamic' stays.\n"
@@ -67,33 +79,26 @@ final class BouncerRules
             . "- STRIP marketing adjectives that are not part of the official model name: 'High Fidelity', 'Premium', 'Professional'.\n"
             . "- Maximum 60 characters. When in doubt, use only Brand + Model (e.g. 'Sony WH-1000XM5', 'Shure MV7+', 'Rode NT-USB Mini').\n"
             . "- NAME RULE: \"name\" must be the concise product identity — brand + model/series + key variant only, MAXIMUM 8 words. "
+            . "It MUST start with the brand exactly as you return it in \"brand\". "
+            . "Leave out category nouns ('Manual Coffee Grinder', 'Wireless Mechanical Keyboard'): the page title already adds the category. "
             . "Strip marketing descriptors, feature lists, compatibility lists, pack counts, and specs "
-            . "(e.g. 'Keychron K6' not 'Keychron K6 Bluetooth 5.1 Wireless Mechanical Keyboard with ... 68 Keys Compact ...').\n\n"
+            . "(e.g. 'Keychron K6' not 'Keychron K6 Bluetooth 5.1 Wireless Mechanical Keyboard with ... 68 Keys Compact ...').\n"
+            . "- MODEL RULE: \"model\" is the model identity a buyer would name, WITHOUT the brand and WITHOUT colour, size, material, finish, "
+            . "bundle contents, pack count or region. KEEP tier (Pro, Max, Mini, Plus, X, SE), generation (V3, Gen 2, 5th Gen) and form factor (TKL, 75%). "
+            . "Different models must get different values; the same model in another colour or size must get the same value. Examples:\n"
+            . "  'Razer BlackWidow V3 Pro' → 'BlackWidow V3 Pro' (NOT the same model as 'Huntsman V3 Pro')\n"
+            . "  'Jabra Evolve2 50 UC Stereo' → 'Evolve2 50' (NOT the same model as 'Evolve2 55')\n"
+            . "  'Hario V60 Ceramic Coffee Dripper 02, White' → 'V60 Dripper' (every V60 size and material)\n"
+            . "  'Breville Oracle Jet Espresso Machine, Black Truffle' → 'Oracle Jet' (every colourway)\n"
+            . "  'Logitech Wave Keys Wireless Ergonomic Keyboard, Graphite' → 'Wave Keys'\n\n"
             . "=== STAGE 3: SCORING RULES ===\n\n"
             . "1. WORLD KNOWLEDGE OVERRIDES EVERYTHING: Base scores on your internal knowledge of this specific model.\n"
             . "2. ABSOLUTE SCORING (1-100): 50 = average/mediocre. Budget brands CANNOT score 80+ on quality features.\n"
             . "3. STRICT TRADE-OFFS: Create contrast. If a feature is irrelevant or bad, score it 20-40.\n"
             . "4. OBSCURE PRODUCTS: If you don't recognise the model, infer from brand tier + price. Default to 40-50.\n\n"
             . "Return ONLY a valid JSON object in this EXACT format (no markdown, no code blocks):\n"
-            . '{"name": "Brand Model", "brand": "Normalized Brand Name", "ai_summary": "Brutal 2-sentence summary.", '
+            . '{"name": "Brand Model", "brand": "Normalized Brand Name", "model": "Model Without Brand", "ai_summary": "Brutal 2-sentence summary.", '
             . '"price_tier": 2, "amazon_rating": null, "amazon_reviews_count": null, '
             . '"features": {"Feature_Name": {"score": 75, "reason": "One sentence."}, "Other_Feature": null}}';
-    }
-
-    /**
-     * Spec 039 §2 T1/T3 — describes the one session-only ignore reason,
-     * `wrong_category`, that Gemini's Stage 1 never emits. Appended to
-     * {@see self::text()} for the operator-session export's `rules` field
-     * ONLY — never concatenated into the Gemini prompt.
-     */
-    public static function sessionAddendum(): string
-    {
-        return "=== SESSION-ONLY: WRONG CATEGORY ===\n\n"
-            . "You are evaluating in an operator session, not as the automated Bouncer, so one additional "
-            . "ignore reason is available to you: `wrong_category`. Use it when the product is a real, "
-            . "sellable, correctly-branded item — it simply does not belong in THIS category at all "
-            . "(e.g. a shotgun/boom microphone submitted under a \"Lavalier & Wireless Systems\" category). "
-            . "Do not use it for anything that IGNORE RULE A/B/C above already covers — those still apply first.\n"
-            . 'To flag this, return: {"status": "ignored", "reason": "wrong_category"}' . "\n";
     }
 }

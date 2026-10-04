@@ -97,9 +97,6 @@ class ProductNameSlugCapTest extends TestCase
     /** @test */
     public function clean_short_ai_name_passes_through_unchanged(): void
     {
-        // Name is intentionally >= 20 chars so ProcessPendingProduct's existing
-        // "AI returned just the brand" guard (mb_strlen($aiName) < 20) does not
-        // kick in and swap it for the original scraped title.
         $cleanName = 'Keychron K6 Wireless Keyboard';
 
         $product = Product::create([

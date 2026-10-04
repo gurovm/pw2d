@@ -15,6 +15,7 @@ use App\Models\Store;
 use App\Services\AiService;
 use App\Services\ImageOptimizer;
 use App\Support\ProductEvaluation;
+use App\Support\ProductNameShaper;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -27,9 +28,9 @@ use Illuminate\Support\Str;
  * evaluations`, not yet built). One evaluation schema
  * ({@see \App\Support\ProductEvaluation}), one finalize path: this class.
  *
- * Moved verbatim (behaviour-identical extraction) from
- * `ProcessPendingProduct::handle()` — including `capProductName()` and
- * `downloadAndStoreImage()`, which the job no longer keeps private copies of.
+ * Moved (behaviour-identical extraction) from `ProcessPendingProduct::handle()` —
+ * including `downloadAndStoreImage()`, which the job no longer keeps a private copy of.
+ * Spec 041 replaced the old `capProductName()` with {@see ProductNameShaper}.
  * Two intentional differences from the pre-extraction behaviour:
  *
  * 1. A `wrong_category` reason (only possible when `$eval->isIgnored()` is
@@ -51,6 +52,9 @@ use Illuminate\Support\Str;
  */
 class FinalizeProductEvaluation
 {
+    /** Normalised brand values that mean "no brand" — see the generic-brand guard in execute(). */
+    private const GENERIC_BRANDS = ['generic', 'unbranded', 'no brand', 'unknown'];
+
     public function __construct(private readonly AiService $aiService) {}
 
     /**
@@ -70,27 +74,27 @@ class FinalizeProductEvaluation
                 return $this->rejectFromCategory($product, $category);
             }
 
-            $product->update(['status' => null, 'is_ignored' => true]);
-            Log::info('ProcessPendingProduct: marked as ignored', [
-                'product_id' => $product->id,
-                'reason'     => $eval->reason() ?? '',
-                'source'     => $source,
-            ]);
-            return FinalizeOutcome::Ignored;
+            return $this->markIgnored($product, $eval->reason() ?? '', $source);
         }
 
-        // Guard: if AI returned just the brand name (e.g. "Breville") instead of a
-        // real product name, keep the original scraped title which has more detail.
-        $aiName       = $eval->name();
+        // Spec 041 — Rule B ("generic / white-label") leaked 17 live products when
+        // left to the AI alone, so a placeholder brand is enforced here in code,
+        // whatever the AI returned.
+        if (in_array(AiService::normalizeBrandForComparison($eval->brand()), self::GENERIC_BRANDS, true)) {
+            return $this->markIgnored($product, 'generic_white_label', $source);
+        }
+
         $originalName = $product->name;
-        if (mb_strlen($aiName) < 20 && mb_strlen($originalName) > mb_strlen($aiName)) {
-            $aiName = mb_substr($originalName, 0, 255);
-        }
 
-        // Defensive cap: regardless of source (AI-returned name or the raw-title
-        // fallback above), never let a verbose marketing title become the stored
-        // name/slug. Keeps name and slug in agreement.
-        $aiName = self::capProductName($aiName);
+        // The AI name is always used (Spec 041: the raw Amazon title is never a
+        // name source). Only a name holding nothing beyond the brand is rebuilt.
+        $aiName = ProductNameShaper::shape($eval->name(), $eval->brand());
+
+        $brandName = trim($eval->brand());
+
+        if ($aiName === '' || mb_strtolower($aiName) === mb_strtolower($brandName)) {
+            $aiName = ProductNameShaper::shape($brandName . ' ' . ($eval->model() ?? ''), $brandName);
+        }
 
         // AI Memory Matching: check if this product already exists under a different ASIN/offer.
         // Uses cached decisions first, then asks AI only when needed.
@@ -165,6 +169,7 @@ class FinalizeProductEvaluation
             'name'                 => $aiName,
             'slug'                 => Str::slug($aiName . '-' . Str::random(5)),
             'brand_id'             => $brand->id,
+            'model'                => $eval->model() ?? $product->model,
             'ai_summary'           => $eval->aiSummary(),
             'price_tier'           => $eval->priceTier()          ?? $product->price_tier,
             'amazon_rating'        => $eval->amazonRating()       ?? $product->amazon_rating,
@@ -215,6 +220,18 @@ class FinalizeProductEvaluation
      * is re-applied), null out `category_id` and `status`, and leave
      * `is_ignored` untouched — the product may still belong somewhere else.
      */
+    private function markIgnored(Product $product, string $reason, string $source): FinalizeOutcome
+    {
+        $product->update(['status' => null, 'is_ignored' => true]);
+        Log::info('ProcessPendingProduct: marked as ignored', [
+            'product_id' => $product->id,
+            'reason'     => $reason,
+            'source'     => $source,
+        ]);
+
+        return FinalizeOutcome::Ignored;
+    }
+
     private function rejectFromCategory(Product $product, Category $category): FinalizeOutcome
     {
         AiCategoryRejection::firstOrCreate(
@@ -265,42 +282,6 @@ class FinalizeProductEvaluation
         }
 
         return $written;
-    }
-
-    /**
-     * Cap an AI/scraped product name to a concise product identity, used for both
-     * the stored `name` and the slug stem so they always agree.
-     *
-     * Truncates at the first comma or opening parenthesis (these typically start a
-     * spec/compatibility/bundle list in verbose marketing titles), falls back to the
-     * first 8 words, and strips a trailing stopword left dangling by truncation.
-     */
-    private static function capProductName(string $name): string
-    {
-        $name = trim($name);
-
-        $cutPos = null;
-        foreach ([',', '('] as $delimiter) {
-            $pos = mb_strpos($name, $delimiter);
-            if ($pos !== false && $pos > 0 && ($cutPos === null || $pos < $cutPos)) {
-                $cutPos = $pos;
-            }
-        }
-        if ($cutPos !== null) {
-            $name = mb_substr($name, 0, $cutPos);
-        }
-
-        $words = preg_split('/\s+/', trim($name)) ?: [];
-        if (count($words) > 8) {
-            $words = array_slice($words, 0, 8);
-        }
-
-        $stopwords = ['with', 'for', 'and', 'the', 'of', 'in'];
-        while (!empty($words) && in_array(mb_strtolower(end($words)), $stopwords, true)) {
-            array_pop($words);
-        }
-
-        return trim(implode(' ', $words));
     }
 
     /**

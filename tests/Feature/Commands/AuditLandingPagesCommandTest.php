@@ -131,6 +131,7 @@ class AuditLandingPagesCommandTest extends TestCase
         $product  = Product::factory()->create(['category_id' => $category->id]);
         ProductOffer::create([
             'product_id'    => $product->id,
+            'health_checked_at' => now(),
             'url'           => 'https://example.com/backfill',
             'raw_title'     => $product->name,
             'scraped_price' => 100,
@@ -168,6 +169,7 @@ class AuditLandingPagesCommandTest extends TestCase
         $product  = Product::factory()->create(['category_id' => $category->id]);
         ProductOffer::create([
             'product_id'    => $product->id,
+            'health_checked_at' => now(),
             'url'           => 'https://example.com/backfill-idempotent',
             'raw_title'     => $product->name,
             'scraped_price' => 100,

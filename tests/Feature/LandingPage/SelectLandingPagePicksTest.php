@@ -68,6 +68,7 @@ class SelectLandingPagePicksTest extends TestCase
 
         ProductOffer::create([
             'product_id'    => $product->id,
+            'health_checked_at' => now(),
             'store_id'      => null,
             'url'           => "https://example.com/{$slug}",
             'raw_title'     => $product->name,
@@ -418,6 +419,7 @@ class SelectLandingPagePicksTest extends TestCase
         ProductOffer::where('product_id', $product->id)->update(['scraped_price' => 30]);
         ProductOffer::create([
             'product_id'    => $product->id,
+            'health_checked_at' => now(),
             'store_id'      => null,
             'url'           => 'https://example.com/lp-picks-high-price-non-best-winner-alt',
             'raw_title'     => $product->name,
@@ -526,6 +528,7 @@ class SelectLandingPagePicksTest extends TestCase
         $this->setScore($multiStore, $feature, 80);
         ProductOffer::create([
             'product_id'    => $multiStore->id,
+            'health_checked_at' => now(),
             'store_id'      => null,
             'url'           => 'https://example.com/lp-picks-non-null-best-offer-multi-alt',
             'raw_title'     => $multiStore->name,
@@ -608,6 +611,7 @@ class SelectLandingPagePicksTest extends TestCase
         ]);
         ProductOffer::create([
             'product_id'    => $product->id,
+            'health_checked_at' => now(),
             'store_id'      => null,
             'url'           => 'https://example.com/lp-picks-multi-offer-partial-winner-alt',
             'raw_title'     => $product->name,
@@ -640,6 +644,7 @@ class SelectLandingPagePicksTest extends TestCase
         ProductOffer::where('product_id', $noPrice->id)->update(['scraped_price' => null]);
         ProductOffer::create([
             'product_id'    => $noPrice->id,
+            'health_checked_at' => now(),
             'store_id'      => null,
             'url'           => 'https://example.com/lp-picks-all-null-price-none-alt',
             'raw_title'     => $noPrice->name,

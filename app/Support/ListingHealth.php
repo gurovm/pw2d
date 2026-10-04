@@ -51,7 +51,7 @@ final class ListingHealth
      * offers-select in this codebase; check each one against this list whenever
      * a new health column is added.
      */
-    public const OFFER_HEALTH_COLUMNS = ['condition', 'listing_flags'];
+    public const OFFER_HEALTH_COLUMNS = ['condition', 'listing_flags', 'health_checked_at'];
 
     private function __construct() {}
 
@@ -102,6 +102,20 @@ final class ListingHealth
         }
 
         return true;
+    }
+
+    /**
+     * Spec 041 Part 4 — the one predicate both `SelectLandingPagePicks` and
+     * `AuditLandingPageFreshness` use, so selection and audit cannot disagree:
+     * purchasable AND the listing was actually DOM-checked at least once.
+     * `isPurchasable()` stays looser on purpose — it also drives
+     * `Product::bestOffer` (site-wide prices), where an unchecked offer must
+     * keep showing a price. A caller that forgot to select `health_checked_at`
+     * reads NULL here and excludes the offer (fails closed).
+     */
+    public static function isPickEligible(ProductOffer $offer): bool
+    {
+        return self::isPurchasable($offer) && $offer->health_checked_at !== null;
     }
 
     /**

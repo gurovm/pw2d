@@ -102,20 +102,32 @@ class SelectLandingPagePicks
             // the product's own ai_summary (an earlier AI pass can itself fabricate a
             // condition claim in prose, e.g. "even if renewed" — see builder memory).
             ->reject(fn (Product $p) => self::hasConditionMarker($p))
-            // Spec 029 amendment (2026-08-10, `unavailable` added 2026-08-12; fixed
-            // 2026-08-12 to check every offer instead of only `best_offer` — see
-            // hasEligibleOffer() below): a product is pick-eligible only if it has at
-            // least one offer a reader could actually buy today — priced and free of
-            // any pick-excluding flag (`high_price` = bad deal today, `unavailable` =
-            // nothing to buy today). The product itself stays visible elsewhere on the
-            // site; it's excluded from pick eligibility only, not ignored outright.
-            ->reject(fn (Product $p) => !self::hasEligibleOffer($p))
             ->values();
+
+        // Spec 029 amendment (2026-08-10, `unavailable` added 2026-08-12; fixed
+        // 2026-08-12 to check every offer instead of only `best_offer` — see
+        // hasEligibleOffer() below): a product is pick-eligible only if it has at
+        // least one offer a reader could actually buy today — priced and free of
+        // any pick-excluding flag (`high_price` = bad deal today, `unavailable` =
+        // nothing to buy today). Spec 041: and that offer must have been
+        // health-checked at least once. The product itself stays visible elsewhere
+        // on the site; it's excluded from pick eligibility only, not ignored outright.
+        // $awaitingCheck counts the ones excluded ONLY for lack of a check, so a
+        // too-small pool can say "rescan first" instead of "pool too small".
+        $awaitingCheck = $products
+            ->reject(fn (Product $p) => self::hasEligibleOffer($p))
+            ->filter(fn (Product $p) => $p->offers->contains(fn ($offer) => ListingHealth::isPurchasable($offer)))
+            ->count();
+
+        $products = $products->filter(fn (Product $p) => self::hasEligibleOffer($p))->values();
+
+        $awaitingNote = $awaitingCheck > 0 ? sprintf(' %d products await a health check — rescan the category first.', $awaitingCheck) : '';
 
         if ($products->isEmpty()) {
             throw new \RuntimeException(
                 "Category \"{$category->name}\" has no eligible products for a landing page "
-                . '(need: fully processed, not ignored, image + ai_summary present).'
+                . '(need: fully processed, not ignored, image + ai_summary present, a health-checked purchasable offer).'
+                . $awaitingNote
             );
         }
 
@@ -150,13 +162,48 @@ class SelectLandingPagePicks
         // reintroduce exactly the over-merging this spec exists to prevent.
         // Checked at every pick site below so the NEXT-best candidate is tried
         // instead of leaving the role/slot empty.
-        $isDuplicateOfPicked = function (Product $candidate) use (&$pickedIds, $products): bool {
+        // Spec 041 §3: when BOTH products carry a `model` (and a brand) the pair is a
+        // duplicate iff brand_id and normalized model match — that decides, like the
+        // model key does below. Either side NULL -> the Spec 034 logic runs unchanged.
+        // Every rejection is logged once per pair ($loggedPairs): the closure is
+        // re-evaluated for the same candidates at every pick site.
+        $loggedPairs = [];
+
+        $isDuplicateOfPicked = function (Product $candidate) use (&$pickedIds, &$loggedPairs, $products, $category): bool {
             $candidateKey = self::modelKey($candidate);
+
+            $reject = function (Product $picked, string $path, string $key) use ($candidate, $category, &$loggedPairs): bool {
+                $pair = min($candidate->id, $picked->id) . ':' . max($candidate->id, $picked->id);
+
+                if (!isset($loggedPairs[$pair])) {
+                    $loggedPairs[$pair] = true;
+                    Log::info('SelectLandingPagePicks: duplicate rejected', [
+                        'category_id'  => $category->id,
+                        'candidate_id' => $candidate->id,
+                        'picked_id'    => $picked->id,
+                        'path'         => $path,
+                        'key'          => $key,
+                    ]);
+                }
+
+                return true;
+            };
 
             foreach ($pickedIds as $pickedId) {
                 $picked = $products->firstWhere('id', $pickedId);
 
                 if ($picked === null) {
+                    continue;
+                }
+
+                $candidateModel = self::normalizeName($candidate->model);
+                $pickedModel    = self::normalizeName($picked->model);
+
+                if ($candidateModel !== '' && $pickedModel !== '' && $candidate->brand_id !== null && $picked->brand_id !== null) {
+                    if ($candidate->brand_id === $picked->brand_id && $candidateModel === $pickedModel) {
+                        return $reject($picked, 'model', $candidate->brand_id . ':' . $candidateModel);
+                    }
+
                     continue;
                 }
 
@@ -167,7 +214,7 @@ class SelectLandingPagePicks
                     // decides. Equal -> duplicate. Different -> definitively
                     // not a duplicate; do NOT fall through to similarity.
                     if ($candidateKey === $pickedKey) {
-                        return true;
+                        return $reject($picked, 'heuristic', $candidateKey);
                     }
 
                     continue;
@@ -186,13 +233,13 @@ class SelectLandingPagePicks
                 }
 
                 if (str_contains($candidateNorm, $pickedNorm) || str_contains($pickedNorm, $candidateNorm)) {
-                    return true;
+                    return $reject($picked, 'similarity', 'contains');
                 }
 
                 similar_text($candidateNorm, $pickedNorm, $percent);
 
                 if ($percent >= 85.0) {
-                    return true;
+                    return $reject($picked, 'similarity', round($percent, 1) . '%');
                 }
             }
 
@@ -327,10 +374,11 @@ class SelectLandingPagePicks
 
         if (count($picks) < self::MIN_PICKS) {
             throw new \RuntimeException(sprintf(
-                'Category "%s" is not ready for a landing page: only %d eligible pick(s) found (minimum %d required).',
+                'Category "%s" is not ready for a landing page: only %d eligible pick(s) found (minimum %d required).%s',
                 $category->name,
                 count($picks),
                 self::MIN_PICKS,
+                $awaitingNote,
             ));
         }
 
@@ -357,9 +405,10 @@ class SelectLandingPagePicks
     }
 
     /**
-     * True if ANY of the product's offers is purchasable — priced, free of a
-     * negative condition, and free of a pick-excluding listing flag (see
-     * {@see ListingHealth::isPurchasable()}). Condition-MARKER exclusion
+     * True if ANY of the product's offers is pick-eligible — purchasable (priced,
+     * free of a negative condition and of a pick-excluding listing flag) AND
+     * health-checked at least once (see {@see ListingHealth::isPickEligible()},
+     * shared with AuditLandingPageFreshness). Condition-MARKER exclusion
      * (renewed/refurbished/open box/pre-owned/used text in raw_title/ai_summary)
      * is checked separately, at the product level, by hasConditionMarker() above
      * — that's a weaker, text-based signal this DOM-verified `condition` column
@@ -386,7 +435,7 @@ class SelectLandingPagePicks
      */
     private static function hasEligibleOffer(Product $product): bool
     {
-        return $product->offers->contains(fn ($offer) => ListingHealth::isPurchasable($offer));
+        return $product->offers->contains(fn ($offer) => ListingHealth::isPickEligible($offer));
     }
 
     /**

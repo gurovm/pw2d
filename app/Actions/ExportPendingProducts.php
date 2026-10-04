@@ -132,7 +132,7 @@ class ExportPendingProducts
                     'is_higher_better' => $f->is_higher_better,
                 ])->values()->all(),
             ],
-            'rules'    => BouncerRules::text($category->name) . "\n\n" . BouncerRules::sessionAddendum(),
+            'rules'    => BouncerRules::text($category->name, $category->bouncer_notes),
             'anchors'  => $this->buildAnchors($category, $anchorsCount, $excludeAnchorIds),
             'products' => $products->map(fn (Product $p) => $this->buildProductEntry($p, $category, $isProcessed))->values()->all(),
             'count'    => $products->count(),

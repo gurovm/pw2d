@@ -35,15 +35,14 @@ class AiService
         string $categoryName,
         array $featureMap,
         ?string $tenantId = null,
+        ?string $categoryNotes = null,
     ): array {
         $featureJson = json_encode($featureMap, JSON_PRETTY_PRINT);
 
         // Spec 039 T3 — the Stage 1/2/2.5/3 gate rules live in BouncerRules,
         // the single source of truth also consumed by the operator-session
-        // export (App\Actions\ExportPendingProducts). This preamble +
-        // BouncerRules::text() concatenation must stay byte-identical to the
-        // prompt this replaced — pinned by
-        // tests/Unit/Services/AiServicePromptSnapshotTest.php.
+        // export (App\Actions\ExportPendingProducts). The assembled prompt is
+        // pinned by tests/Unit/Services/AiServicePromptSnapshotTest.php.
         $prompt = "You are a ruthless, highly skeptical technology appraiser AND data architect for a premium comparison website.\n"
             . "Your primary job is to score this product using your WORLD KNOWLEDGE of the brand and model.\n"
             . "You are also the last line of defense against dirty, polluted data entering our database.\n\n"
@@ -52,7 +51,7 @@ class AiService
             . "Price tier: {$priceNote}\n"
             . "Amazon rating: {$ratingNote}\n\n"
             . "Category features to score:\n{$featureJson}\n\n"
-            . BouncerRules::text($categoryName);
+            . BouncerRules::text($categoryName, $categoryNotes);
 
         return $this->gemini->generate($prompt, [
             'maxOutputTokens' => 8192,

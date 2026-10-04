@@ -137,6 +137,7 @@ class ExportPendingProductsCommandTest extends TestCase
     public function export_shape_matches_the_spec_for_pending_and_failed_products(): void
     {
         $category = $this->makeCategory('export-shape-cat');
+        $category->update(['bouncer_notes' => 'Exclude numpads and switchless kits.']);
         $feature  = Feature::factory()->create(['category_id' => $category->id, 'name' => 'Audio Quality', 'is_higher_better' => true]);
         $store    = $this->makeStore();
 
@@ -164,7 +165,10 @@ class ExportPendingProductsCommandTest extends TestCase
         $this->assertTrue($data['category']['features'][0]['is_higher_better']);
 
         $this->assertStringContainsString('STAGE 1', $data['rules']);
+        $this->assertStringContainsString('IGNORE RULE D', $data['rules']);
         $this->assertStringContainsString('wrong_category', $data['rules']);
+        $this->assertStringContainsString('Category-specific rules: Exclude numpads and switchless kits.', $data['rules']);
+        $this->assertStringNotContainsString('SESSION-ONLY', $data['rules']);
 
         $this->assertIsArray($data['brands']);
         $this->assertIsArray($data['anchors']);

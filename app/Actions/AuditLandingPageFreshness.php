@@ -110,9 +110,8 @@ final class AuditLandingPageFreshness
     }
 
     /**
-     * True if ANY of the product's offers is purchasable — priced, free of a
-     * negative condition, and free of a pick-excluding listing flag (see
-     * {@see ListingHealth::isPurchasable()}). Mirrors SelectLandingPagePicks's
+     * True if ANY of the product's offers is pick-eligible — purchasable and
+     * health-checked (see {@see ListingHealth::isPickEligible()}). Mirrors SelectLandingPagePicks's
      * identical rule (both now delegate to the same shared predicate, S2).
      *
      * Fixed 2026-08-12 (prod incident): the prior version inspected only the
@@ -124,7 +123,7 @@ final class AuditLandingPageFreshness
      */
     private static function hasEligibleOffer(Product $product): bool
     {
-        return $product->offers->contains(fn ($offer) => ListingHealth::isPurchasable($offer));
+        return $product->offers->contains(fn ($offer) => ListingHealth::isPickEligible($offer));
     }
 
     /**

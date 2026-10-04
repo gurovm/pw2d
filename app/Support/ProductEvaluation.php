@@ -69,6 +69,7 @@ final class ProductEvaluation
         private readonly ?string $reason,
         private readonly ?string $name,
         private readonly ?string $brand,
+        private readonly ?string $model,
         private readonly ?string $aiSummary,
         private readonly ?int $priceTier,
         private readonly ?float $amazonRating,
@@ -109,6 +110,7 @@ final class ProductEvaluation
             reason: $reason,
             name: null,
             brand: null,
+            model: null,
             aiSummary: null,
             priceTier: null,
             amazonRating: null,
@@ -137,12 +139,29 @@ final class ProductEvaluation
             reason: null,
             name: $name,
             brand: $brand,
+            model: self::optionalModel($raw),
             aiSummary: $aiSummary,
             priceTier: self::optionalPriceTier($raw),
             amazonRating: self::optionalFloat($raw, 'amazon_rating'),
             amazonReviewsCount: self::optionalInt($raw, 'amazon_reviews_count'),
             features: self::validatedFeatures($raw),
         );
+    }
+
+    /**
+     * Spec 041 — never throws: in-flight Gemini jobs and older fixtures carry no
+     * `model`, and a missing identity only means the pick guard falls back to
+     * its name heuristic. Trimmed, capped at the column's 120 characters.
+     */
+    private static function optionalModel(array $raw): ?string
+    {
+        $value = $raw['model'] ?? null;
+
+        if (!is_string($value) || trim($value) === '') {
+            return null;
+        }
+
+        return mb_substr(trim($value), 0, 120);
     }
 
     private static function requiredString(array $raw, string $field, int $maxLength): string
@@ -297,6 +316,11 @@ final class ProductEvaluation
     public function brand(): ?string
     {
         return $this->brand;
+    }
+
+    public function model(): ?string
+    {
+        return $this->model;
     }
 
     public function aiSummary(): ?string

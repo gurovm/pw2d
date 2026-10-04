@@ -417,4 +417,14 @@ class ProductEvaluationTest extends TestCase
 
         $this->assertSame(2, $eval->priceTier());
     }
+
+    /** @test */
+    public function model_is_optional_trimmed_and_capped_and_never_throws_when_missing(): void
+    {
+        $this->assertNull(ProductEvaluation::fromArray($this->validScoredPayload())->model());
+        $this->assertNull(ProductEvaluation::fromArray($this->validScoredPayload(['model' => '  ']))->model());
+        $this->assertNull(ProductEvaluation::fromArray($this->validScoredPayload(['model' => ['x']]))->model());
+        $this->assertSame('Oracle Jet', ProductEvaluation::fromArray($this->validScoredPayload(['model' => '  Oracle Jet ']))->model());
+        $this->assertSame(120, mb_strlen(ProductEvaluation::fromArray($this->validScoredPayload(['model' => str_repeat('a', 300)]))->model()));
+    }
 }

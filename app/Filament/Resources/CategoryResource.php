@@ -57,6 +57,12 @@ class CategoryResource extends Resource
                             ->rows(3)
                             ->columnSpanFull(),
                             
+                        Forms\Components\Textarea::make('bouncer_notes')
+                            ->label('Import notes (Bouncer)')
+                            ->rows(3)
+                            ->helperText('Plain words: what does NOT belong in this category, and what counts as a different model. Fed to the AI at import.')
+                            ->columnSpanFull(),
+
                         Forms\Components\TagsInput::make('sample_prompts')
                             ->label('Sample Search Prompts')
                             ->placeholder('Type a prompt and press Enter...')
