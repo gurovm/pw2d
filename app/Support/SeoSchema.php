@@ -90,9 +90,8 @@ class SeoSchema
     /**
      * Build meta + schema for a "Best X" landing page (Spec 027).
      *
-     * ItemList reuses the Spec 026 rating gate (via the shared buildListItem()
-     * helper) — rated picks emit nested Product + aggregateRating, rating-less
-     * picks emit URL-only ListItems. NO offers/price anywhere (Spec 019 policy).
+     * ItemList uses the shared buildListItem() helper — every pick is a URL-only ListItem. NO offers/price and NO
+     * aggregateRating anywhere (Specs 019, 042).
      *
      * @param  LandingPage $page          Must have `category` (with `parent`) eager-loaded.
      * @param  Collection  $pickProducts  Products for the rendered picks, in display order.
@@ -229,18 +228,18 @@ class SeoSchema
             $schema['image'] = str_starts_with($relative, 'http') ? $relative : url($relative);
         }
 
-        if ($product->amazon_reviews_count > 0 && $product->amazon_rating) {
-            $schema['aggregateRating'] = [
-                '@type'       => 'AggregateRating',
-                'ratingValue' => $product->amazon_rating,
-                'reviewCount' => $product->amazon_reviews_count,
-            ];
-        }
-
-        // Editorial review sourced from the AI-generated summary.
-        // reviewRating is deliberately omitted — we don't publish a 1-5 Pw2D score
-        // (see spec 022 §5.2). The review is still valid markup Google can use for
-        // snippet enhancement, just not Critic Review rich results.
+        // Editorial review from the AI-generated summary, rated with OUR OWN score
+        // (Spec 042): the mean of the category feature scores on a 0-10 scale, the same
+        // number shown on the page. Omitted unless every category feature is scored.
+        //
+        // Deliberately NOT emitted (Spec 042, verified against Google's guidelines
+        // 2026-10-04):
+        //  - aggregateRating from Amazon (Spec 022 §5.2): Google's review-snippet
+        //    guidelines forbid ratings aggregated from other websites and risk a
+        //    manual action.
+        //  - offers (Spec 019): a price-less Offer made every product page an invalid
+        //    merchant listing. The Product stays valid through `review`. When PA-API
+        //    arrives, an Offer with a real price can come back.
         if (!empty($product->ai_summary)) {
             $schema['review'] = [
                 '@type'      => 'Review',
@@ -250,31 +249,16 @@ class SeoSchema
                     'name'  => tenant('brand_name') ?: 'Pw2D',
                 ],
             ];
-        }
 
-        // Offer block intentionally omits `price` and `priceCurrency`.
-        // Amazon Associates ToS requires displayed prices come from PA-API
-        // and refresh within 24h; pw2d uses scraped prices and is deferring
-        // Associates connection until traffic exists (180-day-to-3-sales
-        // window). See docs/specs/019-seo-schema-no-price.md.
-        $bestOffer = $product->best_offer;
-
-        if ($bestOffer) {
-            $availability = match ($bestOffer->stock_status) {
-                'in_stock'     => 'https://schema.org/InStock',
-                'out_of_stock' => 'https://schema.org/OutOfStock',
-                default        => 'https://schema.org/InStock',
-            };
-
-            $schema['offers'] = [
-                '@type'        => 'Offer',
-                'availability' => $availability,
-                'url'          => $product->affiliate_url,
-                'seller'       => [
-                    '@type' => 'Organization',
-                    'name'  => $bestOffer->store?->name ?? 'Multiple retailers',
-                ],
-            ];
+            $score = $product->editorialScore();
+            if ($score !== null) {
+                $schema['review']['reviewRating'] = [
+                    '@type'       => 'Rating',
+                    'ratingValue' => $score,
+                    'bestRating'  => 10,
+                    'worstRating' => 0,
+                ];
+            }
         }
 
         $imageUrl = $product->image_url;
@@ -534,63 +518,18 @@ class SeoSchema
      * Build a single ItemList entry for a product — shared by buildItemListSchema()
      * (category/preset compare pages) and forLandingPage() ("Best X" pages).
      *
-     * A Product entity requires at least one of offers/review/aggregateRating
-     * (Google's Product snippet rule) or GSC reports a structured-data error.
-     * We only ever populate aggregateRating here, and only when both rating and
-     * reviewCount are real. Products without that data (specialty-store ingests,
-     * Amazon products with reviews_count=0) get the "summary page" ListItem style
-     * instead — a bare URL with no nested item, so Google evaluates the linked
-     * product page (which does carry valid Product markup) rather than an inline
-     * entity lacking the required signal. See docs/specs/026.
+     * Every pick is a URL-only ListItem, so Google evaluates the linked product
+     * page (which carries the valid Product markup). The nested Product with
+     * Amazon's aggregateRating (Specs 026/027) was removed in Spec 042: Google's
+     * review-snippet guidelines forbid ratings aggregated from other websites, and
+     * Product rich results do not support multi-product list pages anyway.
      */
     private static function buildListItem(Product $product, int $position): array
     {
-        $hasRating = !empty($product->amazon_rating) && (int) $product->amazon_reviews_count > 0;
-
-        if (!$hasRating) {
-            return [
-                '@type'    => 'ListItem',
-                'position' => $position,
-                'url'      => route('product.show', ['product' => $product->slug]),
-            ];
-        }
-
-        $item = [
-            '@type' => 'Product',
-            'name'  => $product->name,
-            'url'   => route('product.show', ['product' => $product->slug]),
-        ];
-
-        // image — use Amazon CDN URL (complies with Associates TOS; no local paths)
-        $offerImage = $product->offers?->first()?->image_url;
-        if (!empty($offerImage)) {
-            $item['image'] = $offerImage;
-        }
-
-        // description — strip any HTML tags from the AI-generated verdict
-        if (!empty($product->ai_summary)) {
-            $item['description'] = strip_tags($product->ai_summary);
-        }
-
-        // brand — fall back to first word of product name if brand relation is missing
-        $brandName    = $product->brand?->name ?? explode(' ', $product->name)[0];
-        $item['brand'] = ['@type' => 'Brand', 'name' => $brandName];
-
-        // aggregateRating — Offers (price) intentionally omitted — scraped prices are
-        // estimates and violate Google's strict price-matching rules for Merchant
-        // Center rich snippets.
-        $item['aggregateRating'] = [
-            '@type'       => 'AggregateRating',
-            'ratingValue' => $product->amazon_rating,
-            'bestRating'  => 5,
-            'worstRating' => 1,
-            'reviewCount' => $product->amazon_reviews_count,
-        ];
-
         return [
             '@type'    => 'ListItem',
             'position' => $position,
-            'item'     => $item,
+            'url'      => route('product.show', ['product' => $product->slug]),
         ];
     }
 

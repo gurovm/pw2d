@@ -162,6 +162,20 @@ class SelectLandingPagePicksModelIdentityTest extends TestCase
     }
 
     /** @test */
+    public function models_differing_only_by_a_plus_are_distinct_and_both_can_be_picked(): void
+    {
+        $shure = Brand::factory()->create(['name' => 'Shure']);
+
+        $a = $this->product('Shure MV7 Podcast Microphone', $shure, 'MV7');
+        $b = $this->product('Shure MV7+ Podcast Microphone', $shure, 'MV7+');
+        $this->fillerBrands(5);
+
+        $picked = $this->pickedIds();
+        $this->assertContains($a->id, $picked);
+        $this->assertContains($b->id, $picked);
+    }
+
+    /** @test */
     public function a_mixed_pair_with_one_null_model_falls_back_to_the_existing_heuristic(): void
     {
         $razer = Brand::factory()->create(['name' => 'Razer']);

@@ -121,6 +121,20 @@ class ApplyProductModelsCommandTest extends TestCase
     }
 
     /** @test */
+    public function dry_run_puts_mv7_and_mv7_plus_in_different_groups(): void
+    {
+        [$a, $b] = $this->jets;
+
+        Artisan::call('pw2d:products:apply-models', [
+            'tenant' => 'models-tenant',
+            'file'   => $this->file([$a->id => 'MV7', $b->id => 'MV7+']),
+            '--dry-run' => true,
+        ]);
+
+        $this->assertStringContainsString('Same-model groups: none', Artisan::output());
+    }
+
+    /** @test */
     public function apply_writes_the_models_after_a_dry_run_has_rolled_back(): void
     {
         [$a, $b] = $this->jets;

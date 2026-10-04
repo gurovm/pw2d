@@ -196,8 +196,8 @@ class SelectLandingPagePicks
                     continue;
                 }
 
-                $candidateModel = self::normalizeName($candidate->model);
-                $pickedModel    = self::normalizeName($picked->model);
+                $candidateModel = \App\Support\ModelIdentity::normalize($candidate->model);
+                $pickedModel    = \App\Support\ModelIdentity::normalize($picked->model);
 
                 if ($candidateModel !== '' && $pickedModel !== '' && $candidate->brand_id !== null && $picked->brand_id !== null) {
                     if ($candidate->brand_id === $picked->brand_id && $candidateModel === $pickedModel) {

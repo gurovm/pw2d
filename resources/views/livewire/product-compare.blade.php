@@ -598,6 +598,15 @@
                                                                 objectively rated at <strong
                                                                         class="text-gray-900">{{ number_format($matchScore, 1) }}%</strong>
                                                                 compatibility for your exact needs.</p>
+                                                @php
+                                                        $editorialScore = $this->selectedProduct->editorialScore();
+                                                @endphp
+                                                @if ($editorialScore !== null)
+                                                        <p class="mt-2 text-sm font-semibold text-gray-900"
+                                                                title="Average of our {{ $this->selectedProduct->category->features->count() }} feature scores. Not affected by price, Amazon rating or your sliders.">
+                                                                {{ tenant('brand_name') ?: 'Pw2D' }} score:
+                                                                {{ number_format($editorialScore, 1) }} / 10</p>
+                                                @endif
                                                 </div>
                                         </div>
 

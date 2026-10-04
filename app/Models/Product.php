@@ -84,6 +84,39 @@ class Product extends Model
     }
 
     /**
+     * Our own editorial score (0-10): the mean of raw_value across ALL of the
+     * category's features, divided by 10, rounded to one decimal. Null unless every
+     * category feature has a value, so a partially-scored product gets no rating
+     * rather than a misleading one (Spec 042).
+     *
+     * No query per call: reads the loaded `featureValues` and `category.features`
+     * relations, or the category feature ids passed in. Callers must eager-load.
+     *
+     * @param  array<int, int>|null  $categoryFeatureIds  Overrides category.features when given.
+     */
+    public function editorialScore(?array $categoryFeatureIds = null): ?float
+    {
+        $ids = $categoryFeatureIds ?? $this->category?->features->pluck('id')->all() ?? [];
+
+        if ($ids === []) {
+            return null;
+        }
+
+        $values = $this->featureValues->pluck('raw_value', 'feature_id');
+
+        $sum = 0.0;
+        foreach (array_unique($ids) as $id) {
+            $raw = $values->get($id);
+            if ($raw === null) {
+                return null;
+            }
+            $sum += (float) $raw;
+        }
+
+        return round($sum / count(array_unique($ids)) / 10, 1);
+    }
+
+    /**
      * Get feature values with their related features eager loaded.
      */
     public function featuresWithValues(): BelongsToMany

@@ -256,6 +256,6 @@ class ApplyProductModels extends Command
 
     private static function normalize(string $model): string
     {
-        return preg_replace('/[^a-z0-9]+/', '', mb_strtolower($model)) ?? '';
+        return \App\Support\ModelIdentity::normalize($model);
     }
 }

@@ -72,7 +72,7 @@ class LandingPageSchemaTest extends TestCase
     // =========================================================================
 
     /** @test */
-    public function rated_pick_emits_nested_product_with_aggregate_rating(): void
+    public function rated_pick_emits_url_only_list_item_without_aggregate_rating(): void
     {
         $category = Category::factory()->create(['name' => 'Espresso Machines', 'slug' => 'lp-schema-rated-cat']);
         $brand    = Brand::factory()->create(['name' => 'JURA']);
@@ -93,12 +93,8 @@ class LandingPageSchemaTest extends TestCase
         $seo     = SeoSchema::forLandingPage($page, collect([$product]));
         $element = $this->itemListSchema($seo['schemas'])['itemListElement'][0];
 
-        $this->assertArrayHasKey('item', $element, 'Rated pick must carry a nested Product entity');
-        $this->assertSame('Product', $element['item']['@type']);
-        $this->assertSame('JURA X10 Dark Inox', $element['item']['name']);
-        $this->assertArrayHasKey('aggregateRating', $element['item']);
-        $this->assertSame(4.6, $element['item']['aggregateRating']['ratingValue']);
-        $this->assertSame(312, $element['item']['aggregateRating']['reviewCount']);
+        $this->assertSame(['@type', 'position', 'url'], array_keys($element), 'Rated pick must be a URL-only ListItem (Spec 042)');
+        $this->assertStringNotContainsString('aggregateRating', json_encode($seo['schemas']));
     }
 
     /** @test */
@@ -159,7 +155,7 @@ class LandingPageSchemaTest extends TestCase
 
         $this->assertCount(2, $elements);
         $this->assertSame([1, 2], array_column($elements, 'position'));
-        $this->assertArrayHasKey('item', $elements[0]);
+        $this->assertArrayNotHasKey('item', $elements[0], 'Rated picks are URL-only too (Spec 042)');
         $this->assertArrayNotHasKey('item', $elements[1]);
     }
 

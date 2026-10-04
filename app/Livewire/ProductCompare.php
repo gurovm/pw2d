@@ -107,7 +107,7 @@ class ProductCompare extends Component
     public function selectedProduct()
     {
         return $this->selectedProductSlug
-            ? Product::with(['brand', 'featureValues.feature', 'offers.store'])->where('slug', $this->selectedProductSlug)->first()
+            ? Product::with(['brand', 'featureValues.feature', 'offers.store', 'category.features'])->where('slug', $this->selectedProductSlug)->first()
             : null;
     }
 

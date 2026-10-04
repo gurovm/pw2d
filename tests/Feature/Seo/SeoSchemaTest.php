@@ -9,6 +9,7 @@ use App\Models\Category;
 use App\Models\Feature;
 use App\Models\Preset;
 use App\Models\Product;
+use App\Models\ProductFeatureValue;
 use App\Models\ProductOffer;
 use App\Models\Store;
 use App\Models\Tenant;
@@ -240,173 +241,150 @@ class SeoSchemaTest extends TestCase
 
     /**
      * @test
-     * §5.4 — product with an offer → schema contains an Offer block, but never a
-     * `price` or `priceCurrency` field (Amazon Associates ToS — see
-     * docs/specs/019-seo-schema-no-price.md).
+     * Spec 042 — the price-less Offer made every product page an invalid merchant
+     * listing, so `offers` is never emitted, with or without offers on the product.
      */
-    public function test_for_selected_product_emits_offer_without_price_keys(): void
+    public function test_for_selected_product_never_emits_offers(): void
     {
         $store   = $this->makeStore();
         $product = Product::factory()->create(['slug' => 'product-with-offer']);
         $this->makeOffer($product, $store, 99.99, 'in_stock');
         $product->load('offers.store', 'brand');
 
-        $seo    = SeoSchema::forSelectedProduct($product);
-        $schema = $seo['schemas'][0];
+        $schema = SeoSchema::forSelectedProduct($product)['schemas'][0];
 
-        $this->assertArrayHasKey('offers', $schema, 'schema must include "offers" when an offer exists');
-        $this->assertSame('Offer', $schema['offers']['@type']);
-        $this->assertArrayHasKey('availability', $schema['offers']);
-        $this->assertArrayHasKey('url', $schema['offers']);
-        $this->assertArrayHasKey('seller', $schema['offers']);
+        $this->assertArrayNotHasKey('offers', $schema, 'Offer block must not be emitted (Spec 042)');
 
-        $this->assertArrayNotHasKey(
-            'price',
-            $schema['offers'],
-            'Offer.price must NOT be emitted from scraped data (Amazon Associates ToS)'
-        );
-        $this->assertArrayNotHasKey(
-            'priceCurrency',
-            $schema['offers'],
-            'Offer.priceCurrency must NOT be emitted when price is omitted'
-        );
+        $bare = Product::factory()->create(['slug' => 'product-no-offers']);
+        $bare->load('offers.store', 'brand');
+        $this->assertArrayNotHasKey('offers', SeoSchema::forSelectedProduct($bare)['schemas'][0]);
     }
 
     /**
      * @test
-     * §5.4 — no offers at all → schema must not contain "offers" key.
+     * Spec 042 — Amazon's rating must never reach the markup as aggregateRating
+     * (Google's review-snippet guidelines forbid ratings aggregated from other sites).
      */
-    public function test_for_selected_product_omits_offer_when_product_has_no_offers(): void
+    public function test_for_selected_product_never_emits_aggregate_rating(): void
     {
-        $product = Product::factory()->create(['slug' => 'product-no-offers']);
-        $product->load('offers.store', 'brand');
-
-        $seo    = SeoSchema::forSelectedProduct($product);
-        $schema = $seo['schemas'][0];
-
-        $this->assertArrayNotHasKey('offers', $schema, 'schema must not contain "offers" when there are no priced offers');
-    }
-
-    /**
-     * @test
-     * All offers have null scraped_price → best_offer accessor filters them
-     * out → schema has no Offer block. Unrelated to the price-disclosure
-     * policy; this is pre-existing Product::best_offer behavior.
-     */
-    public function test_for_selected_product_omits_offer_when_all_scraped_prices_are_null(): void
-    {
-        $store   = $this->makeStore();
-        $product = Product::factory()->create(['slug' => 'product-null-price']);
-        ProductOffer::create([
-            'product_id'    => $product->id,
-            'store_id'      => $store->id,
-            'tenant_id'     => null,
-            'url'           => 'https://www.amazon.com/dp/NULLPRICE',
-            'scraped_price' => null,
-            'raw_title'     => 'No price yet',
-            'stock_status'  => 'in_stock',
+        $product = Product::factory()->create([
+            'slug'                 => 'product-amazon-rated',
+            'amazon_rating'        => 4.6,
+            'amazon_reviews_count' => 312,
+            'ai_summary'           => 'A summary.',
         ]);
-        $product->load('offers.store', 'brand');
+        $product->load('offers.store', 'brand', 'category.features', 'featureValues');
 
-        $seo    = SeoSchema::forSelectedProduct($product);
-        $schema = $seo['schemas'][0];
+        $schema = SeoSchema::forSelectedProduct($product)['schemas'][0];
 
-        $this->assertArrayNotHasKey('offers', $schema);
+        $this->assertArrayNotHasKey('aggregateRating', $schema);
+        $this->assertArrayNotHasKey('aggregateRating', $schema['review'] ?? []);
     }
 
     /**
-     * @test
-     * §5.4 — Offer.availability maps correctly for each stock_status value.
+     * Build a product in a category with $featureCount features, scoring the given
+     * raw values (index-aligned; missing indexes stay unscored).
+     *
+     * @param  array<int, float>  $rawValues
      */
-    public function test_offer_availability_respects_stock_status(): void
+    private function makeScoredProduct(string $slug, int $featureCount, array $rawValues): Product
     {
-        $store = $this->makeStore();
+        $category = Category::factory()->create(['slug' => $slug . '-cat']);
+        $features = Feature::factory()->count($featureCount)->create(['category_id' => $category->id]);
+        $product  = Product::factory()->create([
+            'category_id' => $category->id,
+            'slug'        => $slug,
+            'ai_summary'  => 'A summary.',
+        ]);
 
-        $cases = [
-            'in_stock'     => 'https://schema.org/InStock',
-            'out_of_stock' => 'https://schema.org/OutOfStock',
-            'unknown_val'  => 'https://schema.org/InStock',  // default arm
-            null            => 'https://schema.org/InStock',  // null → default
-        ];
-
-        foreach ($cases as $stockStatus => $expectedAvailability) {
-            $product = Product::factory()->create(['slug' => 'stock-test-' . uniqid()]);
-            ProductOffer::create([
-                'product_id'    => $product->id,
-                'store_id'      => $store->id,
-                'tenant_id'     => null,
-                'url'           => 'https://www.amazon.com/dp/STOCK',
-                'scraped_price' => 49.99,
-                'raw_title'     => 'Stock Test Product',
-                'stock_status'  => $stockStatus,
-            ]);
-            $product->load('offers.store', 'brand');
-
-            $seo    = SeoSchema::forSelectedProduct($product);
-            $schema = $seo['schemas'][0];
-
-            $this->assertArrayHasKey('offers', $schema);
-            $this->assertSame(
-                $expectedAvailability,
-                $schema['offers']['availability'],
-                "stock_status={$stockStatus} should map to {$expectedAvailability}"
-            );
+        foreach ($features as $i => $feature) {
+            if (array_key_exists($i, $rawValues)) {
+                ProductFeatureValue::factory()->create([
+                    'product_id' => $product->id,
+                    'feature_id' => $feature->id,
+                    'raw_value'  => $rawValues[$i],
+                ]);
+            }
         }
+
+        return $product->load('brand', 'category.features', 'featureValues');
     }
 
-    /**
-     * @test
-     * §5.4 — Offer.seller.name falls back to "Multiple retailers" when offer has no store.
-     */
-    public function test_offer_seller_name_falls_back_when_store_is_null(): void
+    /** @test */
+    public function review_rating_is_present_when_every_category_feature_is_scored(): void
     {
-        $product = Product::factory()->create(['slug' => 'product-no-store']);
-        ProductOffer::create([
-            'product_id'    => $product->id,
-            'store_id'      => null,   // no store associated
-            'tenant_id'     => null,
-            'url'           => 'https://www.amazon.com/dp/NOSTORE',
-            'scraped_price' => 29.99,
-            'raw_title'     => 'Storeless Offer',
-            'stock_status'  => 'in_stock',
-        ]);
-        $product->load('offers.store', 'brand');
+        $product = $this->makeScoredProduct('rr-all', 3, [60.0, 70.0, 75.0]);
 
-        $seo    = SeoSchema::forSelectedProduct($product);
-        $schema = $seo['schemas'][0];
+        $review = SeoSchema::forSelectedProduct($product)['schemas'][0]['review'];
 
-        $this->assertArrayHasKey('offers', $schema);
         $this->assertSame(
-            'Multiple retailers',
-            $schema['offers']['seller']['name'],
-            'seller.name must fall back to "Multiple retailers" when store is null'
+            ['@type' => 'Rating', 'ratingValue' => 6.8, 'bestRating' => 10, 'worstRating' => 0],
+            $review['reviewRating'],
         );
+    }
+
+    /** @test */
+    public function review_rating_is_absent_when_one_category_feature_is_unscored(): void
+    {
+        $product = $this->makeScoredProduct('rr-one-missing', 3, [60.0, 70.0]);
+
+        $schema = SeoSchema::forSelectedProduct($product)['schemas'][0];
+
+        $this->assertArrayHasKey('review', $schema);
+        $this->assertArrayNotHasKey('reviewRating', $schema['review']);
+    }
+
+    /** @test */
+    public function review_rating_is_absent_when_no_feature_is_scored(): void
+    {
+        $product = $this->makeScoredProduct('rr-none', 3, []);
+
+        $schema = SeoSchema::forSelectedProduct($product)['schemas'][0];
+
+        $this->assertArrayHasKey('review', $schema);
+        $this->assertArrayNotHasKey('reviewRating', $schema['review']);
     }
 
     /**
      * @test
-     * §5.4 — Offer.url resolves via affiliate_url accessor (may include affiliate params).
+     * The number shown on the product page equals review.reviewRating.ratingValue
+     * in the rendered JSON-LD (Spec 042 §2).
      */
-    public function test_offer_url_uses_affiliate_url(): void
+    public function rendered_product_page_shows_the_same_score_as_the_json_ld(): void
     {
-        $store   = $this->makeStore('Amazon', 'tag=pw2d-20');
-        $product = Product::factory()->create(['slug' => 'product-affiliate-url']);
-        $this->makeOffer($product, $store, 79.99);
-        $product->load('offers.store', 'brand');
+        $product = $this->makeScoredProduct('rr-render', 3, [60.0, 70.0, 75.0]);
 
-        $seo    = SeoSchema::forSelectedProduct($product);
-        $schema = $seo['schemas'][0];
+        $html = $this->get(route('product.show', ['product' => $product->slug]))
+            ->assertOk()
+            ->getContent();
 
-        $this->assertArrayHasKey('offers', $schema);
-        $offerUrl = $schema['offers']['url'];
+        $text = preg_replace('/\s+/', ' ', strip_tags($html));
+        $this->assertMatchesRegularExpression('/Acme Shop score: (\d+\.\d) \/ 10/', $text);
+        preg_match('/Acme Shop score: (\d+\.\d) \/ 10/', $text, $shown);
 
-        $this->assertNotEmpty($offerUrl, 'Offer.url must not be empty');
-        $this->assertTrue(
-            str_starts_with($offerUrl, 'http'),
-            "Offer.url must start with http, got: {$offerUrl}"
-        );
-        // The store has affiliate_params='tag=pw2d-20', so the url should include it.
-        $this->assertStringContainsString('tag=pw2d-20', $offerUrl, 'Offer.url must include affiliate tag from store.affiliate_params');
+        $ratingValue = null;
+        preg_match_all('#<script type="application/ld\+json">(.*?)</script>#s', $html, $blocks);
+        foreach ($blocks[1] as $json) {
+            $decoded = json_decode($json, true);
+            if (($decoded['@type'] ?? null) === 'Product') {
+                $ratingValue = $decoded['review']['reviewRating']['ratingValue'] ?? null;
+            }
+        }
+
+        $this->assertSame(6.8, $ratingValue);
+        $this->assertSame('6.8', $shown[1]);
+    }
+
+    /** @test */
+    public function rendered_product_page_omits_score_line_when_a_feature_is_unscored(): void
+    {
+        $product = $this->makeScoredProduct('rr-render-missing', 3, [60.0, 70.0]);
+
+        $html = $this->get(route('product.show', ['product' => $product->slug]))
+            ->assertOk()
+            ->getContent();
+
+        $this->assertStringNotContainsString('Acme Shop score:', preg_replace('/\s+/', ' ', strip_tags($html)));
     }
 
     // -------------------------------------------------------------------------
@@ -1259,11 +1237,11 @@ class SeoSchemaTest extends TestCase
 
     /**
      * @test
-     * §5.2 — product WITH amazon_rating and amazon_reviews_count > 0 → unchanged
-     * full nested Product with name, url, brand, and aggregateRating
-     * (ratingValue, bestRating 5, worstRating 1, reviewCount).
+     * Spec 042 — a product WITH amazon_rating and reviews is now ALSO a URL-only
+     * ListItem: no nested Product, no aggregateRating (Google forbids ratings
+     * aggregated from other sites).
      */
-    public function test_item_list_includes_full_nested_product_for_rated_product(): void
+    public function test_item_list_emits_url_only_list_item_for_rated_product(): void
     {
         $category = Category::factory()->create(['name' => 'Espresso Machines', 'slug' => 'espresso-machines-026-2']);
         $brand    = Brand::factory()->create(['name' => 'JURA']);
@@ -1280,31 +1258,14 @@ class SeoSchemaTest extends TestCase
         $seo     = SeoSchema::forCategoryPage($category, collect(), null, null, null, collect([$product]));
         $element = $seo['schemas'][0]['itemListElement'][0];
 
-        $this->assertSame('ListItem', $element['@type']);
-        $this->assertSame(1, $element['position']);
-        $this->assertArrayHasKey('item', $element, 'Rated product must carry a nested "item" (Product) entity');
-
-        $item = $element['item'];
-        $this->assertSame('Product', $item['@type']);
-        $this->assertSame('JURA X10 Dark Inox', $item['name']);
-        $this->assertSame(route('product.show', ['product' => $product->slug]), $item['url']);
-        $this->assertArrayHasKey('brand', $item);
-        $this->assertSame('JURA', $item['brand']['name']);
-
-        $this->assertArrayHasKey('aggregateRating', $item);
-        $rating = $item['aggregateRating'];
-        $this->assertSame('AggregateRating', $rating['@type']);
-        $this->assertSame(4.6, $rating['ratingValue']);
-        $this->assertSame(5, $rating['bestRating']);
-        $this->assertSame(1, $rating['worstRating']);
-        $this->assertSame(312, $rating['reviewCount']);
+        $this->assertSame(['@type', 'position', 'url'], array_keys($element));
+        $this->assertSame(route('product.show', ['product' => $product->slug]), $element['url']);
+        $this->assertStringNotContainsString('aggregateRating', json_encode($seo['schemas']));
     }
 
     /**
      * @test
-     * §5.3 — mixed list (rated, rated, rating-less) → positions remain 1, 2, 3
-     * sequential across the full/summary split, and element count equals
-     * product count.
+     * Positions stay 1..N sequential and every element is URL-only, rated or not.
      */
     public function test_item_list_mixed_rated_and_rating_less_positions_are_sequential(): void
     {
@@ -1335,11 +1296,11 @@ class SeoSchemaTest extends TestCase
         $elements = $seo['schemas'][0]['itemListElement'];
 
         $this->assertCount(3, $elements, 'itemListElement count must equal product count');
-        $this->assertSame([1, 2, 3], array_column($elements, 'position'), 'Positions must be sequential 1..N across the mixed list');
+        $this->assertSame([1, 2, 3], array_column($elements, 'position'));
 
-        $this->assertArrayHasKey('item', $elements[0], 'Position 1 (rated) must have a nested item');
-        $this->assertArrayHasKey('item', $elements[1], 'Position 2 (rated) must have a nested item');
-        $this->assertArrayNotHasKey('item', $elements[2], 'Position 3 (rating-less) must not have a nested item');
+        foreach ($elements as $element) {
+            $this->assertSame(['@type', 'position', 'url'], array_keys($element));
+        }
     }
 
     /**
