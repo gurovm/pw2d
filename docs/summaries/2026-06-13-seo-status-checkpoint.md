@@ -1031,3 +1031,28 @@ visitor → store rate is the first engagement figure that looks like a working 
 1. Does c2d's page-one climb continue (≥ 1,300/wk) and do clicks hold ≥ 15/wk?
 2. pw2d: baseline the product-page CTR before any title change ships.
 3. Do the three silent c2d `/best/` pages appear?
+
+### Addendum (same day) — Search Console "Merchant listings" issues, and where our stars come from
+Owner screenshots: Merchant listings → **invalid** "Either price or priceSpecification should be specified
+(in offers)" (c2d 2 items, pw2d 1) + warnings `hasMerchantReturnPolicy` / `shippingDetails`. URL Inspection
+API (service account, read-only) on the two named c2d URLs **and a control page not in the report**
+(`/product/cocinare-gooseneck-kettle-0mrlj`) shows the identical result on all three: indexed (PASS);
+Product snippets valid with price warnings; Review snippets valid; **Merchant listings ERROR**. Cause:
+`SeoSchema::forSelectedProduct` emits an `Offer` without `price` (Spec 019 policy) on every product page —
+the count will grow as Google classifies more pages. It is not a ranking issue; the price-less Offer earns
+nothing (PRODUCT_SNIPPETS 28d: c2d 216 impr / 0 clicks, pw2d 19 / 0).
+
+**The bigger finding — the stars.** Search appearance, last 28 days (GSC API):
+
+| tenant | total impr / clicks | REVIEW_SNIPPET impr / clicks |
+|---|---|---|
+| c2d | 5,920 / 41 | **2,922 / 26** |
+| pw2d | 2,481 / 17 | **1,432 / 14** |
+
+Our `review` carries no `reviewRating` (Spec 022 §5.2), so the stars come from `aggregateRating`, which is
+**Amazon's rating and review count** — on product pages (`SeoSchema.php:233`) and on every rated pick in
+compare/best ItemLists (`:582`). Google's review-snippet guidelines (checked 2026-10-04): *"Don't aggregate
+reviews or ratings from other websites"* and *"Ratings must be sourced directly from users"*; violations
+may lead to a manual action. So the markup that sits on half our impressions and most of our clicks is the
+one Google's rules forbid. Decision for the owner (see todo): replace it with a rating of our own that is
+visible on the page, remove it, or keep the risk.

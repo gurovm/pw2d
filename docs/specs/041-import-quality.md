@@ -231,3 +231,18 @@ import sees it. ~48 calls ≈ $0.89; not in prod `ai_usage` (ran locally).
   (`Wave Keys` for "Wave Keys Rose").
 
 Verdict: **pass** on catch rate and model quality; the single false ignore traces to note content, not the rule.
+
+## Amendment (2026-10-04) — model normalisation must keep "+"
+
+The first backfill dry-run (podcast mics) grouped **Shure MV7** with **MV7+**: `normalize()` keeps only
+`[a-z0-9]`, so `MV7+` → `mv7`. "+" is identity in this domain (MV7 / MV7+, GLXD14 / GLXD14+, Wave:3 is fine).
+Fix: one shared normaliser — lowercase, `+` → `plus`, then strip non-alphanumerics — used by **both**
+`SelectLandingPagePicks` (model-first identity, currently via `normalizeName()`) and
+`ApplyProductModels::normalize()` (group report), so the report can never disagree with the picker. Test:
+`MV7` ≠ `MV7+`, `MV7+` = `mv7 +`, `Wave:3` = `Wave 3`. No backfill is applied before this ships.
+
+Dry-run result for podcast mics (before the fix): 23 same-model groups, all colour / switch (`-S`, `SM58S`) /
+bundle / pack variants except the MV7 one; page impact = SM58S (beginner) drops out because the SM58 2-Pack
+is already the overall pick (correct — one microphone twice), SM7dB (premium, unpriced) → MV7+. Nine live
+products fall under the podcast note's exclusions (3+ mic packs ×5, lavalier, two shotgun/on-camera mics,
+a camera shotgun) — owner decides hides.
