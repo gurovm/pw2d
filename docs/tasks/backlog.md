@@ -18,7 +18,9 @@ the code in brackets. Codes (Q5, F12, H-E…) are kept only so the old text can 
 
 ## Import, Bouncer & AI
 
-- [ ] **Duplicate variant rows** — SM58 family, pack sizes, colourways as separate products; within-category exact-ASIN duplicates too [F29, "Duplicate rows also occur WITHIN a category"]
+- [ ] **Duplicate variant rows** — SM58 family, pack sizes, colourways as separate products; within-category exact-ASIN duplicates too [F29, "Duplicate rows also occur WITHIN a category"]; 2026-10-04: identical rows Turtle Beach Stealth 600 ×3, Keychron C1 ×7 — queryable once Spec 041's `model` column is backfilled → Spec 041 §Follow-ups
+- [ ] **Single-product re-import changes a live product's URL and can detach it** — renames + re-slugs from the raw title, re-runs the AI, detaches on a stale rejection row (93 live products carry one) → Spec 041 §Follow-ups
+- [ ] **Delete the `modelKey()` heuristic** — once no live product has a NULL `model` → Spec 041 Part 3
 - [ ] **`pw2d:ai-assign-categories` would put grain mills into manual-coffee-grinders** — tooling hazard, check before any tenant-wide run
 - [ ] **Add the sweep step to the documented top-up sequence** — import → *read and sweep* → rescan → regenerate [Spec 031 amendment]
 - [ ] **Trigger discovery on unbuyable share, not only pool size**

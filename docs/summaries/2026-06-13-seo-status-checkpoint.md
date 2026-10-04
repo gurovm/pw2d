@@ -935,3 +935,99 @@ project token. Two weeks after that, c2d gives the first meaningful read.
 2. Do clicks move at all? If page-one impressions hold two more weeks with flat clicks, the question
    becomes snippet/title CTR — that would be the first on-page work justified since June.
 3. Do the last three silent c2d `/best/` pages appear?
+
+## UPDATE — 2026-10-04 check: page-one visibility HELD a fourth week on both tenants. c2d clicks finally moved (28d 26 → 39, store clicks 5 → 12); pw2d clicks did not (17 → 15) — pw2d now meets the "flat clicks" trigger for title/snippet work.
+
+*(The ~09-28 check was skipped; this read covers two weeks. Picks runs on both tenants done today.)*
+
+**Pipeline:** 4/4 HEALTHY. GSC through 09-29 on both tenants (no lag between them), GA4 through 10-03. No
+`outbound clicks failed` in the log. Week 202639 is partial (3 days: 09-27 → 29).
+
+### Trajectory
+| Metric (28d) | pw2d 09-21 | **pw2d 10-04** | c2d 09-21 | **c2d 10-04** |
+|---|---|---|---|---|
+| Pages w/ impressions | 386 | **377** | 288 | **304** |
+| Impressions | 2,406 | **2,278** | 4,459 | **5,653** |
+| Clicks | 17 | **15** | 26 | **39** |
+| Weighted pos | 16.7 | **10.8** | 17.8 | **11.5** |
+| CTR | 0.71% | **0.66%** | 0.58% | **0.69%** |
+
+### Position buckets (impressions per week)
+| tenant | wk | ≤10 | 11–20 | 21–50 | 50+ | clicks |
+|---|---|---|---|---|---|---|
+| pw2d | 202636 | 427 | 157 | 81 | 7 | 2 |
+| pw2d | 202637 | 596 | 91 | 50 | 4 | 7 |
+| pw2d | 202638 | 477 | 87 | 35 | 8 | 2 |
+| pw2d | 202639 (3 d) | 199 | 41 | 16 | 2 | 4 |
+| c2d | 202636 | 921 | 211 | 161 | 54 | 6 |
+| c2d | 202637 | 1,054 | 333 | 112 | 29 | 10 |
+| c2d | 202638 | 1,304 | 365 | 71 | 14 | 19 |
+| c2d | 202639 (3 d) | 851 | 143 | 28 | 2 | 4 |
+
+Per day, page-one: pw2d 85 → 68 → 66 (holding ≥ 400/wk); c2d 151 → 186 → **284** (still rising). Q1 from
+09-21 answered **yes, both**. The 09-21 partial-week figures (pw2d 464, c2d 849 for 202637) are superseded
+by the full weeks above.
+
+### Google clicks → store clicks (28d)
+- **c2d: 39 → 12** (baseline 5). Product pages 7 (two RHD/Cosori/Cocinare kettles, Jura J10, Bezzera Hobby,
+  Clever and Kalita drippers), `/compare/gooseneck-kettles` 2, `/best/super-automatic-espresso-machines` 1.
+- **pw2d: 15 → 2** (baseline 1). `/product/hyperx-cloud-iii…`, `/product/mistel-barocco-md770…`.
+- PostHog cross-check (precise `href` match to amazon.com / amzn.to / clivecoffee.com): c2d 10 clicks by
+  7 people, pw2d 4 by 4 — same order as GA4.
+
+### Surfaces (14d)
+pw2d: product 654 impr / 6 clicks · compare 174 / 0 · best 27 / 0. c2d: product 2,194 / 17 · compare 468 / 5
+· best 113 / 1. Product pages are ~75% of impressions and most clicks on both tenants.
+
+### Target preset queries (14d)
+pw2d (query the tenant on its own — a combined `ORDER BY tenant_id … LIMIT 20` returns only c2d rows):
+
+| Query | 08-24 | 09-01 | 09-21 | **10-04** |
+|---|---|---|---|---|
+| mechanical keyboard for streamers (`?preset=streamer`) | — | — | 8.5 | **9.4** (55 impr, 0 clicks) |
+| gaming headset for remote workers (`?preset=remote-worker`) | — | — | 6.4 | **6.2** (49 impr, 0 clicks) |
+| streamer keyboards | 14.8 | 18.7 | 10.7 | **16.0** (1 impr) |
+| rsi keyboard → "best mechanical keyboard for rsi" | 17.4 | 15.7 | 19.0 | **19.5** |
+| ergonomic keyboard for programmers | 18.6 | 55.9 | 21.3 | **19.7** |
+
+Flat: page one for the two newest preset queries, page two for the ergonomic ones; zero clicks on all. c2d's preset
+pages now rank page one for their own long-tail: "best manual coffee grinders" → `?preset=traveler` 7.4
+(24 impr), "durable pour over coffee maker" → `?preset=beginner` 5.7, "semi-automatic espresso for
+beginners" 9.3, "koios electric kettle review" 8.8, "cold brew maker for developers" 8.9 — all 0 clicks
+except one ("best collapsible coffee dripper", pos 12.5).
+
+**Remote-worker headsets** (`/compare/gaming-chat-headsets?preset=remote-worker`): 19 → 119 → 49 impr/wk at
+pos ~6.2, **0 clicks in 187 impressions** over three weeks. Live title "Best Gaming & Chat Headsets for
+Remote Worker | Pw2D" (singular "Worker" — reads machine-made); description is fine. Cheap fix candidate
+for the title/snippet work below, not a standalone spec.
+
+### `/best/` pages — still 8 of 11 with rows
+c2d super-automatic 193 impr / 2 clicks; gooseneck 43 / 1; manual grinders 43 / 1. pw2d mechanical keyboards
+103 / 1; ergonomic 42 / 0; headsets 18 / 0; lavalier 9 / 1; podcast mics 4 / 0. Still silent: c2d
+cold-brew, pour-over, semi-automatic (Q3: no).
+
+### Traffic quality — two open questions closed
+- **c2d's "5× jump" from 09-17 is not people.** GA4 sessions swing 3 → 40 a day; PostHog (EU) sees a flat
+  ~4 visitors a day on c2d (53 in 13 days, 26 from google.com). GA4 sessions are bot-inflated on c2d too.
+- **pw2d GA4 sessions are bot-inflated.** PostHog's only spike, 57 "direct" visitors on 09-22, is all CN,
+  Chrome, single-pageview, 08:00–11:00 UTC — a crawler. **Rule: quote PostHog visitors, never GA4
+  sessions, for either tenant.** GA4 stays useful only for outbound clicks (Spec 040).
+
+### First engagement read with c2d (13 days, 09-21 → 10-04)
+c2d: 53 visitors, 70 pageviews; Google visitors 28 people / 35 pageviews (**1.25 pages each**); 11
+auto-opened customize drawers; **7 people clicked through to a store** (~13% of visitors). pw2d: ~5
+real visitors a day outside the bot spike; 4 people clicked a store link. Small numbers, but c2d's
+visitor → store rate is the first engagement figure that looks like a working funnel.
+
+### Decisions (2026-10-04)
+- **Visibility is holding; the KPI stays page-one impressions + clicks.**
+- **c2d: no on-page work.** Clicks and store clicks both moved; let it run.
+- **pw2d: title/snippet CTR work is now justified** (page-one held three full weeks, clicks flat). Scope it
+  on **product page titles** (75% of impressions), and run it together with Spec 041's 88 product renames so
+  title changes ship once and are measured once. The remote-worker title fix rides along.
+- **Stop reading GA4 sessions** (bots on both tenants).
+
+### Next check (~2026-10-11, with the weekly picks run)
+1. Does c2d's page-one climb continue (≥ 1,300/wk) and do clicks hold ≥ 15/wk?
+2. pw2d: baseline the product-page CTR before any title change ships.
+3. Do the three silent c2d `/best/` pages appear?
