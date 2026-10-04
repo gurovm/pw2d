@@ -54,6 +54,27 @@ Prod: `ssh root@209.97.153.234`, app at `/var/www/pw2d`, DB via `mysql -u root p
 
    **Compare the latest GSC date across tenants.** `pw2d:seo:status` said HEALTHY for days while pw2d's GSC writes were failing (one over-long query dropped every row for a date, 2026-09-18). If one tenant's latest GSC date lags the other by more than a day, run `pw2d:seo:pull {tenant}` by hand and read the Errors column.
 
+2c. **Estimated affiliate revenue** (owner decision 2026-10-04 — the trigger for joining affiliate programs; memory
+   `amazon-associates-strategy`). GA4 stores only the page a store click came from, so use **PostHog** for the
+   destination. Send HogQL from a Python script (quote escaping), EU host, project 133580:
+   ```sql
+   SELECT properties.$host AS host, extract(elements_chain, 'href="(https?://[^"]+)"') AS href, count() AS clicks
+   FROM events WHERE event = '$autocapture' AND properties.$event_type = 'click' AND timestamp >= now() - INTERVAL 28 DAY
+     AND match(elements_chain, 'href="https?://(www\\.)?(amazon\\.com|amzn\\.to|clivecoffee\\.com|wholelattelove\\.com)')
+   GROUP BY host, href ORDER BY clicks DESC
+   ```
+   Map each href to `product_offers.url` on prod (the `/dp/{ASIN}` for Amazon, the path for other stores; one ASIN can
+   sit on two products — count it once) to get the store and `scraped_price`. Then, per tenant:
+   **estimate = Σ clicks × buy rate × price × commission**, with these **assumptions until a program reports real
+   figures**: Amazon buy rate 4% (24-hour cookie), commission 3%; Whole Latte Love buy rate 2% (30-day cookie),
+   commission 4.5%; Clive Coffee buy rate 2%, commission 5%. Scale to 30 days. Report one line per tenant, e.g.
+   "c2d ≈ $20/month expected (Amazon $5, Whole Latte Love $15)". It is an expected value — with high-ticket clicks
+   most months earn $0 and one sale earns $100+, so say which clicks drive it.
+   **Trigger: estimate ≥ $50/month on c2d (or both tenants combined) for ~a month (four weekly checks)** → tell the
+   owner it is time to join the programs and open an osek patur first. Baseline 2026-10-04: c2d ≈ $20/month
+   (PostHog had 13 days of c2d data, scaled ×30/13; two Whole Latte Love clicks on $3.6–3.8k machines are ~77% of
+   it), pw2d ≈ $0.5/month.
+
 3. **Target queries** (the pages that matter — preset compare URLs):
    ```sql
    SELECT gsc_top_query AS query, SUBSTRING_INDEX(url,'{tenant-domain}',-1) AS path,
@@ -83,4 +104,4 @@ Prod: `ssh root@209.97.153.234`, app at `/var/www/pw2d`, DB via `mysql -u root p
 
 ## Report format
 
-Lead with the verdict in one sentence. Then: trajectory table (all checkpoints), position-bucket table, target-query table with prior positions, one line of **Google clicks → store clicks** per tenant with the pages that produced them, pipeline health one-liner, and the recommended next action with its date.
+Lead with the verdict in one sentence. Then: trajectory table (all checkpoints), position-bucket table, target-query table with prior positions, one line of **Google clicks → store clicks** per tenant with the pages that produced them, one line of **estimated affiliate revenue** per tenant against the $50/month trigger, pipeline health one-liner, and the recommended next action with its date.
