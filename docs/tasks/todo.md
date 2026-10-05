@@ -9,6 +9,8 @@ work and session narratives go to `archive/` (moved by `/summary`). Full pre-202
 - [ ] **Weekly picks run + SEO check** — last done 2026-10-04 (both tenants); next due ~2026-10-11, two extension runs, then `/seo-status` → memory `maintenance-cadence`
 - [ ] **Monthly sweeps overdue on 7 of 11 categories** — c2d super-automatic (08-20), pour-over (08-16), gooseneck, manual grinders, cold brew (08-21); pw2d podcast mics (08-14), lavalier (08-31); semi-automatic swept 10-05; **high-ticket first**, oldest first only as tie-breaker → spec 031 + memory `content-priority-high-ticket`
 
+- [ ] **Answer the questions behind the links plan and the redesign** — real name on About and in pitches? ~2 h/week realistic? do you make espresso yourself? OK to make 2–3 coffee design directions (recommended: yes, coffee only)? keep logo + brown? → `docs/summaries/2026-10-05-no-site-links-to-us-and-the-template-reads-generic.md` §3
+
 ## Content & maintenance — next, in order
 
 - [ ] **c2d super-automatic next (high-ticket)** — top-up from WLL (+ Clive if listed) → sweep → model backfill → rebuild or price patch (Philips 3200 +16%); gates the three Jura VS pages; same routine as semi-automatic 10-05 → `docs/summaries/2026-10-05-clive-unchecked-six-weeks-semi-auto-rebuilt-vs-pages-live.md`
@@ -22,6 +24,8 @@ work and session narratives go to `archive/` (moved by `/summary`). Full pre-202
 
 ## Specs & engineering — next
 
+- [ ] **Per-site design, coffee first (Spec 045 draft)** — next: 2–3 visual directions on one page (home hero, guide pick card, compare card) for the owner to pick; no code before the pick; then theme layer + staged rollout (home + About first, product/compare last) → `docs/specs/045-per-site-design.md`
+- [ ] **Outside sites linking to coffee2decide (Spec 044 draft)** — zero non-search referrers today; Phase 0 first (coffee About + contact, coffee mail via ImprovMX, Ahrefs Webmaster Tools), then "your product won" emails for the FRESH semi-automatic picks → `docs/specs/044-off-site-links.md`
 - [ ] **Spec 041 model backfill — 2 of 11 done (podcast mics 10-04, semi-automatic 10-05)** — per category: Claude drafts models → `apply-models --dry-run` → owner reviews groups + page impact → apply; same pass lists live products the notes now exclude; backfill before that category's next rebuild → spec §Rollout 5, `docs/summaries/2026-10-04-import-gate-shipped-and-our-stars-were-amazons-rating.md`
 - [ ] **Product page content depth (Spec 028 candidate)** — product pages carry ~70% of impressions and clicks and produced every store click of the last 28 days; promoted to "next spec" on 08-17 and never written → snapshot "SEO checkpoint 2026-08-17"
 - [ ] **Head-to-head "A vs B" pages (Spec 043) — DEPLOYED 10-05 (`aaa2d2e`)**: live /vs/profitec-go-vs-rancilio-silvia, /vs/breville-barista-express-vs-breville-barista-pro; "Compared with" on every product page; indexing requested 10-05 · next: Jura E4/E6, E6/E8, E8/S8 after the super-automatic sweep + models · 6-week gate ~2026-11-16 (≥ 2 of 5 on page one) → `docs/specs/043-vs-pages.md`, `docs/summaries/2026-10-05-clive-unchecked-six-weeks-semi-auto-rebuilt-vs-pages-live.md`

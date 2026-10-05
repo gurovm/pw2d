@@ -16,8 +16,9 @@ Claude does the research, drafting and tracking. Links move rankings over months
 
 ## Baseline (verified 2026-10-05)
 
-- **Referrers, last 30 days (PostHog, coffee2decide.com):** google 31 people, direct 23, bing 2, duckduckgo 2, Google
-  app 2. **No other website sent a single visitor.**
+- **Referrers (PostHog, coffee2decide.com, queried as "last 30 days" but c2d is tracked only since 2026-09-21, so
+  ~14 days):** google 31 people, direct 23, bing 2, duckduckgo 2, Google app 2. **No other website sent a single
+  visitor.**
 - **Backlinks:** unknown — no tool connected yet (Phase 0).
 - **What we can honestly say about ourselves:** 454 live products in 6 categories (semi-automatic 188, super-automatic
   63, manual grinders 58, pour-over 51, gooseneck kettles 51, cold brew 43), offers from Amazon (394), Whole Latte

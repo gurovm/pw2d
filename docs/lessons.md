@@ -4,6 +4,17 @@ Living document of quirks, gotchas, and mistakes worth not repeating. Add new en
 
 ---
 
+## 2026-10-05 — Headless screenshots lie about layout; a "last 30 days" figure is only as long as the tracking
+
+Judging the coffee home page from headless-Chrome shots: a 2,400 px-tall window turned the hero's `min-height: 65vh`
+into ~1,500 px of blank space, and a 390 px window rendered at headless desktop Chrome's minimum width, cutting text
+off. Both looked like defects; neither was. In the same session a referrer query labelled "last 30 days" covered
+~14, because c2d was tracked only from 09-21. **Rule:** shoot design screenshots at a real viewport (1440×900, a
+phone via the Chrome extension or device emulation) and check `vh`/viewport CSS before calling anything broken; and
+state a figure's window from when the tracking began, not from the query's interval.
+
+---
+
 ## 2026-08-10 — Raw SQL against a JSON column must be reasoned about on MySQL separately; sqlite doesn't reproduce MySQL's JSON normalization
 
 **Symptom:** `AuditLandingPageFreshnessJob::dispatchForProduct()` used `whereRaw('picks LIKE ?', ['%"product_id":' . $id . ',%'])` against `landing_pages.picks`, a native MySQL `json` column. Every test passed on sqlite. In production, the instant freshness-audit path (observer ignore-flip/detach/delete, `high_price` flag) would have dispatched **zero jobs** — only the nightly command would ever have caught staleness.
