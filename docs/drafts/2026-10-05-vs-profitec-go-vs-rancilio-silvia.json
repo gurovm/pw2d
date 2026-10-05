@@ -1,0 +1,17 @@
+{
+  "product_a_id": 3510,
+  "product_b_id": 3397,
+  "intro": "<p>Both are single-boiler machines at nearly the same price: the Profitec GO at $1,200, the Rancilio Silvia at $1,000. On our six scores they split sharply, and the split is lopsided. The GO wins four features, the Silvia wins one, and they tie on build at 90.</p><p>That one Silvia win is steam, and it's a big one: 85 to 60. So the useful question isn't which machine is better. It's how much of your coffee has milk in it.</p>",
+  "sections": {
+    "a_wins": "<p>The GO's lead is in the shot and in the morning. It scores 85 on espresso quality against the Silvia's 65, and our data credits its PID temperature control for that consistency. Heat-up and recovery is the widest gap on the page: 88 against 40. Workflow follows at 72 to 55, and maintenance at 78 to 70.</p><p>In practice that's a machine that's ready sooner and gives you the same shot more often, without you managing the boiler's temperature yourself.</p>",
+    "b_wins": "<p>The Silvia wins one feature, by a lot. Its steam wand scores 85 to the GO's 60, and per our data it's a powerful wand on a machine built with commercial-grade components. Build quality ties at 90, so the GO's extra $200 doesn't buy you a sturdier machine.</p><p>The cost shows up in the cup and on the clock. Per our data, consistent espresso on the Silvia takes real skill, and 40 on heat-up and recovery means waiting, before the first shot and between shots.</p>",
+    "who_should_buy": "<p>Buy the Silvia if most of what you make has milk in it and you enjoy learning a machine. The steam advantage is real, and it's $200 cheaper. Buy the GO if you mostly drink straight espresso, want the machine ready quickly, or want the same result every morning without technique doing the work.</p><p>One detail worth knowing: all four of our buyer profiles land on the GO, including the latte-artist one, which weights steam most heavily. The GO's leads on espresso and heat-up outweigh the Silvia's steam lead even there.</p>"
+  },
+  "verdict": "<p>The Profitec GO wins on espresso, heat-up, workflow and maintenance. The Rancilio Silvia wins on steam, 85 to 60, and costs $200 less.</p>",
+  "faqs": [
+    {"q": "Is the Profitec GO worth $200 more than the Rancilio Silvia?", "a": "If you mostly drink straight shots, yes by our scores: 85 vs 65 on espresso and 88 vs 40 on heat-up. If you steam milk for most drinks, the Silvia's 85 vs 60 on steam is the bigger deal, and it's the cheaper machine."},
+    {"q": "Which is easier for a beginner?", "a": "The GO, on our numbers. It scores higher on workflow (72 vs 55) and maintenance (78 vs 70), and our beginner weighting picks it. The Silvia rewards technique; per our data, consistent shots on it take real skill."},
+    {"q": "What do the two have in common?", "a": "Build quality: both score 90, and both are single-boiler machines. Where they differ is everything around that boiler, from the GO's PID temperature control to the Silvia's stronger steam wand."}
+  ],
+  "price_snapshot": {"3510": 1200, "3397": 1000}
+}

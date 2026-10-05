@@ -190,6 +190,14 @@ costs one SELECT to verify — run it **before** writing the spec, not after the
 column that joins an upsert: ask "what does this write on the failure path, on a row that already has a
 value?"
 
+## 2026-10-05 — A published "how we rank" sentence described weights the code does not have
+
+The live semi-automatic guide's methodology note said "we weight espresso quality and steam wand performance most
+heavily". `SelectLandingPagePicks` ranks overall picks with every feature at weight 50, plus the stored rating and a
+price-tier credit (`ProductScoringService::scoreAllProducts`); only presets carry their own weights
+(`feature_preset`). The sentence was written in session, read well, passed review, and was false. **Rule:** a
+methodology sentence is a claim about code — read the scoring call before writing it, and quote only what the code does.
+
 ## 2026-10-05 — Errors from one store were filed as "expected" for six weeks
 
 The 2026-10-04 picks run reported ~5 errors, all on Clive Coffee offers, and the session recorded them as "expected,
