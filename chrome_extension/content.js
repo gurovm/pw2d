@@ -1024,16 +1024,21 @@ function extractAmazonProduct(url) {
 }
 
 function extractCliveCoffeeProduct(url) {
-    // Title: h1 with font-display class, or fallback to any h1 in product area
-    const title = document.querySelector('h1.font-display, h1.product-name, h1.page-title, .product__purchase h1')?.textContent?.trim();
+    // Title: h1.product__title (2026-10 redesign), with the older theme selectors as fallback
+    const title = document.querySelector('h1.product__title, h1.font-display, h1.product-name, h1.page-title, .product__purchase h1')?.textContent?.trim();
     if (!title) return null;
 
-    // Price: Clive uses .price-item--regular inside .price__regular
+    // Price: main [data-price] (not the sticky add-to-cart bar), then og:price:amount, then the older theme selectors
     let price = null;
-    const priceEl = document.querySelector('.price__regular .price-item--regular, .price-item--sale, [data-price-amount]');
+    const mainPriceEl = [...document.querySelectorAll('.product__price [data-price]')].find(el => !el.closest('.sticky-atc-bar'));
+    const priceEl = mainPriceEl || document.querySelector('.price__regular .price-item--regular, .price-item--sale, [data-price-amount]');
     if (priceEl) {
         const m = (priceEl.getAttribute('data-price-amount') || priceEl.textContent).match(/\$([\d,]+(?:\.\d{2})?)/);
         if (m) price = parseFloat(m[1].replace(/,/g, ''));
+    }
+    if (!(price > 0)) {
+        const og = parseFloat((document.querySelector('meta[property="og:price:amount"]')?.getAttribute('content') || '').replace(/,/g, ''));
+        if (og > 0) price = og;
     }
 
     // Brand: not explicitly shown on Clive product pages — extract from title (first word before space)
@@ -1043,7 +1048,7 @@ function extractCliveCoffeeProduct(url) {
 
     // Image: first image in the product gallery
     let image = null;
-    const imgEl = document.querySelector('.product-gallery__media, .product__media img, .product-image img');
+    const imgEl = document.querySelector('.product__media-item[data-is-featured="true"] img, .product-gallery__media, .product__media img, .product-image img');
     if (imgEl) {
         image = imgEl.getAttribute('src') || '';
         if (image.startsWith('//')) image = 'https:' + image;
@@ -1058,6 +1063,19 @@ function extractCliveCoffeeProduct(url) {
                 if (image.startsWith('//')) image = 'https:' + image;
             }
         }
+    }
+
+    if (!image) {
+        image = document.querySelector('meta[property="og:image:secure_url"], meta[property="og:image"]')?.getAttribute('content') || null;
+    }
+    // Shopify CDN thumbnails (width=320) would overwrite the stored 1400px offer image on rescan
+    if (image && /^https?:\/\/clivecoffee\.com\/cdn\/shop\//.test(image)) {
+        try {
+            const u = new URL(image);
+            u.searchParams.set('width', '1400');
+            u.searchParams.delete('height');
+            image = u.toString();
+        } catch (e) { /* keep the original URL */ }
     }
 
     // Rating from stars widget
@@ -1130,32 +1148,46 @@ function extractStoreListing() {
 }
 
 function extractCliveCoffeeListing() {
+    // Selectors follow the 2026-10 Clive Coffee theme redesign (.product-item cards)
     const products = [];
     const seen = new Set();
 
-    document.querySelectorAll('.product-listing').forEach(card => {
+    document.querySelectorAll('.product-item').forEach(card => {
         try {
-            const linkEl = card.querySelector('.product-listing__link');
+            const linkEl = card.querySelector('.product-item__product-title a');
             if (!linkEl) return;
 
             const href = linkEl.getAttribute('href');
-            if (!href || seen.has(href)) return;
-            seen.add(href);
+            if (!href) return;
 
             const title = linkEl.textContent.trim();
             if (!title) return;
 
-            // Price — handle "From $X,XXX" and "$X,XXX.XX"
+            // Canonical URL: https://clivecoffee.com/products/{handle} (no /collections/x, query or hash)
+            const fullUrl = href.startsWith('http') ? href : `https://clivecoffee.com${href}`;
+            const cleanUrl = fullUrl.split(/[?#]/)[0].replace(/\/collections\/[^/]+(?=\/products\/)/, '');
+            if (seen.has(cleanUrl)) return;
+            seen.add(cleanUrl);
+
+            const brand = card.querySelector('.product-item__product-vendor')?.textContent.trim() || null;
+
+            // Price — sale price if present, else first amount outside <s> (handles "from $X,XXX")
             let price = null;
-            const priceDiv = card.querySelector('.text-muted div:first-child');
-            if (priceDiv) {
-                const m = priceDiv.textContent.match(/\$([\d,]+(?:\.\d{2})?)/);
+            const priceEl = card.querySelector('p.product-item__price');
+            if (priceEl) {
+                let priceText = priceEl.querySelector('.sale')?.textContent;
+                if (!priceText) {
+                    const clone = priceEl.cloneNode(true);
+                    clone.querySelectorAll('s, .displayed-discount').forEach(el => el.remove());
+                    priceText = clone.textContent;
+                }
+                const m = priceText.match(/\$([\d,]+(?:\.\d{2})?)/);
                 if (m) price = parseFloat(m[1].replace(/,/g, ''));
             }
 
             // Image
             let image = null;
-            const img = card.querySelector('.product-listing__media img');
+            const img = card.querySelector('.product-item__image--one img');
             if (img) {
                 image = img.getAttribute('src') || '';
                 if (image.startsWith('//')) image = 'https:' + image;
@@ -1172,30 +1204,24 @@ function extractCliveCoffeeListing() {
                 }
             }
 
-            // Rating from data attribute
+            // Rating "4.6" and review count "(186)" — block is absent on unreviewed cards
             let rating = null;
-            const starsEl = card.querySelector('[data-reviews-average]');
-            if (starsEl) {
-                rating = parseFloat(starsEl.getAttribute('data-reviews-average'));
-            }
-
-            // Reviews count from title attribute
             let reviews_count = null;
-            if (starsEl) {
-                const m = starsEl.getAttribute('title')?.match(/(\d+)\s+reviews?/i);
+            const spans = card.querySelectorAll('.product-rating__count span');
+            if (spans[0]) {
+                const r = parseFloat(spans[0].textContent);
+                if (!isNaN(r)) rating = r;
+            }
+            if (spans[1]) {
+                const m = spans[1].textContent.match(/\((\d+)\)/);
                 if (m) reviews_count = parseInt(m[1]);
             }
-
-            // Build full URL
-            const fullUrl = href.startsWith('http') ? href : `https://clivecoffee.com${href}`;
-            // Strip ref param for clean canonical URL
-            const cleanUrl = fullUrl.split('?')[0];
 
             products.push({
                 url: cleanUrl,
                 store_slug: 'clive-coffee',
                 raw_title: title,
-                brand: null, // Will be extracted by AI
+                brand,
                 scraped_price: price,
                 image_url: image,
                 rating,
@@ -1420,8 +1446,21 @@ function extractWholeLatteLoveProduct(url) {
 
 function extractWholeLatteLoveListing() {
     const products = [];
-    const seen = new Set();
-    const host = window.location.hostname.replace(/^www\./, '');
+    const seen = new Map(); // handle -> emitted product
+    const pageCollection = window.location.pathname.match(/^\/collections\/([^/?#]+)/)?.[1] || null;
+
+    // Shopify product id -> vendor, from the inline `var meta` script (isolated world can't read window.meta)
+    const vendors = new Map();
+    try {
+        const re = /"id":(\d+),"gid":"[^"]*","vendor":"((?:[^"\\]|\\.)*)"/g;
+        for (const script of document.scripts) {
+            const text = script.textContent;
+            if (!text || !text.includes('"vendor"')) continue;
+            for (const m of text.matchAll(re)) vendors.set(m[1], JSON.parse('"' + m[2] + '"'));
+        }
+    } catch (e) {
+        console.warn('PW2D: Could not read WLL vendor map:', e);
+    }
 
     // Find all product links, then walk up to find their parent card container
     document.querySelectorAll('a[href*="/products/"]').forEach(linkEl => {
@@ -1429,9 +1468,19 @@ function extractWholeLatteLoveListing() {
             const href = linkEl.getAttribute('href');
             if (!href || !href.includes('/products/')) return;
 
-            // Normalize and deduplicate
+            // Dedupe by product handle; the same machine links as /collections/x/products/h and /products/h.
+            // URL shape matches stored offers (no www, collection path, no query) because the server matches by exact URL.
             const cleanHref = href.split('?')[0].split('#')[0];
-            if (seen.has(cleanHref)) return;
+            const handle = cleanHref.match(/\/products\/([^/]+)/)?.[1];
+            if (!handle) return;
+            const collection = cleanHref.match(/\/collections\/([^/]+)\/products\//)?.[1] || pageCollection;
+            const fullUrl = collection
+                ? `https://wholelattelove.com/collections/${collection}/products/${handle}`
+                : `https://wholelattelove.com/products/${handle}`;
+            if (seen.has(handle)) {
+                if (collection) seen.get(handle).url = fullUrl;
+                return;
+            }
 
             // Skip tiny links (nav, footer, breadcrumbs) — only want product cards
             // Walk up to find the card container
@@ -1442,7 +1491,6 @@ function extractWholeLatteLoveListing() {
             const imgEl = card.querySelector('img');
             if (!imgEl) return;
 
-            seen.add(cleanHref);
 
             // Title: prefer heading or image alt over raw link text
             // (raw link text can be UI chrome like "View 1 more material option")
@@ -1470,7 +1518,16 @@ function extractWholeLatteLoveListing() {
 
             // Brand
             let brand = null;
-            const brandEl = card.querySelector('.card__badge, .caption-with-letter-spacing, .product-card__vendor, .vendor');
+            const idEl = card.hasAttribute('data-product-id') ? card
+                : (card.closest('[data-product-id]') || card.querySelector('[data-product-id]'));
+            brand = vendors.get(idEl?.getAttribute('data-product-id'))?.trim() || null;
+            // The page's meta only lists some cards' ids, so fall back to a known vendor leading the title
+            if (!brand) {
+                const t = title.replace(/^(refurbished|open box)\s+/i, '').toLowerCase();
+                const known = [...new Set(vendors.values())].sort((x, y) => y.length - x.length);
+                brand = known.find(v => t.startsWith(v.toLowerCase())) || null;
+            }
+            const brandEl = brand ? null : card.querySelector('.card__badge, .caption-with-letter-spacing, .product-card__vendor, .vendor');
             if (brandEl) {
                 const text = brandEl.textContent.trim();
                 if (text && !['sale', 'sold out', 'new', '10%'].some(kw => text.toLowerCase().includes(kw))) {
@@ -1492,12 +1549,10 @@ function extractWholeLatteLoveListing() {
                 }
             }
 
-            const fullUrl = cleanHref.startsWith('http') ? cleanHref : `https://${host}${cleanHref}`;
-
             // Rating + reviews count scoped to this card (Yotpo widget)
             const { rating, reviews_count } = extractWllRatingAndReviews(card);
 
-            products.push({
+            const product = {
                 url: fullUrl,
                 store_slug: 'whole-latte-love',
                 raw_title: title,
@@ -1506,7 +1561,9 @@ function extractWholeLatteLoveListing() {
                 image_url: image,
                 rating,
                 reviews_count,
-            });
+            };
+            seen.set(handle, product);
+            products.push(product);
         } catch (e) {
             console.warn('PW2D: Skipped WLL product:', e);
         }
