@@ -75,7 +75,7 @@ class VsPageController extends Controller
             'b'          => $b,
             'comparison' => $comparison,
             'bestPage'   => LandingPage::where('category_id', $category->id)->where('status', 'published')->first(),
-            'seo'        => SeoSchema::forVsPage($page, $category, $a->name, $b->name),
+            'seo'        => SeoSchema::forVsPage($page, $category, $a->comparisonName(), $b->comparisonName()),
         ];
     }
 }

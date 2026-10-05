@@ -100,7 +100,7 @@ class LandingPageController extends Controller
                 ->where('status', 'published')
                 ->whereHas('productA', fn ($q) => $q->where('is_ignored', false)->whereNull('status'))
                 ->whereHas('productB', fn ($q) => $q->where('is_ignored', false)->whereNull('status'))
-                ->with(['productA:id,name', 'productB:id,name'])
+                ->with(['productA:id,name,brand_id,model', 'productA.brand:id,name', 'productB:id,name,brand_id,model', 'productB.brand:id,name'])
                 ->orderBy('title')
                 ->get(),
         ];

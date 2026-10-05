@@ -18,9 +18,11 @@
             <div class="text-sm text-gray-700 leading-relaxed space-y-2">
                 <p>
                     Every product on this list was scored on a 0&ndash;100 scale across the features that matter
-                    most for this category &mdash; things like performance, durability, and value &mdash; each
-                    weighted by importance. Rankings are pulled directly from that data, not editorial opinion:
-                    the AI only writes the explanations, the picks themselves come from the numbers.
+                    most for this category. The overall ranking counts every feature equally, together with store
+                    customer ratings where we have them and a credit for cheaper price tiers; the preset picks
+                    weight features by what that kind of buyer cares about. Rankings come straight from that data,
+                    not editorial opinion: the AI only writes the explanations, the picks themselves come from the
+                    numbers.
                 </p>
 
                 @if (!empty($page->methodology_note))

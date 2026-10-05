@@ -21,7 +21,7 @@ use Illuminate\Support\Str;
  *
  * File shape: {"product_a_id","product_b_id","intro","sections":{"a_wins","b_wins",
  * "who_should_buy"},"verdict","faqs":[{"q","a"}],"price_snapshot":{"<id>":int,"<id>":int}}.
- * The pair is re-ordered so product_a is the alphabetically first name; a_wins/b_wins
+ * The pair is re-ordered so product_a is the alphabetically first comparison name (brand + model, else name); a_wins/b_wins
  * swap with the ids.
  */
 class SaveVsPage extends Command
@@ -94,12 +94,12 @@ class SaveVsPage extends Command
         $second = $products->get($data['product_b_id']);
         $sections = $data['sections'];
 
-        if (strcasecmp($first->name, $second->name) > 0) {
+        if (strcasecmp($first->comparisonName(), $second->comparisonName()) > 0) {
             [$first, $second] = [$second, $first];
             [$sections['a_wins'], $sections['b_wins']] = [$sections['b_wins'], $sections['a_wins']];
         }
 
-        $slug = Str::slug($first->name) . '-vs-' . Str::slug($second->name);
+        $slug = Str::slug($first->comparisonName()) . '-vs-' . Str::slug($second->comparisonName());
 
         // The pair in either id order is one page (names can change, ids cannot swap by accident).
         $existing = VsPage::where(fn ($q) => $q
@@ -120,7 +120,7 @@ class SaveVsPage extends Command
             'category_id'      => $first->category_id,
             'product_a_id'     => $first->id,
             'product_b_id'     => $second->id,
-            'title'            => "{$first->name} vs {$second->name}: scores, price and which to buy",
+            'title'            => "{$first->comparisonName()} vs {$second->comparisonName()}: scores, price and which to buy",
             'intro'            => $data['intro'],
             'verdict'          => $data['verdict'],
             'sections'         => $sections,

@@ -41,7 +41,7 @@
                 <li class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-3">
                     <div class="min-w-0">
                         <a href="{{ route('product.show', ['product' => $rival->slug]) }}"
-                           class="text-sm font-semibold text-gray-900 hover:text-tenant-primary transition-colors">{{ $rival->name }}</a>
+                           class="text-sm font-semibold text-gray-900 hover:text-tenant-primary transition-colors">{{ $rival->comparisonName() }}</a>
                         <p class="text-xs text-gray-500">
                             @if ($score !== null)
                                 {{ $brandName }} score {{ number_format($score, 1) }} / 10

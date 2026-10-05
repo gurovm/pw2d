@@ -84,6 +84,18 @@ class Product extends Model
     }
 
     /**
+     * The name people search for in a head-to-head: "{brand} {model}" when both are
+     * set (Spec 043), else the full product name. Callers should eager-load `brand`.
+     */
+    public function comparisonName(): string
+    {
+        $brand = $this->brand?->name;
+        $model = trim((string) $this->model);
+
+        return filled($brand) && $model !== '' ? "{$brand} {$model}" : $this->name;
+    }
+
+    /**
      * Our own editorial score (0-10): the mean of raw_value across ALL of the
      * category's features, divided by 10, rounded to one decimal. Null unless every
      * category feature has a value, so a partially-scored product gets no rating

@@ -234,4 +234,24 @@ class VsPageControllerTest extends TestCase
 
         $this->assertStringNotContainsString('/vs/lelit-bianca-vs-profitec-drive', $xml);
     }
+
+    /** @test */
+    public function h1_breadcrumb_and_head_to_head_use_comparison_names_but_cards_keep_full_names(): void
+    {
+        $this->a->update(['model' => 'Bianca']);
+        $this->a->brand->update(['name' => 'Lelit']);
+        $this->b->update(['model' => 'Drive']);
+        $this->b->brand->update(['name' => 'Profitec']);
+        $this->a->update(['name' => 'Bianca V3 Espresso Machine, Black']);
+        $this->page->update(['intro' => '<p>x</p>']);
+
+        $html = $this->get('/vs/lelit-bianca-vs-profitec-drive')->getContent();
+
+        $this->assertMatchesRegularExpression('/<h1[^>]*>\s*Lelit Bianca vs Profitec Drive\s*<\/h1>/', $html);
+        $this->assertStringContainsString('Bianca V3 Espresso Machine, Black', $html); // card keeps the full name
+        $this->assertStringContainsString('Lelit Bianca vs Profitec Drive', $html);
+
+        LandingPage::factory()->published()->create(['category_id' => $this->category->id, 'slug' => 'best-espresso']);
+        $this->get('/best/best-espresso')->assertSee('Lelit Bianca vs Profitec Drive');
+    }
 }

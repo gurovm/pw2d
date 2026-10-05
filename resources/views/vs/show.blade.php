@@ -37,7 +37,7 @@
                     @endif
                     <li><a href="{{ route('category.show', ['slug' => $category->slug]) }}" class="hover:text-tenant-primary transition-colors">{{ $category->name }}</a></li>
                     <li aria-hidden="true">/</li>
-                    <li class="text-gray-800 font-medium truncate max-w-[50vw]" aria-current="page">{{ $a->name }} vs {{ $b->name }}</li>
+                    <li class="text-gray-800 font-medium truncate max-w-[50vw]" aria-current="page">{{ $a->comparisonName() }} vs {{ $b->comparisonName() }}</li>
                 </ol>
             </nav>
 
@@ -49,7 +49,7 @@
                 @endif
 
                 <h1 class="text-2xl sm:text-3xl md:text-4xl font-black tracking-tight text-gray-900 leading-tight mb-4">
-                    {{ $a->name }} vs {{ $b->name }}
+                    {{ $a->comparisonName() }} vs {{ $b->comparisonName() }}
                 </h1>
 
                 @if (!empty($page->intro))
@@ -114,8 +114,8 @@
                             <thead>
                                 <tr class="text-left text-xs uppercase tracking-wider text-gray-500 border-b border-gray-100">
                                     <th scope="col" class="px-4 py-3 font-bold">Feature</th>
-                                    <th scope="col" class="px-4 py-3 font-bold text-center">{{ $a->name }}</th>
-                                    <th scope="col" class="px-4 py-3 font-bold text-center">{{ $b->name }}</th>
+                                    <th scope="col" class="px-4 py-3 font-bold text-center">{{ $a->comparisonName() }}</th>
+                                    <th scope="col" class="px-4 py-3 font-bold text-center">{{ $b->comparisonName() }}</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-50">
@@ -145,7 +145,7 @@
                         @foreach ($comparison['presets'] as $row)
                             <li class="bg-white border border-gray-100 rounded-xl px-4 py-3 text-sm text-gray-800">
                                 Better for {{ $row['preset'] }}:
-                                <span class="font-bold">{{ match ($row['winner']) { 'a' => $a->name, 'b' => $b->name, default => 'Tie' } }}</span>
+                                <span class="font-bold">{{ match ($row['winner']) { 'a' => $a->comparisonName(), 'b' => $b->comparisonName(), default => 'Tie' } }}</span>
                             </li>
                         @endforeach
                     </ul>
@@ -154,8 +154,8 @@
 
             {{-- Prose --}}
             @foreach ([
-                'a_wins'         => 'Where ' . $a->name . ' wins',
-                'b_wins'         => 'Where ' . $b->name . ' wins',
+                'a_wins'         => 'Where ' . $a->comparisonName() . ' wins',
+                'b_wins'         => 'Where ' . $b->comparisonName() . ' wins',
                 'who_should_buy' => 'Who should buy which',
             ] as $key => $heading)
                 @if (!empty($sections[$key]))
@@ -183,8 +183,8 @@
 
             {{-- Related links --}}
             <nav aria-label="Related pages" class="mt-10 flex flex-wrap gap-x-6 gap-y-2 text-sm font-semibold text-gray-700">
-                <a href="{{ route('product.show', ['product' => $a->slug]) }}" class="hover:text-tenant-primary transition-colors">About the {{ $a->name }} &rarr;</a>
-                <a href="{{ route('product.show', ['product' => $b->slug]) }}" class="hover:text-tenant-primary transition-colors">About the {{ $b->name }} &rarr;</a>
+                <a href="{{ route('product.show', ['product' => $a->slug]) }}" class="hover:text-tenant-primary transition-colors">About the {{ $a->comparisonName() }} &rarr;</a>
+                <a href="{{ route('product.show', ['product' => $b->slug]) }}" class="hover:text-tenant-primary transition-colors">About the {{ $b->comparisonName() }} &rarr;</a>
                 @if ($bestPage)
                     <a href="{{ route('landing.show', ['slug' => $bestPage->slug]) }}" class="hover:text-tenant-primary transition-colors">Best {{ $category->name }} &rarr;</a>
                 @endif

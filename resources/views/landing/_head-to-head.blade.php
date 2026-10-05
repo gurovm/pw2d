@@ -12,7 +12,7 @@
                 <li>
                     <a href="{{ route('vs.show', ['slug' => $vs->slug]) }}"
                        class="block bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm sm:text-base font-medium text-gray-900 hover:text-tenant-primary hover:border-tenant-primary transition-colors">
-                        {{ $vs->productA->name }} vs {{ $vs->productB->name }} &rarr;
+                        {{ $vs->productA->comparisonName() }} vs {{ $vs->productB->comparisonName() }} &rarr;
                     </a>
                 </li>
             @endforeach

@@ -235,4 +235,39 @@ class SaveVsPageCommandTest extends TestCase
         $this->assertSame(1, $code);
         $this->assertSame(1, VsPage::count());
     }
+
+    /** @test */
+    public function comparison_name_is_brand_plus_model_with_a_fallback_to_the_name(): void
+    {
+        $brand = Brand::factory()->create(['name' => 'Rancilio']);
+
+        $full = $this->makeLiveProduct($this->category, 'Silvia Espresso Machine, Stainless Steel', 800, [], ['model' => 'Silvia'], $brand);
+        $this->assertSame('Rancilio Silvia', $full->load('brand')->comparisonName());
+
+        $noModel = $this->makeLiveProduct($this->category, 'Plain Name 1', 800, [], ['model' => null], $brand);
+        $this->assertSame('Plain Name 1', $noModel->load('brand')->comparisonName());
+
+        $noBrand = $this->makeLiveProduct($this->category, 'No Brand 2', 800, [], ['model' => 'X2', 'brand_id' => null]);
+        $this->assertSame('No Brand 2', $noBrand->load('brand')->comparisonName());
+    }
+
+    /** @test */
+    public function slug_title_and_ordering_use_brand_and_model(): void
+    {
+        $profitec = Brand::factory()->create(['name' => 'Profitec']);
+        $rancilio = Brand::factory()->create(['name' => 'Rancilio']);
+
+        // Names sort the other way round (Silvia... after Go...), comparison names: Profitec GO < Rancilio Silvia,
+        // and the raw names would put "Aardvark Machine" first if names were used.
+        $silvia = $this->makeLiveProduct($this->category, 'Aardvark Silvia Espresso Machine', 800, [], ['model' => 'Silvia'], $rancilio);
+        $go     = $this->makeLiveProduct($this->category, 'Zeta Pro Machine GO', 900, [], ['model' => 'GO'], $profitec);
+
+        $this->assertSame(0, $this->save($this->draftFor($silvia, $go)));
+
+        $page = VsPage::sole();
+        $this->assertSame($go->id, $page->product_a_id);
+        $this->assertSame($silvia->id, $page->product_b_id);
+        $this->assertSame('profitec-go-vs-rancilio-silvia', $page->slug);
+        $this->assertSame('Profitec GO vs Rancilio Silvia: scores, price and which to buy', $page->title);
+    }
 }
