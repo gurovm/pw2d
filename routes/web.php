@@ -13,6 +13,7 @@
 */
 
 use App\Http\Controllers\LandingPageController;
+use App\Http\Controllers\VsPageController;
 use App\Http\Controllers\SitemapController;
 use App\Livewire\Home;
 use App\Livewire\ProductCompare;
@@ -29,6 +30,9 @@ Route::get('/product/{product:slug}', ProductCompare::class)->name('product.show
 
 // "Best X" Data-Driven Listicle Pages (Spec 027)
 Route::get('/best/{slug}', [LandingPageController::class, 'show'])->name('landing.show');
+
+// Head-to-head "A vs B" pages (Spec 043)
+Route::get('/vs/{slug}', [VsPageController::class, 'show'])->name('vs.show');
 
 // Sitemap
 Route::get('/sitemap.xml', [SitemapController::class, 'index'])->name('sitemap');

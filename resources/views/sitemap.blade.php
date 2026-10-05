@@ -57,4 +57,14 @@
     </url>
     @endforeach
 
+    {{-- Head-to-head "A vs B" pages (Spec 043) --}}
+    @foreach ($vsPages as $vsPage)
+    <url>
+        <loc>{{ url('/vs/' . $vsPage->slug) }}</loc>
+        <lastmod>{{ $vsPage->updated_at->toAtomString() }}</lastmod>
+        <changefreq>weekly</changefreq>
+        <priority>0.7</priority>
+    </url>
+    @endforeach
+
 </urlset>

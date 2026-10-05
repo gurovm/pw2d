@@ -25,7 +25,7 @@ use Illuminate\Support\Collection;
 final class AuditLandingPageFreshness
 {
     /** Spec 030 "Staleness reasons" §3: >15% current-vs-snapshot deviation. */
-    private const PRICE_DRIFT_THRESHOLD = 0.15;
+    public const PRICE_DRIFT_THRESHOLD = 0.15;
 
     /**
      * @return list<string> Reason codes; empty = fresh. Always persisted.

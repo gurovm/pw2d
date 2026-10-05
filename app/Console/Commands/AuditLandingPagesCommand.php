@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\AuditLandingPageFreshness;
+use App\Actions\AuditVsPageFreshness;
 use App\Models\LandingPage;
 use App\Models\Product;
 use App\Models\Tenant;
+use App\Models\VsPage;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
@@ -52,6 +54,7 @@ class AuditLandingPagesCommand extends Command
     private function runAudit(Collection $tenants): int
     {
         $action            = new AuditLandingPageFreshness();
+        $vsAction          = new AuditVsPageFreshness();
         $rows              = [];
         $anyPublishedStale = false;
 
@@ -80,6 +83,27 @@ class AuditLandingPagesCommand extends Command
                         $page->freshness_checked_at?->toDateTimeString() ?? '—',
                     ];
                 }
+
+                // Spec 043: head-to-head pages are audited in the same pass and shown in
+                // the same table (slug prefixed `vs/`).
+                foreach (VsPage::where('tenant_id', $tenant->id)->get() as $vsPage) {
+                    $reasons = $vsAction->handle($vsPage);
+                    $isStale = !empty($reasons);
+
+                    if ($isStale && $vsPage->status === 'published') {
+                        $anyPublishedStale = true;
+                    }
+
+                    $rows[] = [
+                        $vsPage->status === 'published' && $isStale ? 0 : 1,
+                        'vs/' . $vsPage->slug,
+                        $tenant->getTenantKey(),
+                        $vsPage->status,
+                        $isStale ? 'STALE' : 'FRESH',
+                        $isStale ? implode(', ', $reasons) : '—',
+                        $vsPage->freshness_checked_at?->toDateTimeString() ?? '—',
+                    ];
+                }
             } finally {
                 tenancy()->end();
             }
@@ -88,7 +112,7 @@ class AuditLandingPagesCommand extends Command
         usort($rows, fn (array $a, array $b) => $a[0] <=> $b[0]);
 
         if (empty($rows)) {
-            $this->line('No landing pages found.');
+            $this->line('No landing or VS pages found.');
             return self::SUCCESS;
         }
 
@@ -98,9 +122,9 @@ class AuditLandingPagesCommand extends Command
         );
 
         if ($anyPublishedStale) {
-            $this->error('At least one PUBLISHED landing page is stale.');
+            $this->error('At least one PUBLISHED landing or VS page is stale.');
         } else {
-            $this->info('All published landing pages are fresh.');
+            $this->info('All published landing and VS pages are fresh.');
         }
 
         return $anyPublishedStale ? self::FAILURE : self::SUCCESS;

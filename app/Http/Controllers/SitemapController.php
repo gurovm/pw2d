@@ -8,6 +8,7 @@ use App\Models\Category;
 use App\Models\LandingPage;
 use App\Models\Preset;
 use App\Models\Product;
+use App\Models\VsPage;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
@@ -71,6 +72,15 @@ class SitemapController extends Controller
                         ->select(['slug', 'updated_at'])
                         ->get();
 
-        return view('sitemap', compact('categories', 'products', 'presets', 'landingPages'))->render();
+        // Head-to-head pages (Spec 043): published only, and only while both products are live
+        // (the page 404s otherwise, so it must not be advertised).
+        $liveProduct = fn ($q) => $q->where('is_ignored', false)->whereNull('status')->whereNotNull('category_id');
+        $vsPages = VsPage::where('status', 'published')
+                        ->whereHas('productA', $liveProduct)
+                        ->whereHas('productB', $liveProduct)
+                        ->select(['slug', 'updated_at'])
+                        ->get();
+
+        return view('sitemap', compact('categories', 'products', 'presets', 'landingPages', 'vsPages'))->render();
     }
 }

@@ -8,6 +8,7 @@ use App\Models\Category;
 use App\Models\LandingPage;
 use App\Models\Preset;
 use App\Models\Product;
+use App\Models\VsPage;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -184,6 +185,43 @@ class SeoSchema
             'ogImage'      => $ogImage,
             'schemas'      => $schemas,
             'activePreset' => null,
+        ];
+    }
+
+    /**
+     * SEO payload for a head-to-head VS page (Spec 043): title, a ~155-char meta
+     * description cut from the verdict, canonical, and a BreadcrumbList.
+     *
+     * Deliberately NO Offer, aggregateRating or Product markup (Spec 042 policy):
+     * the linked product pages carry the product markup.
+     *
+     * @return array<string, mixed>
+     */
+    public static function forVsPage(VsPage $page, Category $category, string $nameA, string $nameB): array
+    {
+        $canonical = route('vs.show', ['slug' => $page->slug]);
+
+        $description = Str::limit(trim(preg_replace('/\s+/', ' ', html_entity_decode(strip_tags((string) $page->verdict))) ?? ''), 155);
+
+        $breadcrumbItems = [['name' => 'Home', 'url' => url('/')]];
+
+        if ($category->parent) {
+            $breadcrumbItems[] = [
+                'name' => $category->parent->name,
+                'url'  => route('category.show', ['slug' => $category->parent->slug]),
+            ];
+        }
+
+        $breadcrumbItems[] = ['name' => $category->name, 'url' => route('category.show', ['slug' => $category->slug])];
+        $breadcrumbItems[] = ['name' => "{$nameA} vs {$nameB}", 'url' => $canonical];
+
+        return [
+            'title'       => $page->title,
+            'description' => $description,
+            'canonical'   => $canonical,
+            'ogType'      => 'article',
+            'ogImage'     => tenant_seo('default_image'),
+            'schemas'     => [self::buildBreadcrumbList($breadcrumbItems)],
         ];
     }
 

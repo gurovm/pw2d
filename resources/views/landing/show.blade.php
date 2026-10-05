@@ -114,6 +114,9 @@
             {{-- How we ranked this --}}
             @include('landing._methodology', ['page' => $page, 'category' => $category])
 
+            {{-- Head-to-head pages (Spec 043) --}}
+            @include('landing._head-to-head', ['vsPages' => $vsPages ?? collect()])
+
             {{-- FAQs --}}
             @include('landing._faqs', ['page' => $page])
 

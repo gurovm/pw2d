@@ -940,6 +940,10 @@ PROMPT;
 
         $excludeJson = json_encode(array_values($excludeFaqQuestions), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
 
+        // Banned-phrase text comes from ProseStyle so the prompt and the VS-page save guard share one list (Spec 043).
+        $stockOpeners = \App\Support\ProseStyle::promptOpeners($categoryName);
+        $clicheList   = \App\Support\ProseStyle::promptCliches();
+
         $prompt = <<<PROMPT
 You are a knowledgeable friend with strong, data-backed opinions writing a "Best {$categoryName}" guide. You've actually looked at the numbers — you're not a marketing copywriter. The picks below were selected by a DATA-DRIVEN scoring algorithm, not by you — your job is to write honest, specific prose ABOUT the pre-selected picks, not to re-rank or second-guess them.
 
@@ -958,8 +962,8 @@ Total products scored in our database for this category: {$scoredProductCount}
 You are writing for a reader who has read a hundred "best X" listicles and can smell AI filler from the first sentence. Your job is to NOT sound like that. Before you finalize your answer, reread it and check it against the BANNED list below. If you find a banned phrase or pattern, rewrite that sentence. This matters more than sounding "professional."
 
 BANNED — do not write these or close paraphrases of them:
-- Stock openers: "Finding the right {$categoryName} can transform...", "In today's market...", "When it comes to {$categoryName}..."
-- Cliché words and phrases — banned INDIVIDUALLY, anywhere in your answer, even describing something unrelated to the example (e.g. "robust build," "robust testing" are both banned just for using "robust"): "cut through the noise", "game-changer", "elevate your experience", "look no further", "packs a punch", "seamless", "boasts", "comprehensive", "delve", "robust", "stands out from the crowd", "takes X to the next level". Use a plainer word instead — "sturdy," "solid," or "well-built" instead of "robust"; "full-featured" instead of "comprehensive"; "has" instead of "boasts".
+- Stock openers: {$stockOpeners}
+- Cliché words and phrases — banned INDIVIDUALLY, anywhere in your answer, even describing something unrelated to the example (e.g. "robust build," "robust testing" are both banned just for using "robust"): {$clicheList}. Use a plainer word instead — "sturdy," "solid," or "well-built" instead of "robust"; "full-featured" instead of "comprehensive"; "has" instead of "boasts".
 - The rule-of-three audience triad — anything shaped like "Whether you're a competitive pro, a dedicated hobbyist, or just looking for value." Ban "Whether you're..." constructions entirely, in any form.
 - "not just X, but Y" constructions.
 - Uniform sentence rhythm: every sentence medium-length and declarative, every paragraph exactly 3-4 sentences. That shape reads as machine-written even when the words are fine.

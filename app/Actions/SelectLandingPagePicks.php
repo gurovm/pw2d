@@ -9,6 +9,7 @@ use App\Models\Feature;
 use App\Models\Product;
 use App\Services\ProductScoringService;
 use App\Support\ListingHealth;
+use App\Support\ModelIdentity;
 use App\Support\ProductConditionGuard;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
@@ -31,26 +32,6 @@ class SelectLandingPagePicks
      * when an under-quota alternative exists for the slot. See $pickBrandAware.
      */
     private const MAX_PICKS_PER_BRAND = 3;
-
-    /**
-     * Spec 034 §1 — words that precede a model-number token but carry no
-     * identity of their own (generic marketing/category language), so they
-     * must never be folded into the model key.
-     */
-    private const MODEL_TOKEN_STOPWORDS = [
-        'series', 'gen', 'edition', 'professional', 'espresso',
-        'machine', 'coffee', 'super', 'automatic', 'fully',
-    ];
-
-    /**
-     * Spec 034 §1 — a preceding qualifier token (e.g. "giga") is folded into
-     * the model key only when both it AND the bare candidate token are short.
-     * Long candidate tokens (e.g. a full SKU like "ecam29043sb") are already
-     * self-identifying and must NOT be prefixed — verified against the
-     * spec's hand-checked table (Magnifica Evo ECAM29043SB -> "ecam29043sb",
-     * not "evoecam29043sb"). See docs/questions.md for this judgment call.
-     */
-    private const MODEL_TOKEN_MAX_JOIN_LEN = 5;
 
     /**
      * @return list<array{product_id: int, role: string}>
@@ -162,6 +143,9 @@ class SelectLandingPagePicks
         // reintroduce exactly the over-merging this spec exists to prevent.
         // Checked at every pick site below so the NEXT-best candidate is tried
         // instead of leaving the role/slot empty.
+        // Spec 043: the pairwise decision itself now lives in ModelIdentity::match()
+        // (shared with the VS-page rival selection and save guard); this closure only
+        // loops the picked set and keeps the rejection logging.
         // Spec 041 §3: when BOTH products carry a `model` (and a brand) the pair is a
         // duplicate iff brand_id and normalized model match — that decides, like the
         // model key does below. Either side NULL -> the Spec 034 logic runs unchanged.
@@ -170,8 +154,6 @@ class SelectLandingPagePicks
         $loggedPairs = [];
 
         $isDuplicateOfPicked = function (Product $candidate) use (&$pickedIds, &$loggedPairs, $products, $category): bool {
-            $candidateKey = self::modelKey($candidate);
-
             $reject = function (Product $picked, string $path, string $key) use ($candidate, $category, &$loggedPairs): bool {
                 $pair = min($candidate->id, $picked->id) . ':' . max($candidate->id, $picked->id);
 
@@ -196,50 +178,10 @@ class SelectLandingPagePicks
                     continue;
                 }
 
-                $candidateModel = \App\Support\ModelIdentity::normalize($candidate->model);
-                $pickedModel    = \App\Support\ModelIdentity::normalize($picked->model);
+                $match = ModelIdentity::match($candidate, $picked);
 
-                if ($candidateModel !== '' && $pickedModel !== '' && $candidate->brand_id !== null && $picked->brand_id !== null) {
-                    if ($candidate->brand_id === $picked->brand_id && $candidateModel === $pickedModel) {
-                        return $reject($picked, 'model', $candidate->brand_id . ':' . $candidateModel);
-                    }
-
-                    continue;
-                }
-
-                $pickedKey = self::modelKey($picked);
-
-                if ($candidateKey !== null && $pickedKey !== null) {
-                    // Both sides have a confirmed model identity — it alone
-                    // decides. Equal -> duplicate. Different -> definitively
-                    // not a duplicate; do NOT fall through to similarity.
-                    if ($candidateKey === $pickedKey) {
-                        return $reject($picked, 'heuristic', $candidateKey);
-                    }
-
-                    continue;
-                }
-
-                $candidateNorm = self::normalizeName($candidate->name);
-
-                if ($candidateNorm === '') {
-                    continue;
-                }
-
-                $pickedNorm = self::normalizeName($picked->name);
-
-                if ($pickedNorm === '') {
-                    continue;
-                }
-
-                if (str_contains($candidateNorm, $pickedNorm) || str_contains($pickedNorm, $candidateNorm)) {
-                    return $reject($picked, 'similarity', 'contains');
-                }
-
-                similar_text($candidateNorm, $pickedNorm, $percent);
-
-                if ($percent >= 85.0) {
-                    return $reject($picked, 'similarity', round($percent, 1) . '%');
+                if ($match !== null) {
+                    return $reject($picked, $match['path'], $match['key']);
                 }
             }
 
@@ -436,93 +378,5 @@ class SelectLandingPagePicks
     private static function hasEligibleOffer(Product $product): bool
     {
         return $product->offers->contains(fn ($offer) => ListingHealth::isPickEligible($offer));
-    }
-
-    /**
-     * Lowercase, strip everything but alphanumerics — the normalization Addendum A §2b's
-     * duplicate guard compares ("Keychron Q6 Max Black" vs "Keychron Q6 Max - Black" both
-     * normalize to "keychronq6maxblack").
-     */
-    private static function normalizeName(?string $name): string
-    {
-        return preg_replace('/[^a-z0-9]+/', '', mb_strtolower((string) $name)) ?? '';
-    }
-
-    /**
-     * Spec 034 §1 — the product's identity key: `{brand_id}:{model token}`, or
-     * null when the product has no brand or no digit-bearing token at all (e.g.
-     * "Gaggia Cadorna Prestige"), in which case $isDuplicateOfPicked falls back
-     * to the normalized-name similarity guard instead.
-     *
-     * Two products are variants of the same machine when this key is non-null
-     * and equal on both sides — verified against Spec 034's real-name table:
-     *   "JURA Z10 Super-Automatic Espresso Machine - Gen 1"  -> z10
-     *   "Jura Z10 Aluminum White"                            -> z10 (same machine)
-     *   "JURA GIGA 10 Espresso Machine"                      -> giga10
-     *   "Jura GIGA X8 Professional"                          -> gigax8
-     *   "JURA X10 Dark Inox" / "JURA J10 Twin"               -> x10 / j10 (distinct)
-     *   "Philips 4400 Series Fully Automatic"                -> 4400
-     *   "De'Longhi Magnifica Evo ECAM29043SB"                -> ecam29043sb
-     */
-    private static function modelKey(Product $product): ?string
-    {
-        if ($product->brand_id === null) {
-            return null;
-        }
-
-        $tokens = self::tokenize($product->name);
-
-        // Candidate tokens are those containing at least one digit; take the
-        // FIRST one in name order — model numbers lead, generation/SKU suffixes
-        // trail, so this drops "Gen 1" and trailing catalogue numbers for free.
-        $candidateIndex = null;
-
-        foreach ($tokens as $i => $token) {
-            if (preg_match('/\d/', $token) === 1) {
-                $candidateIndex = $i;
-                break;
-            }
-        }
-
-        if ($candidateIndex === null) {
-            return null;
-        }
-
-        $modelToken = $tokens[$candidateIndex];
-
-        // Join to the immediately-preceding alpha token (e.g. "giga" + "10" ->
-        // "giga10") only when BOTH sides are short (<= MODEL_TOKEN_MAX_JOIN_LEN)
-        // and the preceding token is not the brand name or a generic stopword.
-        // The candidate-side length check keeps an already-self-identifying long
-        // SKU (e.g. "ecam29043sb") from being prefixed with unrelated line-name
-        // copy ("evo") it doesn't need — see the class-const doc comment.
-        if ($candidateIndex > 0 && strlen($modelToken) <= self::MODEL_TOKEN_MAX_JOIN_LEN) {
-            $prevToken = $tokens[$candidateIndex - 1];
-
-            if (
-                preg_match('/\d/', $prevToken) !== 1
-                && strlen($prevToken) <= self::MODEL_TOKEN_MAX_JOIN_LEN
-                && !in_array($prevToken, self::MODEL_TOKEN_STOPWORDS, true)
-                && !in_array($prevToken, self::tokenize((string) $product->brand?->name), true)
-            ) {
-                $modelToken = $prevToken . $modelToken;
-            }
-        }
-
-        return $product->brand_id . ':' . $modelToken;
-    }
-
-    /**
-     * Lowercase and split on every run of non-alphanumeric characters, dropping
-     * empty tokens (e.g. "De'Longhi Magnifica Evo ECAM29043SB" -> ["de",
-     * "longhi", "magnifica", "evo", "ecam29043sb"]).
-     *
-     * @return list<string>
-     */
-    private static function tokenize(string $value): array
-    {
-        $normalized = preg_replace('/[^a-z0-9]+/', ' ', mb_strtolower($value)) ?? '';
-
-        return array_values(array_filter(explode(' ', trim($normalized)), fn (string $t) => $t !== ''));
     }
 }

@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Models\LandingPage;
 use App\Models\Product;
+use App\Models\VsPage;
 use App\Support\SeoSchema;
 use Illuminate\Support\Facades\Cache;
 
@@ -46,7 +47,7 @@ class LandingPageController extends Controller
     }
 
     /**
-     * @return array{page: LandingPage, category: \App\Models\Category, picks: \Illuminate\Support\Collection, seo: array}
+     * @return array{page: LandingPage, category: \App\Models\Category, picks: \Illuminate\Support\Collection, seo: array, vsPages: \Illuminate\Support\Collection}
      */
     private function buildViewModel(LandingPage $page): array
     {
@@ -94,6 +95,14 @@ class LandingPageController extends Controller
             'category' => $category,
             'picks'    => $picks,
             'seo'      => $seo,
+            // Spec 043: published head-to-head pages of this category (both products live).
+            'vsPages'  => VsPage::where('category_id', $category->id)
+                ->where('status', 'published')
+                ->whereHas('productA', fn ($q) => $q->where('is_ignored', false)->whereNull('status'))
+                ->whereHas('productB', fn ($q) => $q->where('is_ignored', false)->whereNull('status'))
+                ->with(['productA:id,name', 'productB:id,name'])
+                ->orderBy('title')
+                ->get(),
         ];
     }
 }

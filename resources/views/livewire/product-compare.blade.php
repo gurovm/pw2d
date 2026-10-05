@@ -668,6 +668,9 @@
                                                         @endforeach
                                                 </div>
                                         </div>
+                                        {{-- Compared with: closest rivals + VS page links (Spec 043) --}}
+                                        <x-compared-with :product="$this->selectedProduct" />
+
                                         {{-- Similar products section --}}
                                         <x-similar-products :product="$this->selectedProduct" />
 
