@@ -44,6 +44,10 @@ the code in brackets. Codes (Q5, F12, H-E…) are kept only so the old text can 
 - [ ] **"Unchecked only" rescan mode** — every top-up forces a full re-check of a just-swept category; touches the rescan endpoint + `popup.js` together
 - [ ] **Amazon `reviews_count` extraction** — 88 products at 0; needs a 6th selector strategy [Spec 029 B3]
 - [ ] **Clive Coffee price extraction misses some in-stock products**
+- [ ] **Store offers are matched by exact URL** — `OfferIngestionService::resolveExistingOffer` misses `www.` vs bare host, `/collections/x/` vs `/products/`, `?variant=`/`?ref=` (WLL stores 3 shapes, Clive 2); match on store + product handle server-side instead of keeping each extractor's URL in step with old rows. 2026-10-05 the extractors were aligned to the stored shapes as a stopgap
+- [ ] **Matcher cache can attach new listings to hidden products** — `AiService::matchProduct` step 1 returns a cached `ai_matching_decisions.existing_product_id` without checking the product is still live; 2026-10-05 three WLL listings (two Appartamento TCA colours, La Specialista Maestro with Cold Brew) merged into products hidden since April (3536, 3574) via 04-04 cache rows. Fix: fall through when the cached target is ignored or not `status IS NULL`
+- [ ] **A second listing from the same store overwrites the first** — ingest/finalize `updateOrCreate(product_id, store_id)`: when two listings of one store match one product (plain vs "with Flow Control", colour editions) the later silently replaces the earlier's URL and price. 2026-10-05 Clive scan: JUMP, RIDE, Technika VI now point at the Flow Control listing (+$100); the A53 Pro listing was lost to the Direct Plumb one. Decide with the model-identity rules (Spec 041 backfill)
+- [ ] **Store listing scans send no brand for WLL** — cards carry no vendor field, so ingest skips the AI match; a new WLL listing of a machine we already hold costs a full evaluation before finalize merges it
 
 ## Landing pages & picks
 

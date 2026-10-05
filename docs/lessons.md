@@ -190,6 +190,35 @@ costs one SELECT to verify — run it **before** writing the spec, not after the
 column that joins an upsert: ask "what does this write on the failure path, on a row that already has a
 value?"
 
+## 2026-10-05 — Errors from one store were filed as "expected" for six weeks
+
+The 2026-10-04 picks run reported ~5 errors, all on Clive Coffee offers, and the session recorded them as "expected,
+not a failure" (memory and summary). On 10-05 a category rescan errored on **all 36** Clive offers: Clive had
+redesigned its site and both extension readers (listing and product page) matched nothing. No Clive offer had been
+health-checked since 08-20 — including the semi-automatic guide's best-overall pick, which is sold only at Clive.
+**Rule:** errors that cluster on one store are a broken reader until a saved page proves otherwise. Group rescan
+errors by store after every run (`health_checked_at` per `store_id`), and never write "expected" without the check.
+
+## 2026-10-05 — Deleted the good copy of a duplicate and kept a failed stub
+
+Two "ECM Estetika" rows after a Clive scan: 4052 (older, holding the Clive link) and 5091 (created that morning).
+The architect proposed deleting the new one as "the duplicate"; the owner approved; it ran. 4052 turned out to be
+`status = failed`, brand NULL, never scored — not in the live pool at all — and 5091 was the only properly evaluated
+copy. Caught an hour later when a Whole Latte Love import created a third copy and the matcher ignored 4052
+(`AiService::matchProduct` only considers `status IS NULL` rows). **Rule:** before choosing which duplicate
+survives, put `status`, `brand_id`, `is_ignored` and the feature-score count side by side. "Older" and "holds the
+link" say nothing about which row is real.
+
+## 2026-10-05 — Proposed an Amazon top-up for a category whose catalog lives at specialty stores
+
+For c2d semi-automatic espresso the architect proposed three Amazon searches and argued "only Amazon listings can
+earn" — while the store-mix query it had just run showed 69 of 166 offers on Amazon, and memory
+`content-priority-high-ticket` (in the index, not opened) records that ~77% of c2d's estimated revenue comes from
+Whole Latte Love clicks on $3–4k machines. The owner caught it. **Rule:** before proposing where to import from,
+read the category's offers by store and import from where its catalog actually lives (the extension also reads
+Whole Latte Love and Clive Coffee listing pages → `ingest-offer`). And open the memory whose index line touches the
+decision before arguing from revenue.
+
 ## 2026-10-04 — Ask where a number comes from before optimising it; three wrong claims caught in one day
 
 1. **The stars.** For months the SEO checks tracked CTR and position on product pages without asking where the
