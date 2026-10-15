@@ -1193,3 +1193,45 @@ crawl goes to copies** — and Spec 042 waits on Google re-crawling the real pag
   passed, reloaded. Both domains now 200, `text/plain`, correct body; home, sitemap, a `/vs/` page 200; unknown
   product still 404. Livewire's script is served from `/vendor/livewire/`, so the now-active `Disallow: /livewire/`
   does not block rendering.
+
+### Addendum (same day) — `/vs/` pages and ChatGPT referrals
+- **`/vs/` status (URL Inspection, 10-15):** both PASS, "Submitted and indexed", crawled 10-05 (mobile), fetch
+  successful, Breadcrumbs rich result detected. Googlebot fetched GO vs Silvia again 10-12 and 10-14 (nginx).
+  **0 impressions 10-01 → 10-15 even with GSC fresh data** — normal for weeks 1–2; gate ~11-16.
+- **Broken share image:** `og:image` on both home pages and every `/vs/` page is the relative path
+  `tenants/logos/….png` (`tenant_seo('default_image')`); crawlers request `/vs/tenants/logos/…` → 404 (the only
+  404s on `/vs/`). `/best/` and product pages use an absolute product image. Todo item added.
+- **ChatGPT sends readers, filed as "direct".** PostHog, 28d, `utm_source=chatgpt.com` in the URL: c2d
+  `/best/super-automatic-espresso-machines` 5 people (from 09-24), `/vs/profitec-go-vs-rancilio-silvia` **2 people on
+  10-07 and 10-08 — two days after publishing**, `/best/semi-automatic` 1. ~8 of c2d's 108 visitors (~7%). The 10-05
+  "search engines and direct only" referrer read missed these: ChatGPT strips the referrer and only the UTM tag
+  shows it. Count `utm_source` in every future referrer read.
+- **Do `/best/` guides send readers to product pages? Not yet (PostHog, by session, 09-13 → 10-15).** 17 real visits
+  (c2d 15, pw2d 2; super-automatic guide 11 of them): **0 went to a product page**; 12 left without a click; 1 clicked
+  straight to Amazon (Philips 4400); 1 went guide → compare (`?focus=` link) → Whole Latte Love (ECM Synchronika II);
+  1 came the other way (product → guide → compare). nginx shows 14 "guide → product" requests, but all are one
+  scraper on 10-11 (pw2d ergonomic picks, rotating proxy IPs, minutes apart) — not people. Too small to redesign on;
+  re-read at ~50 guide visits. Pick cards link the product page from title, image and a text link (`_pick-card.blade.php:61`, `:140`).
+
+### Addendum (same day) — "Product snippets" valid items fell ~62 → 26 on c2d: expected, and not a loss
+Owner screenshot (GSC Shopping → Product snippets, last update 10-14): valid items stepped down from ~62 to 26 since
+early October; 0 invalid; 2 items with price/priceCurrency warnings.
+- **Cause = Spec 042 Phase A working as designed.** URL Inspection: `/best/` and `/compare/` pages last crawled before
+  10-04 still carry **6–12 Product-snippet items each** (one per pick, built on Amazon's `aggregateRating`, e.g.
+  `/compare/manual-coffee-grinders` ×12, `/best/gooseneck-kettles` ×7); re-crawled ones (`/best/manual-coffee-grinders`,
+  `/compare/gooseneck-kettles`, `/compare/super-automatic…` on 10-14) carry Breadcrumbs only. The count falls as list
+  pages are re-crawled.
+- **Those items earned nothing:** search appearance 09-01 → 10-03, list pages with product-snippet appearance:
+  compare 6 impr, best 17 impr, **0 clicks**.
+- **Product pages kept their stars (our rating):** re-crawled product pages (6 of 10 inspected: Mechanika Max II,
+  J10, Cocinare, Chefman, Pippa, Clever) PASS with Product snippets + Review snippets, no warnings, and no Merchant
+  listings error. Pages not re-crawled since 10-01 (RHD, Epeios, Profitec Drive, Coletti) still show the old
+  price warnings + Merchant listings error — the 2 warnings in the report; they clear on re-crawl.
+- **Early CTR read (supports Spec 042, formal read ~10-25):** product-page REVIEW_SNIPPET, 09-01 → 10-03 3,557 impr /
+  30 clicks (0.84%, ~108 impr/day) vs 10-05 → 10-14 1,594 impr / 23 clicks (**1.44%**, ~159 impr/day). The "after"
+  window still mixes in not-yet-recrawled pages with Amazon stars.
+- **All 463 c2d live product pages emit `reviewRating`;** pw2d 804 do, **38 don't** (a feature unscored — e.g. Shure
+  Centraverse Lavalier, Rode RODElink LAV, Redragon K631), so those can't show stars.
+- **"Merchant opportunities → Shopping tab" (owner screenshot, ~261 products found): not eligible, ignore.** Merchant
+  Center requires products purchasable on our site and forbids affiliate links outside the EEA/UK/CH CSS programme;
+  it would also need a price feed (forbidden by the Spec 019 / Associates policy). Recorded in memory `seo-schema-policy`.

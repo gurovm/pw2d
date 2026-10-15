@@ -4,6 +4,16 @@ Living document of quirks, gotchas, and mistakes worth not repeating. Add new en
 
 ---
 
+## 2026-10-15 — A "tell me when the queue is empty" watcher never fired (zsh does not word-split)
+
+The wait loop did `out=$(ssh … mysql -N …); set -- $out` and compared `$1`/`$2`. The Bash tool runs **zsh**, which does
+not split an unquoted `$out`, so `$1` held both numbers and the "done" branch never matched; the owner waited and
+asked whether the import was stuck. **Rule:** in watcher loops, have the remote side print one decision word
+(`SELECT IF(… = 0, 'DONE', 'BUSY')`) and compare that, or use `${=out}`; and check the queue by hand once if a
+watcher is silent longer than the job should take.
+
+---
+
 ## 2026-10-15 — robots.txt served the right text with a 404 status for months
 
 `routes/web.php` even warned that nginx might bypass the route, and said to verify with `curl … | grep Sitemap`. That
