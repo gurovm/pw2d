@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Locked;
 use Livewire\Attributes\On;
 use Livewire\Attributes\Session;
 use Livewire\Attributes\Url;
@@ -25,6 +26,11 @@ use Livewire\Component;
 
 class ProductCompare extends Component
 {
+    // True only when mounted from the /product/{slug} route. Locked so clients cannot flip it.
+    // $selectedProductSlug can't serve here: it is also set when the modal opens on a comparison page.
+    #[Locked]
+    public bool $isProductPage = false;
+
     public $category;
     public $subcategories; // Child categories (if this is a parent category)
     public $features; // Keeping this public is fine as it's a small collection
@@ -458,6 +464,8 @@ class ProductCompare extends Component
                 abort(404, 'This product has not been categorized yet.');
             }
             $this->selectedProductSlug = $product->slug;
+            // Product pages must not expose crawlable ?limit= copies of themselves.
+            $this->isProductPage = true;
             $this->category = $product->category;
         } elseif ($slug) {
             $this->category = Category::where('slug', $slug)->firstOrFail();

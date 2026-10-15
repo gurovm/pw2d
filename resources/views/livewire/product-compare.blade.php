@@ -346,11 +346,20 @@
 
                         @if($this->scoredProducts->count() > $displayLimit && !$isComparing)
                         <div class="mt-12 flex justify-center pb-8">
+                                @if($isProductPage)
+                                {{-- Product pages: no href, so crawlers can't chain ?limit= copies of the page. --}}
+                                <button type="button"
+                                   wire:click="loadMore"
+                                   class="px-8 py-3 bg-white border border-gray-200 rounded-full text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 hover:shadow-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-gray-200">
+                                        Show More Matches
+                                </button>
+                                @else
                                 <a href="{{ request()->fullUrlWithQuery(['limit' => $displayLimit + 12]) }}"
                                    wire:click.prevent="loadMore"
                                    class="px-8 py-3 bg-white border border-gray-200 rounded-full text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 hover:shadow-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-gray-200">
                                         Show More Matches
                                 </a>
+                                @endif
                         </div>
                         @endif
                 @else
