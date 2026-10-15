@@ -4,13 +4,18 @@ Living document of quirks, gotchas, and mistakes worth not repeating. Add new en
 
 ---
 
-## 2026-10-15 — A "tell me when the queue is empty" watcher never fired (zsh does not word-split)
+## 2026-10-15 — Two of our own shell scripts failed silently: a watcher that never fired, a todo edit that cut two lines
 
 The wait loop did `out=$(ssh … mysql -N …); set -- $out` and compared `$1`/`$2`. The Bash tool runs **zsh**, which does
 not split an unquoted `$out`, so `$1` held both numbers and the "done" branch never matched; the owner waited and
 asked whether the import was stuck. **Rule:** in watcher loops, have the remote side print one decision word
 (`SELECT IF(… = 0, 'DONE', 'BUSY')`) and compare that, or use `${=out}`; and check the queue by hand once if a
 watcher is silent longer than the job should take.
+
+Same day, a Python edit of `todo.md` computed a slice index, then ran `str.replace()` on the text, then sliced with the
+stale index: two task lines were fused mid-word and committed twice before `/summary` noticed. **Rule:** edit task files
+line by line with an assert on each target (or the Edit tool), never mix index slicing with replacement, and read
+`git diff` of the file before committing it.
 
 ---
 

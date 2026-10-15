@@ -18,6 +18,9 @@ the code in brackets. Codes (Q5, F12, H-E…) are kept only so the old text can 
 
 ## Import, Bouncer & AI
 
+- [ ] **Brand duplicate 'Zulay' vs 'Zulay Kitchen'; two brandless super-automatics hidden as white-label** — 'Series 6' $1,299 (B0HGGH9SLL), 'Espresso Bar' $500 (B0FV1T2TW1); identify on Amazon, then rename or leave hidden → `docs/summaries/2026-10-15-stale-price-bands-robots-404-limit-copies-super-auto-rebuilt.md` §3
+- [ ] **The price credit is 1/8 of the overall score** — it put a $580 Philips above the $4,150 Jura Z10 on c2d's highest-ticket guide (Z10 wins 5 of 6 features). Honest to readers and published in the methodology note; revisit only if revenue data says the overall slot should favour high-ticket → same summary §3
+- [ ] **Re-read guide → product-page clicks at ~50 guide visits** — 0 of 17 visits went to a product page (PostHog, 09-13 → 10-15); if it holds, Spec 045 makes the store button the main action on pick cards → SEO checkpoint UPDATE 2026-10-15
 - [ ] **Duplicate variant rows** — SM58 family, pack sizes, colourways as separate products; within-category exact-ASIN duplicates too [F29, "Duplicate rows also occur WITHIN a category"]; 2026-10-04: identical rows Turtle Beach Stealth 600 ×3, Keychron C1 ×7 — queryable once Spec 041's `model` column is backfilled → Spec 041 §Follow-ups
 - [ ] **Single-product re-import changes a live product's URL and can detach it** — renames + re-slugs from the raw title, re-runs the AI, detaches on a stale rejection row (93 live products carry one) → Spec 041 §Follow-ups
 - [ ] **Delete the `modelKey()` heuristic** — once no live product has a NULL `model` → Spec 041 Part 3
