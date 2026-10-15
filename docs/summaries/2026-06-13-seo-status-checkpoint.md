@@ -1056,3 +1056,140 @@ reviews or ratings from other websites"* and *"Ratings must be sourced directly 
 may lead to a manual action. So the markup that sits on half our impressions and most of our clicks is the
 one Google's rules forbid. Decision for the owner (see todo): replace it with a rating of our own that is
 visible on the page, remove it, or keep the risk.
+
+## UPDATE — 2026-10-15 check: c2d clicks up again (28d 39 → 67) on a higher click rate, not more visibility. pw2d flat. A burst of deep (50+) impressions on three compare pages, same days on both tenants, is outside noise — the average position is unreadable this week.
+
+*(The ~10-11 check ran four days late; weekly picks run still not done this week.)*
+
+**Pipeline:** 4/4 HEALTHY. GSC through 10-12 on both tenants (no lag between them), GA4 through 10-14. No
+`outbound clicks failed` or other SEO errors in the log. Week 202641 is partial (2 days: 10-11 → 12).
+
+### Trajectory
+| Metric (28d) | pw2d 10-04 | **pw2d 10-15** | c2d 10-04 | **c2d 10-15** |
+|---|---|---|---|---|
+| Pages w/ impressions | 377 | **417** | 304 | **322** |
+| Impressions | 2,278 | **4,754** | 5,653 | **7,446** |
+| Clicks | 15 | **12** | 39 | **67** |
+| Weighted pos | 10.8 | **28.8** ⚠️ | 11.5 | **16.4** ⚠️ |
+| CTR | 0.66% | **0.25%** ⚠️ | 0.69% | **0.90%** |
+
+⚠️ Impressions, weighted position and pw2d's CTR are distorted by the deep-impression burst below — read the
+buckets.
+
+### Position buckets (impressions per week)
+| tenant | wk | ≤10 | 11–20 | 21–50 | 50+ | clicks |
+|---|---|---|---|---|---|---|
+| pw2d | 202638 | 477 | 87 | 35 | 8 | 2 |
+| pw2d | 202639 | 342 | 140 | 34 | 7 | 4 |
+| pw2d | 202640 | 478 | 258 | 593 | 814 | 4 |
+| pw2d | 202641 (2 d) | 137 | 23 | 272 | 758 | 1 |
+| c2d | 202638 | 1,304 | 365 | 71 | 14 | 19 |
+| c2d | 202639 | 1,276 | 307 | 98 | 7 | 10 |
+| c2d | 202640 | **1,333** | 497 | 155 | 480 | **23** |
+| c2d | 202641 (2 d) | 346 | 173 | 26 | 356 | 11 |
+
+Page-one held on both: c2d 1,333/wk (≥ 1,300 ✓) with 23 clicks (≥ 15 ✓, best week yet); pw2d back to 478 after a
+342 dip, clicks 4/wk (flat).
+
+**The deep-impression burst.** 50+ impressions went from ~2/day to 150–400/day on **both tenants on the same days**
+(10-05, 10-06, then steadily from 10-09). Almost all of it sits on three compare pages, each for one broad query at
+pos 50–60: c2d `/compare/manual-coffee-grinders` 809 ("comparison coffee grinder", pos 61); pw2d
+`/compare/mechanical-gaming-keyboards?preset=pro-gamer` 799 (pos 51) and the base page 715 (pos 52). Same days on
+both tenants, no deploy touching compare pages → an outside cause (Google-side, or something paging deep into
+results). Not visibility; ignore it, and keep ignoring `wpos` until it goes.
+
+### What moved c2d — click rate on product pages
+c2d product pages, page-one only: impressions flat (~960–1,050/wk since 202638), clicks 7 → 6 → **16** (202640) →
+7 in 2 days. Page-one CTR ~0.6% → **1.7%**. The jump starts the week Spec 042 Phase A shipped (10-04: our own
+rating replaces Amazon's in markup) — **coincidence until the Spec 042 read (~10-25) shows what Google now
+displays**. Clicks (28d) by page: kettles (RHD 10, Epeios 7), ECM Mechanika Max II 6, Profitec Drive 5,
+`/compare/manual-coffee-grinders?preset=traveler` 5, `/best/super-automatic` 3, Coletti Crag 3.
+
+**pw2d product-page CTR baseline (Q2, before any title change):** 09-06 → 10-12, 17 clicks in 2,526 impressions =
+**0.67%** (page-one only: 7 / 1,696 = 0.41%). c2d for comparison, same window: 61 / 6,884 = 0.89%.
+
+### Google clicks → store clicks (28d)
+- **c2d: 67 → 16** (10-04: 12). ECM Mechanika Max II 2, RHD kettle 2, `/compare/gooseneck-kettles` 2, plus ten pages
+  with 1 each (Jura J10, Quick Mill Pippa, Bezzera Hobby, three kettles, three drippers, `/best/super-automatic`).
+- **pw2d: 12 → 1** (10-04: 2). `/product/mistel-barocco-md770…` on 09-22.
+
+### Estimated affiliate revenue (PostHog, 28d window; c2d tracked from 09-21 = 24 days, scaled ×30/24)
+- **c2d ≈ $17/month** (Amazon $3 from 14 clicks on $18–680 items; **Whole Latte Love $15** from 5 clicks: ECM
+  Mechanika Max II ×2 at $2,249, ECM Synchronika II $3,599, Jura J10 Twin $3,799, Quick Mill Pippa $999). The 10-04
+  baseline was ≈ $20 on 13 days — flat. Still Whole Latte Love's high-ticket clicks that carry it (~85%).
+- **pw2d ≈ $0.4/month** (3 Amazon clicks, $46–150 keyboards).
+- **Trigger ($50/month for ~a month): not met, 0 of 4 weeks.**
+- PostHog visitors (28d): c2d 108 people / 166 pageviews, 67 from Google (10-04: ~4/day → now ~4.5/day); pw2d 103,
+  13 from Google.
+
+### Target preset queries (14d, positions ≤ 50)
+pw2d:
+
+| Query | 09-21 | 10-04 | **10-15** |
+|---|---|---|---|
+| mechanical keyboard for streamers (`?preset=streamer`) | 8.5 | 9.4 (55 impr) | **13.0** (4 impr) |
+| gaming headset for remote workers (`?preset=remote-worker`) | 6.4 | 6.2 (49 impr) | **~9** (13 impr) |
+| rsi keyboard (`?preset=rsi-sufferer`) | 19.0 | 19.5 | **9.9** (17 impr) |
+| ergonomic keyboard for programmers | 21.3 | 19.7 | **12.8** (+ "…for developers" 7.5, 13 impr) |
+
+The two pw2d preset pages that reached page one in September have faded: streamer 70 → 11 → 5 → 2 impr/wk,
+remote-worker 49 → 2 → 6 → 7, both slipping to pos ~10–11. Zero clicks ever on either.
+
+c2d (all page one, all 0 clicks): "lightweight pour over coffee maker" `?preset=traveler` 6.8 (61 impr), "epeios
+kettle review" `?preset=tea-drinker` 6.5 (48), "koios electric kettle review" 8.8 → 8.2, "durable pour over coffee
+maker" 5.7 → 3.3, semi-automatic for hobbyists 9.3 → 8.3.
+
+### `/best/` and `/vs/` pages
+- c2d `/best/`: super-automatic 71 impr / 2 clicks (pos 7.3), manual grinders 48 / 1, gooseneck 23 / 1. **Still
+  silent: cold-brew, pour-over, semi-automatic** (Q3: no — semi-automatic was rebuilt 10-05 and still has no row).
+- pw2d `/best/`: all 5 have rows; mechanical keyboards 466 impr at 32.0 (inflated by the deep burst), the rest
+  7–22 impr at pos 6–10.
+- `/vs/` pilot: both pages **indexed** (URL Inspection API, PASS, "Submitted and indexed", crawled 10-05, Google
+  canonical = ours); **0 impressions** through 10-12. Normal for week one; gate is ~11-16.
+
+**PostHog health (10-15):** events arriving on both hosts through today; 109 session recordings in 28d; heatmaps and
+web vitals on; no data-warehouse sources connected. c2d 2–9 people/day (quieter 10-12 → 14: 4, 4, 2); pw2d ~1/day.
+First-ever `preset_applied` events on c2d (7, 10-11/12 — the event has existed since `357ad25`, nobody had clicked a
+preset before). 2 `$rageclick` on c2d (10-02, 10-05).
+
+### Decisions (2026-10-15)
+- **c2d: still no on-page work.** Clicks up 72% on the same visibility. Find out why at the Spec 042 read
+  (~10-25): if Google now shows our own rating as stars, that is the likely cause.
+- **pw2d: unchanged — the title/snippet work stays queued behind the Spec 042 read** (Phase B: titles + 88 renames
+  ship once, measured once against the 0.67% baseline above).
+- **Ignore the deep-impression burst**; do not quote `wpos` or total impressions while it lasts.
+- **Affiliate trigger not met** (c2d ≈ $17). No action.
+
+### Next check (~2026-10-22, with the weekly picks run)
+1. Has the deep burst gone? (If it persists, the bucket table remains the only honest read.)
+2. Does c2d hold ≥ 15 clicks/wk at the higher click rate, or was 202640 a one-off?
+3. Do the `/vs/` pages get their first impressions?
+4. Spec 042 read ~10-25: what Google shows on product pages now (stars from our rating?) — explains, or not, c2d's CTR jump.
+
+### Addendum (same day) — "Not indexed" growing in Search Console: mostly harmless, two cheap fixes
+Owner screenshots (Page indexing, last update 10-09): **pw2d** 593 indexed / 3.24K not (alternate with canonical
+2,551 ↑, 404 311, crawled-not-indexed 262, redirect 110, other 4xx 10); **c2d** 312 indexed / 217 not (alternate
+101 ↑, 404 67, crawled-not-indexed 43, redirect 3, other 4xx 3). Sitemaps: pw2d 879 URLs (842 products), c2d 499
+(454 products, 2 `/vs/`) → ~65% of sitemap URLs indexed on both.
+
+Real Googlebot (66.249.*, nginx logs 10-01 → 10-15, 3,898 requests; another ~2,500 "Googlebot" hits were scanners
+probing `.git`/`.env`): product pages 910 plain + **853 with `?limit=24…120`**; compare 20 plain + 87 with a query.
+Cause: "Show More Matches" is a real link (`fullUrlWithQuery(['limit' => +12])`, kept crawlable on purpose) and
+product pages render the same grid, so each product page links a chain of `?limit=` copies; the canonical points
+to the plain URL, so Google files them as alternates. Harmless for ranking, but **half of Google's product-page
+crawl goes to copies** — and Spec 042 waits on Google re-crawling the real pages.
+
+- **404s are clean:** 23 removed product paths hit by Googlebot (deliberate 410 for hidden products, plus 404s);
+  **none is in a sitemap**; no `limit=` URL in a sitemap.
+- **robots.txt returns HTTP 404 on both domains** with the right body: nginx `location = /robots.txt` has no
+  fallback, `error_page 404 /index.php` renders the Laravel route but keeps the status. Google treats a 404
+  robots.txt as "no rules": `Disallow: /livewire/` and the `Sitemap:` line are ignored (sitemaps are submitted in
+  GSC, so discovery is unaffected). Googlebot's `/livewire/update` calls already fail (302/405), so blocking them
+  changes nothing visible.
+- **Crawled – currently not indexed** (pw2d 262 ≈ 30% of products, c2d 43) is Google's quality call on thin
+  product pages — the existing "product page content depth" item, not a new problem.
+- **robots.txt FIXED same day (owner OK):** `try_files $uri /index.php?$query_string;` added to the nginx
+  `location = /robots.txt` block (backup `/root/backups/nginx-pw2d.com.2026-10-15-before-robots-fix`), `nginx -t`
+  passed, reloaded. Both domains now 200, `text/plain`, correct body; home, sitemap, a `/vs/` page 200; unknown
+  product still 404. Livewire's script is served from `/vendor/livewire/`, so the now-active `Disallow: /livewire/`
+  does not block rendering.

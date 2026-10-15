@@ -4,6 +4,16 @@ Living document of quirks, gotchas, and mistakes worth not repeating. Add new en
 
 ---
 
+## 2026-10-15 — robots.txt served the right text with a 404 status for months
+
+`routes/web.php` even warned that nginx might bypass the route, and said to verify with `curl … | grep Sitemap`. That
+check reads the body only — and the body was right, because nginx's `error_page 404 /index.php` let Laravel render it
+while keeping the 404 status. Google treats a 404 robots.txt as absent. Found only by grouping real Googlebot requests
+by status. **Rule:** verify an endpoint with its status code (`curl -s -o /dev/null -w '%{http_code}'`), never by
+grepping the body alone.
+
+---
+
 ## 2026-10-05 — Headless screenshots lie about layout; a "last 30 days" figure is only as long as the tracking
 
 Judging the coffee home page from headless-Chrome shots: a 2,400 px-tall window turned the hero's `min-height: 65vh`
