@@ -34,6 +34,17 @@ work and session narratives go to `archive/` (moved by `/summary`). Full pre-202
 - [ ] **Price bands go stale after rescans** — `products.price_tier` is recalculated only on imports (`RecalculateCategoryPriceTiers` from batch/product import and offer ingestion), not when a rescan changes `scraped_price`; `SelectLandingPagePicks` fills Best Budget / Best Premium from the stored tier. 2026-10-15: 6 of 72 super-automatic products had the wrong tier (Philips 4300 at $580 sat in tier 3), which hid it from the budget slot. Fix: dispatch the recalculation once per rescan run (or nightly), and have the audit flag a pick whose stored tier disagrees with its price
 - [ ] **Surface nightly pull failures** — both data bugs found on 09-21 were invisible: errors go to cron's /dev/null and `pw2d:seo:status` stayed HEALTHY; log them and flag a tenant whose latest GSC date lags the other → `docs/summaries/2026-09-21-healthy-status-hid-two-data-bugs-three-pages-rebuilt.md` §2 "GA4 undercount", "GSC freeze"
 
+## Page changes from the PostHog replay review (2026-10-16)
+
+PostHog setup is already fixed (internal-user filter, dead clicks, Store click action, baseline funnel `BFrlzHNY` = 15.5%). Judge each change before/after on that funnel; traffic is too low for an A/B test → `docs/summaries/2026-10-16-posthog-replay-review.md`
+
+- [ ] **Stop auto-opening the Customize drawer** (at least on mobile; keep the teaser + manual open) — ~8 of 18 real visitors who got it left within 25 s with zero clicks, 2 used a preset; reverses Spec 025 §2 Issue 2 (owner-approved, the data was meant to decide it) → summary §2.4
+- [ ] **Mobile product page first screen** — median scroll 0, 17 of 46 mobile landers gone within 10 s; put verdict, rating and price next to the sticky CTA above the "Personalized Match" block; fold into the Spec 028 candidate (product page depth) → summary §2.2
+- [ ] **Fix "based on your precise slider configurations" copy** — shown to visitors who never moved a slider; neutral wording when the weights are the defaults → summary §2.6
+- [ ] **FAQ accordion tap target on mobile** — 5-tap rage-click on the question `<span>` on `/best/manual-coffee-grinders`; make the whole row toggle → summary §2.5
+- [ ] **`store_click` custom event** — product, retailer, placement (sticky / inline / list card), page type; then point the PostHog "Store click" action (id 169198) at it instead of the href match → summary §1
+- [ ] **Replay throttling + local dev noise** — find the node behind posthog-js "Too many mutations" (score ring / sliders?) so replays aren't missing frames; don't load the PostHog key on `pw2d.lcl` (84 local events reached the live project) → summary §2.8, §1
+
 ## SEO — for the ~2026-10-22 check
 
 - [ ] **Spec 042 read (~2026-10-25, after Google recrawls)** — URL-inspect the 5 named product pages; REVIEW_SNIPPET impressions + CTR on product pages vs the spec baseline (0.9% with stars / 0.2% without); early read 10-15: c2d star CTR 0.84% → 1.44%, page-one product CTR ~0.6% → 1.7% the week of 10-04 (our stars?), list-page product items leaving GSC as designed; pw2d product CTR baseline 0.67%; 38 pw2d product pages show no rating (unscored feature) — rescan them; Phase B (pw2d titles + 88 renames) only after this → spec §Rollout 3–4
