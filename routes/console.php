@@ -26,6 +26,14 @@ Schedule::command('pw2d:seo:pull --ga4-window-days=3')
     ->withoutOverlapping()
     ->runInBackground();
 
+// Price-tier safety net — runs before the 03:30 audit so its selection check
+// sees corrected bands. Covers what per-change dispatch cannot: best-offer
+// changes by stock/condition/flags and category threshold edits.
+Schedule::command('products:recalculate-tiers')
+    ->dailyAt('03:20')
+    ->withoutOverlapping()
+    ->runInBackground();
+
 // Landing-page freshness audit (Spec 030) — nightly, slotted after the SEO
 // pull. Catches drift no single event announces (price moves, selection
 // changes); the instant observer/service-level path handles ignore-flip,

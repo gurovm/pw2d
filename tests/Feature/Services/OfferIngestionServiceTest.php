@@ -1018,4 +1018,117 @@ class OfferIngestionServiceTest extends TestCase
 
         Queue::assertNotPushed(RecalculateCategoryPriceTiers::class);
     }
+
+    // =========================================================================
+    // Spec 029 addendum 2026-10-19 — tier recalc must fire when a condition is
+    // sent (ListingHealthService::apply() re-saves the offer, resetting wasChanged()).
+    // =========================================================================
+
+    private function seedRefreshableOffer(float $storedPrice): Category
+    {
+        $category = Category::factory()->create(['budget_max' => 50, 'midrange_max' => 150]);
+        Feature::factory()->create(['category_id' => $category->id]);
+        $store   = Store::create(['name' => 'Example Store', 'slug' => 'example-store']);
+        $product = Product::factory()->create(['category_id' => $category->id, 'status' => null]);
+        ProductOffer::create([
+            'product_id'    => $product->id,
+            'store_id'      => $store->id,
+            'url'           => 'https://example.com/product/1',
+            'scraped_price' => $storedPrice,
+            'raw_title'     => 'Old Title',
+        ]);
+
+        return $category;
+    }
+
+    /** @test */
+    public function a_price_refresh_with_a_new_condition_dispatches_tier_recalc_once(): void
+    {
+        Queue::fake();
+        $category = $this->seedRefreshableOffer(40);
+
+        app(OfferIngestionService::class)->processIncomingOffer($this->basePayload([
+            'category_id'   => $category->id,
+            'scraped_price' => 199.99,
+            'condition'     => 'new',
+            'listing_flags' => [],
+        ]));
+
+        Queue::assertPushed(RecalculateCategoryPriceTiers::class, 1);
+    }
+
+    /** @test */
+    public function an_unchanged_price_refresh_with_a_new_condition_does_not_dispatch_tier_recalc(): void
+    {
+        Queue::fake();
+        $category = $this->seedRefreshableOffer(149.99);
+
+        app(OfferIngestionService::class)->processIncomingOffer($this->basePayload([
+            'category_id'   => $category->id,
+            'scraped_price' => 149.99,
+            'condition'     => 'new',
+            'listing_flags' => [],
+        ]));
+
+        Queue::assertNotPushed(RecalculateCategoryPriceTiers::class);
+    }
+
+    /** @test */
+    public function a_price_change_on_a_matched_product_with_a_prior_offer_and_condition_dispatches_tier_recalc_once(): void
+    {
+        Queue::fake();
+
+        $category = Category::factory()->create(['budget_max' => 50, 'midrange_max' => 150]);
+        Feature::factory()->create(['category_id' => $category->id]);
+        $brand = \App\Models\Brand::factory()->create(['name' => 'Lelit']);
+        $product = Product::factory()->create([
+            'category_id' => $category->id,
+            'brand_id'    => $brand->id,
+            'name'        => 'Lelit Bianca V3',
+            'status'      => null,
+        ]);
+        AiMatchingDecision::create([
+            'scraped_raw_name'    => 'Lelit Bianca V3 Dual Boiler Espresso Machine',
+            'existing_product_id' => $product->id,
+            'is_match'            => true,
+        ]);
+        $store = Store::create(['name' => 'Example Store', 'slug' => 'example-store']);
+        // Different URL so resolveExistingOffer() misses and the matched path
+        // (updateOrCreate on product_id + store_id) handles the prior offer.
+        ProductOffer::create([
+            'product_id'    => $product->id,
+            'store_id'      => $store->id,
+            'url'           => 'https://example.com/product/OLD-URL',
+            'scraped_price' => 40,
+            'raw_title'     => 'Lelit Bianca V3',
+        ]);
+
+        $result = app(OfferIngestionService::class)->processIncomingOffer($this->basePayload([
+            'category_id'   => $category->id,
+            'url'           => 'https://example.com/product/NEW-URL',
+            'brand'         => 'Lelit',
+            'scraped_price' => 199.99,
+            'condition'     => 'new',
+            'listing_flags' => [],
+        ]));
+
+        $this->assertSame('matched', $result['action']);
+        Queue::assertPushed(RecalculateCategoryPriceTiers::class, 1);
+    }
+
+    /** @test */
+    public function a_price_refresh_with_a_negative_condition_dispatches_tier_recalc_once(): void
+    {
+        Queue::fake();
+        $category = $this->seedRefreshableOffer(40);
+
+        app(OfferIngestionService::class)->processIncomingOffer($this->basePayload([
+            'category_id'   => $category->id,
+            'scraped_price' => 199.99,
+            'condition'     => 'used',
+            'listing_flags' => [],
+        ]));
+
+        Queue::assertPushed(RecalculateCategoryPriceTiers::class, 1);
+    }
 }

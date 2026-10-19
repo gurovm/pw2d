@@ -6,6 +6,7 @@ use App\Models\Category;
 use App\Models\Product;
 use App\Services\PriceTierRecalculator;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
 
 class RecalculatePriceTiers extends Command
 {
@@ -62,6 +63,9 @@ class RecalculatePriceTiers extends Command
                 $this->warn("{$unconfigured} category/categories skipped (no thresholds set yet — run AI generator first).");
             }
         }
+
+        // Scheduled output goes to /dev/null; this line is the only nightly trace.
+        Log::info('products:recalculate-tiers: done', ['fixed' => $fixed, 'skipped' => $skipped]);
 
         $this->newLine();
         $this->info("Done. {$fixed} product(s) updated, {$skipped} skipped (no price).");

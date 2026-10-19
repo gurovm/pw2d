@@ -85,6 +85,10 @@ class OfferIngestionService
                 'stock_status'  => $data['stock_status'] ?? $existingOffer->stock_status,
             ]);
 
+            // Captured here, not at dispatch: listingHealth->apply() below re-saves the
+            // offer (health_checked_at) and wasChanged() only reflects the LAST save.
+            $priceChanged = $existingOffer->wasChanged('scraped_price');
+
             $action = 'refreshed';
 
             $product = Product::find($existingOffer->product_id);
@@ -111,7 +115,7 @@ class OfferIngestionService
                 // Perf H1: only queue a (chunked, category-wide) tier recalc when the
                 // price actually moved — a rescan walk that refreshes hundreds of
                 // unchanged offers must not queue hundreds of redundant jobs.
-                if ($existingOffer->wasChanged('scraped_price')) {
+                if ($priceChanged) {
                     RecalculateCategoryPriceTiers::dispatch($tenantId, $product->category_id ?? $data['category_id']);
                 }
             }
@@ -208,6 +212,9 @@ class OfferIngestionService
                 ]
             );
 
+            // Captured before apply() re-saves the offer (wasChanged() = last save only).
+            $priceChanged = $priorOffer !== null && $offer->wasChanged('scraped_price');
+
             $action = 'matched';
 
             // Update rating/reviews on the matched product if the scraper provided them
@@ -243,7 +250,7 @@ class OfferIngestionService
 
                 // Perf H1: only when there WAS a prior offer (i.e. this is a refresh,
                 // not attaching a brand-new store offer) AND its price actually moved.
-                if ($priorOffer && $offer->wasChanged('scraped_price')) {
+                if ($priceChanged) {
                     RecalculateCategoryPriceTiers::dispatch($tenantId, $product->category_id ?? $data['category_id']);
                 }
             }

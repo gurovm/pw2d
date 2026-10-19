@@ -233,3 +233,54 @@ and `extractReviewsCount()` are pure functions of a Document/element so they can
 - T2 (frontend/extension): B1–B4 (single PR, all three extension files + manifest bump).
 - T3 (tester): endpoint contract tests incl. auth + tenant isolation.
 - T4 (reviewer): pass over refresh semantics (silent-overwrite risks) + extension/API contract sync.
+
+---
+
+## Addendum — 2026-10-19: the post-rescan tier recalc (A4) never fires on extension rescans
+
+**Finding (verified on prod 2026-10-19).** `OfferIngestionService::processIncomingOffer()` decides whether to
+dispatch `RecalculateCategoryPriceTiers` with `$existingOffer->wasChanged('scraped_price')` (refresh path, ~line 114)
+and `$offer->wasChanged('scraped_price')` (matched-with-prior-offer path, ~line 246). Both checks run **after**
+`ListingHealthService::apply()`, which re-saves the offer to stamp `health_checked_at` (`ListingHealthService.php:108/117/141/160`).
+Eloquent's `wasChanged()` reflects only the **latest** save, so whenever a condition is sent, the check reads
+`false` and nothing is dispatched. The extension sends a condition on every verified page (`popup.js:853`).
+
+- Evidence: on 2026-10-15 the log has 167 `OfferIngestion: refreshed existing offer` lines (both picks runs + the
+  super-automatic rescan) and **one** `RecalculateCategoryPriceTiers: done`, from an Amazon batch import (that
+  controller sets `$priceUpdated = true` on any refresh, so it is not affected).
+- State on 2026-10-19 (read-only scan of live products, `best_price` vs `priceTierFor()`): **27 products in the wrong
+  band in 10 of 11 categories**, among them De'Longhi Dedica Maestro Plus (3329) $394 sitting in band 1 — the
+  semi-automatic guide's Best Budget pick, in a category whose budget line is $250 — and Timemore Fish (3758) $129 in
+  band 2 on gooseneck (mid line $120). pw2d gaming headsets has 10.
+- Why the suite missed it: the three A4 tests (`tests/Feature/Services/OfferIngestionServiceTest.php` ~956–1019) send
+  no `condition`, and `apply()` returns early on a null condition, so the second save never happens in tests.
+
+**Changes**
+
+- **C1 — capture before `apply()`.** Refresh path: `$priceChanged = $existingOffer->wasChanged('scraped_price')`
+  immediately after the offer's own `update()`; dispatch on `$priceChanged`. Matched path: `$priceChanged = $priorOffer
+  !== null && $offer->wasChanged('scraped_price')` immediately after `updateOrCreate()`. One comment saying why
+  (`apply()` re-saves the offer; `wasChanged()` only reflects the last save). No other behaviour change.
+- **C2 — nightly safety net.** Schedule `products:recalculate-tiers` daily at **03:20** (`withoutOverlapping()`,
+  `runInBackground()`) in `routes/console.php`, i.e. before the 03:30 `pw2d:landing-pages:audit`, so the audit's
+  selection check runs on corrected bands and flags any guide whose picks move. It covers what a per-change dispatch
+  cannot see: the best offer changing by stock / condition / flags without a price change, category threshold edits,
+  and the `ShouldBeUnique` window while a recalc is executing.
+- **C3 — make the net visible.** `RecalculatePriceTiers::handle()` logs one summary line
+  (`Log::info('products:recalculate-tiers: done', ['fixed' => …, 'skipped' => …])`). Scheduled output goes to
+  /dev/null; a non-zero nightly `fixed` after C1 ships means another path still leaks.
+
+**Not doing:** a separate audit flag for "pick's stored tier ≠ its price" (C2 + the existing selection-drift check
+already surface it); `ShouldBeUniqueUntilProcessing` (the race is seconds wide and C2 covers it).
+
+**Tests** (must fail on the current code where marked):
+1. Refresh of an existing offer with `condition: 'new'`, `listing_flags: []` and a changed price → job pushed once. *(red today)*
+2. Same with an unchanged price → not pushed.
+3. Matched-to-existing-product path with a prior offer, `condition: 'new'`, changed price → pushed once. *(red today)*
+4. Refresh with a negative condition (e.g. `used`) and a changed price → pushed once.
+5. Schedule: `products:recalculate-tiers` is registered daily at 03:20, before the 03:30 audit.
+6. Command writes the summary log line with the fixed/skipped counts.
+
+**Prod, separate from the deploy (owner-confirmed write):** back up `id, price_tier` of all products →
+`php artisan products:recalculate-tiers` → `php artisan pw2d:landing-pages:audit` → read which guides now show
+selection drift. Expected: semi-automatic (budget slot), possibly gooseneck and gaming headsets.
