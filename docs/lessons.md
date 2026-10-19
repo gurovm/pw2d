@@ -4,6 +4,21 @@ Living document of quirks, gotchas, and mistakes worth not repeating. Add new en
 
 ---
 
+## 2026-10-19 — A rescan never recalculated price bands: `wasChanged()` read after a second save, tests without the client's payload
+
+`OfferIngestionService` gated the tier recalc on `$offer->wasChanged('scraped_price')`, checked after
+`ListingHealthService::apply()` had saved the same offer again (`health_checked_at`). `wasChanged()` reflects only
+the **last** save, so the check was always false: 167 rescans on 10-15, zero recalcs; 27 products in the wrong band,
+one of them holding a guide's Best Budget slot at $394. The A4 tests sent no `condition`, so `apply()` returned early
+and they passed for two months. The 10-15 todo note had also diagnosed it as "rescans never dispatch" without reading
+the dispatch code, and proposed a fix for a path that already existed.
+
+**Rule:** capture `wasChanged()` / `getChanges()` right after the save you mean, before any call that may save the
+model again. Tests for an endpoint send the payload the real client sends (here: `condition` is always present on a
+verified page). And a diagnosis in a note is a claim: read the code path before specifying its fix.
+
+---
+
 ## 2026-10-15 — Two of our own shell scripts failed silently: a watcher that never fired, a todo edit that cut two lines
 
 The wait loop did `out=$(ssh … mysql -N …); set -- $out` and compared `$1`/`$2`. The Bash tool runs **zsh**, which does
