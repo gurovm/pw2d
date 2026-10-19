@@ -129,3 +129,27 @@ the regression guards that PHPUnit/Livewire CAN assert:
   reorder fix first; do not over-engineer a responsive drawer rewrite in this spec.
 - **Scope discipline:** this spec is the inline-sliders option's lighter cousin — it does NOT move
   sliders inline (that was the rejected option). Keep to reorder + backdrop + session auto-open.
+
+---
+
+## Addendum — 2026-10-19: stop auto-opening the Customize drawer (reverses §2 Issue 2)
+
+**Why.** PostHog replay review 2026-10-16 (`docs/summaries/2026-10-16-posthog-replay-review.md` §2.4): the drawer
+fires on the first compare-page visit per category per session and on mobile covers the whole screen with 7 sliders.
+About 8 of 18 real visitors who got it left within 25 s with zero clicks; 2 used a preset, 1 moved a slider. §2 Issue 2
+said engagement data would decide escalation; it decided the other way. Owner approved 2026-10-19 (all devices).
+
+**Change**
+- `resources/views/livewire/comparison-header.blade.php` — `initAutoOpen()` no longer opens the drawer on any device:
+  every load runs the existing teaser branch (FAB bounce 3.5 s + tooltip). Remove the sessionStorage key and the
+  `customize_modal_autoopened` capture. Keep the `app-open-sidebar` window listener (check other dispatchers with a
+  grep), the manual FAB open and its `customize_modal_opened` event. Alpine rule: logic stays in an `x-data` method,
+  no bare `const`/`let` in `x-init` (lessons 2026-06-19).
+- Remove the now-dead `autoOpen` prop: `ComparisonHeader::$autoOpen`, the `mount()` parameter, and `:autoOpen` in
+  `product-compare.blade.php:53`.
+
+**Tests:** a compare page and a product page render without the auto-open dispatch (`customize_modal_autoopened`
+absent) and with the teaser markup present; the existing compare/product suites stay green.
+
+**Measure:** compare-page funnel `BFrlzHNY` (baseline 15.5%) and manual `customize_modal_opened` counts, before vs
+after the deploy date — traffic is too low for an A/B test.

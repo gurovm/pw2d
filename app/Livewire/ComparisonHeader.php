@@ -23,7 +23,6 @@ class ComparisonHeader extends Component
     public ?string $presetSlug = null;
 
     public $categoryId;
-    public $autoOpen = true;
     public array $samplePrompts = [];
 
     #[On('ai-weights-updated')]
@@ -50,14 +49,13 @@ class ComparisonHeader extends Component
         $this->dispatch('alpine-sliders-dirty');
     }
     
-    public function mount($features, $weights, $priceWeight, $amazonRatingWeight, $categoryId, $autoOpen = true)
+    public function mount($features, $weights, $priceWeight, $amazonRatingWeight, $categoryId)
     {
         $this->features = $features;
         $this->weights = $weights;
         $this->priceWeight = $priceWeight;
         $this->amazonRatingWeight = $amazonRatingWeight;
         $this->categoryId = $categoryId;
-        $this->autoOpen = $autoOpen;
         
         $this->presets = Preset::where('category_id', $this->categoryId)
             ->orderBy('sort_order')

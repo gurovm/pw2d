@@ -7,24 +7,13 @@
     x-data="{
         showPreferences: false,
         teaser: false,
-        initAutoOpen() {
-            // Per-category, per session. Key = the category slug, so the drawer auto-opens the
-            // first time the user lands on each category each session. To make it once-per-session
-            // globally, drop the slug; for every page, remove the sessionStorage guard.
-            let key = 'app_customize_autoopen:{{ $categorySlug }}';
-            if (!sessionStorage.getItem(key) && @js($autoOpen)) {
-                sessionStorage.setItem(key, '1');
-                setTimeout(() => {
-                    window.dispatchEvent(new CustomEvent('app-open-sidebar'));
-                    if (typeof posthog !== 'undefined') posthog.capture('customize_modal_autoopened', { category: '{{ addslashes($categoryName) }}' });
-                }, 1500);
-            } else {
-                this.teaser = true;
-                setTimeout(() => { this.teaser = false; }, 3500);
-            }
+        initTeaser() {
+            // The drawer never opens by itself; every load only nudges the FAB (bounce + tooltip).
+            this.teaser = true;
+            setTimeout(() => { this.teaser = false; }, 3500);
         }
     }"
-    x-init="initAutoOpen()"
+    x-init="initTeaser()"
     x-on:app-open-sidebar.window="showPreferences = true"
     @keyup.escape.window="showPreferences = false"
 >

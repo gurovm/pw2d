@@ -50,7 +50,7 @@
         {{-- Leaf category: show full comparison UI --}}
         <div class="bg-gradient-to-br from-gray-50 to-white min-h-screen">
                 <livewire:comparison-header :features="$features" :weights="$weights" :priceWeight="$priceWeight" :amazonRatingWeight="$amazonRatingWeight"
-                        :categoryId="$category->id" :autoOpen="!$selectedProductSlug" />
+                        :categoryId="$category->id" />
 
                 <div class="bg-white border-b border-gray-200 overflow-hidden">
                         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
