@@ -4,6 +4,18 @@ Living document of quirks, gotchas, and mistakes worth not repeating. Add new en
 
 ---
 
+## 2026-10-24 — Diagnosed extension errors from a browser that does not see what the extension sees
+
+Two of the picks run's three Amazon errors (Breville Bambino, Kinesis Advantage360) were opened in the Claude-in-Chrome
+tab, which showed no buy box, only "See Similar Items" for an Israel delivery address, and the architect began to read
+that as "the extension fails on items that don't ship to Israel" and to suspect the `high_price` flags too. The owner
+runs the extension **through a US VPN in a logged-out Chrome**; the Claude-in-Chrome tab is the owner's **logged-in
+profile, delivering to Rishon Lezion**. Different vantage point, different page. **Rule:** a store page read from the
+Claude-in-Chrome tab says nothing about what the extension read. To diagnose an extension error, re-run that offer in
+the owner's VPN profile (or ask the owner to open it there); don't build a theory from a different session.
+
+---
+
 ## 2026-10-19 — A rescan never recalculated price bands: `wasChanged()` read after a second save, tests without the client's payload
 
 `OfferIngestionService` gated the tier recalc on `$offer->wasChanged('scraped_price')`, checked after

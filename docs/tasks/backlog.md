@@ -16,6 +16,11 @@ the code in brackets. Codes (Q5, F12, H-E…) are kept only so the old text can 
 - [ ] **Slug uniqueness not tenant-scoped in Filament** — CategoryResource, StoreResource [L11]
 - [ ] **SEO dashboard has no access gate** — same as every other admin page; build gates system-wide or drop the requirement [F13]
 
+## Server & runtime
+
+- [ ] **OPcache preload skips classes** — every PHP-FPM start logs "Can't preload unlinked class …" (276 lines since 10-23; e.g. `App\Models\User`, `VsPage`: parent class not loaded first); `/var/www/pw2d/opcache_preload.php` is a server-only file (untracked, dated 2026-03-06) set by `opcache.preload` in fpm's php.ini; speed only, no fault; fix the load order or drop preload, then track the file in git → found 2026-10-24 during the PHP CVE check
+- Note: 2026-10-24 — `/etc/php/8.3/fpm/conf.d/99-pw2d-security.ini` sets `session.upload_progress.enabled = 0` (extra protection for CVE-2026-109618/109619; patched by Ubuntu's `8.3.6-0ubuntu0.24.04.13`, auto-installed 10-23 06:23 UTC); delete the file to undo
+
 ## Import, Bouncer & AI
 
 - [ ] **Brand duplicate 'Zulay' vs 'Zulay Kitchen'; two brandless super-automatics hidden as white-label** — 'Series 6' $1,299 (B0HGGH9SLL), 'Espresso Bar' $500 (B0FV1T2TW1); identify on Amazon, then rename or leave hidden → `docs/summaries/2026-10-15-stale-price-bands-robots-404-limit-copies-super-auto-rebuilt.md` §3
