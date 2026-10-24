@@ -1235,3 +1235,114 @@ early October; 0 invalid; 2 items with price/priceCurrency warnings.
 - **"Merchant opportunities → Shopping tab" (owner screenshot, ~261 products found): not eligible, ignore.** Merchant
   Center requires products purchasable on our site and forbids affiliate links outside the EEA/UK/CH CSS programme;
   it would also need a price feed (forbidden by the Spec 019 / Associates policy). Recorded in memory `seo-schema-policy`.
+
+## UPDATE — 2026-10-24 check: Spec 042 passes on both tenants (our own stars kept; c2d star CTR 0.89% → 1.66%). c2d clicks at a new high pace. The deep-impression burst is gone. pw2d product pages are slipping off page one since ~10-13 — real, small, cause unknown.
+
+*(Due ~10-22; run two days late, during the c2d weekly picks run.)*
+
+**Pipeline:** 4/4 HEALTHY. GSC through 10-21 on both tenants (no lag between them), GA4 through 10-23. No SEO
+errors in the log. Week 202642 is partial (4 days: 10-18 → 21). Stored product-page totals match the GSC API
+exactly (pw2d 10-15 → 21: 504 impr / 4 clicks both ways), so the pw2d drop below is not lost rows.
+
+### Trajectory
+| Metric (28d) | pw2d 10-15 | **pw2d 10-24** | c2d 10-15 | **c2d 10-24** |
+|---|---|---|---|---|
+| Pages w/ impressions | 417 | **429** | 322 | **389** |
+| Impressions | 4,754 | **5,380** | 7,446 | **8,338** |
+| Clicks | 12 | **14** | 67 | **78** |
+| Weighted pos | 28.8 | **32.7** ⚠️ | 16.4 | **17.3** ⚠️ |
+| CTR | 0.25% | **0.26%** | 0.90% | **0.94%** |
+
+⚠️ The 28-day window still holds the deep burst (10-05 → 10-17); `wpos` readable again from the next check.
+
+### Position buckets (impressions per week)
+| tenant | wk | ≤10 | 11–20 | 21–50 | 50+ | clicks (≤10) |
+|---|---|---|---|---|---|---|
+| pw2d | 202640 | 478 | 258 | 593 | 814 | 4 (2) |
+| pw2d | 202641 | 355 | 188 | 534 | 1,253 | 3 (2) |
+| pw2d | 202642 (4 d) | **109** | 88 | 47 | 24 | 3 (1) |
+| c2d | 202640 | 1,333 | 497 | 155 | 480 | 23 (17) |
+| c2d | 202641 | 1,169 | 632 | 184 | 576 | 23 (16) |
+| c2d | 202642 (4 d) | **781** | 327 | 123 | 18 | **20 (14)** |
+
+- **Deep burst over on both tenants the same week** (50+: c2d 576 → 18, pw2d 1,253 → 24 in 4 days) — Google-side,
+  as read on 10-15.
+- **c2d:** page-one ~195/day (≈ 1,370/wk pace, best yet), 20 clicks in 4 days (≈ 35/wk pace). Holds ≥ 15/wk ✓.
+- **pw2d page one is sliding:** ~65/day (10-08 → 12) → ~48 (10-13 → 17) → **~27 (10-18 → 21)**. All in product
+  pages (page-one 288/wk → 89 in 4 days; pages on page one ~140 → 44), spread thin — ~100 product pages each lose
+  a few impressions, no single page collapses. Total product impressions hold (~47–72/day), so pages are moving
+  from page one to page two, not leaving the index (5 of the losers URL-inspected: all "Submitted and indexed").
+  c2d got the same deploys and is fine → not our code. Cause unknown; small numbers; one more week before acting.
+
+### Spec 042 read — product pages, GSC API (`searchAppearance`)
+| tenant | window | all product pages | with stars (REVIEW_SNIPPET) | without stars |
+|---|---|---|---|---|
+| c2d | 09-06 → 10-03 (baseline) | 5,133 / 33 | 3,263 / 29 (0.89%, 116/day) | 1,870 / 4 (0.21%) |
+| c2d | 10-05 → 10-14 | 2,174 / 28 | 1,640 / 24 (1.46%, 164/day) | 534 / 4 (0.75%) |
+| c2d | 10-15 → 10-21 | 1,705 / 27 | 1,444 / 24 (**1.66%**, 206/day) | 261 / 3 (1.15%) |
+| pw2d | 09-06 → 10-03 (baseline) | 1,825 / 14 | 1,419 / 13 (0.92%, 50/day) | 406 / 1 (0.25%) |
+| pw2d | 10-05 → 10-14 | 803 / 4 | 710 / 4 (0.56%, 71/day) | 93 / 0 |
+| pw2d | 10-15 → 10-21 | 504 / 4 | 422 / 4 (**0.95%**, 60/day) | 82 / 0 |
+
+- **Stars kept on both tenants, now from our own rating.** Acceptance (spec §Rollout 4): "stars kept and CTR within
+  ~25% of baseline" → **met** — c2d far above, pw2d 0.71% over 10-05 → 21 (−23%, on 8 clicks). **Phase B
+  (pw2d titles + 88 renames) is unblocked.**
+- The non-star CTR on c2d also rose (0.21% → 1.15%, but on 3–4 clicks), so not all of c2d's gain is the stars.
+- Other appearances on product pages 10-15 → 21: PRODUCT_SNIPPETS c2d 30, pw2d 13; MERCHANT_LISTINGS c2d 1 (draining).
+- **URL Inspection (10-24):** the 4 c2d pages (Epeios, Mechanika Max II, RHD, KINGrinder P2) PASS with Product
+  snippets + Review snippets, no Merchant listings; re-crawled 10-05 → 10-18. pw2d: Corne v4.1 and Turtle Beach
+  Recon 200 (crawled 10-13/10-20) PASS the same way; **Keychron K8 HE, Razer BlackWidow V4 TKL, AULA F99S — last
+  crawled 09-19, 09-04, 08-31 — still FAIL on the old Merchant listings markup.** pw2d product pages are re-crawled
+  slowly; the `?limit=` crawl check (~10-29) shows whether the fix freed crawl for them.
+
+### Google clicks → store clicks (28d)
+- **c2d: 78 → 19** (10-15: 16). Epeios kettle 2, RHD kettle 2, ECM Mechanika Max II 2, `/compare/gooseneck-kettles` 2,
+  then 1 each: Bezzera Hobby, Mecity, Soma, Quick Mill Pippa, Clever dripper, Cocinare, `/compare/pour-over`, Kalita,
+  Hario V60 Fit, Creano, `/best/super-automatic`. Kettles are 10 of 19.
+- **pw2d: 14 → 2** (Keychron K8 HE, Micropack split keyboard).
+
+### Estimated affiliate revenue (PostHog, 28d; c2d now fully tracked, ×30/28)
+- **c2d ≈ $13/month** (Whole Latte Love $9 from 4 clicks: Synchronika II $3,599, Mechanika Max II ×2 $2,249, Pippa
+  $999; Amazon $4 from 18 clicks, $18–1,748 — one De'Longhi Eletta Explore click today carries half the Amazon
+  figure). Down from $17 (10-15) and $20 (10-04): one fewer high-ticket Whole Latte Love click.
+- **pw2d ≈ $0.3/month** (3 Amazon clicks, $46–140 keyboards).
+- **Trigger ($50/month for ~a month): not met, 0 of 4 weeks.**
+- PostHog visitors (28d, raw — internal filter not applied in HogQL): c2d 149 people / 218 pageviews, 97 from
+  Google, 7 from ChatGPT (`utm_source`); pw2d 58 people, 20 from Google.
+
+### Target preset queries (14d, positions ≤ 50)
+pw2d:
+
+| Query | 10-04 | 10-15 | **10-24** |
+|---|---|---|---|
+| ergonomic keyboard for programmers / developers (`?preset=programmer`) | 19.7 | 12.8 / 7.5 | **10.0 / 10.0** (32 impr) |
+| rsi keyboard (`?preset=rsi-sufferer`) | 19.5 | 9.9 | **10.7** (3 impr; "best mechanical keyboard for rsi" 20.3) |
+| mechanical keyboard for streamers (`?preset=streamer`) | 9.4 | 13.0 | **gone** (no row ≤ 50) |
+| gaming headset for remote workers (`?preset=remote-worker`) | 6.2 | ~9 | **gone** |
+
+c2d (all 0 clicks): "pour over coffee maker for short people" `pour-over?preset=beginner` **2.8** (42 impr),
+"lightweight pour over coffee maker" `?preset=traveler` 5.2 (32), "…for cyclists" 5.8 (27), "gooseneck kettle for
+tea" `?preset=tea-drinker` 7.9 (15), "semi-automatic espresso for beginners" 5.3, "epeios kettle review" 7.0.
+
+### `/best/` and `/vs/` pages (14d)
+- **All six c2d `/best/` guides have rows now** — cold-brew (30 impr, pos 9.2), pour-over (9, 10.6) and
+  semi-automatic (1, from 10-20) for the first time; super-automatic 28 / 9.6, grinders 33 / 15.3, gooseneck 21 / 12.1.
+  0 clicks in 14 days (super-automatic had 2 in the prior window).
+- pw2d `/best/`: mechanical keyboards 605 impr at 31.9 (1 click), the rest 2–16 impr at pos 6.5–16.4.
+- **`/vs/` first impressions, 10-20:** "profitec go vs rancilio silvia" **pos 8.1–8.8 — page one** (30 impr in 2
+  days); "breville barista express vs pro" pos 22–31 (9 impr). Gate ~11-16 (≥ 2 of 5 on page one): 1 of 2 so far,
+  three Jura pages still unwritten.
+
+### Decisions (2026-10-24)
+- **Spec 042 done; Phase B (pw2d product titles + 88 renames) can start.** It is also the one queued lever for pw2d's
+  page-one slide — ship once, measure against the 0.67% product-CTR baseline.
+- **pw2d slide: watch one more week**, no other new on-page spec. If page-one product impressions stay ≤ ~30/day,
+  look at what changed for pw2d only (crawl rate, the 3 FAIL pages' last-crawl dates, index counts in GSC).
+- **c2d: no on-page work.** Clicks at a new high on flat-to-rising visibility.
+- **Affiliate trigger not met** (c2d ≈ $13). No action.
+
+### Next check (~2026-10-29, with the `?limit=` crawl count and the next weekly picks run)
+1. pw2d page-one product impressions: still ~27/day, or recovering?
+2. c2d: does the ~35 clicks/wk pace hold for a full week?
+3. `/vs/`: does GO vs Silvia stay on page one; does Express vs Pro climb?
+4. Do the three pw2d FAIL pages get re-crawled after the `?limit=` fix?
