@@ -1,0 +1,135 @@
+# Draft — /best/manual-coffee-grinders: full rebuild after the 2026-10-24 sweep
+
+**For:** owner review. Nothing is saved until you approve. Source of truth for the save: `2026-10-24-grinders-guide.json`;
+the live page as it stands is kept in `2026-10-24-grinders-live-before.json`.
+
+**Why:** the category was rescanned today (58 of 58 listings, 0 errors). The page dates from 08-21. Its first Best Overall
+pick, the 1Zpresso X-Ultra, is out of stock, and a fresh selection changes 3 of the 7 slots:
+- Best overall: 1Zpresso X-Ultra (out of stock) → **Timemore Chestnut S3**, $160 (moves up from the espresso slot)
+- Premium: Comandante C40 MK4 Black ($270 now) → **1Zpresso K-Ultra**, $260
+- Best for espresso: Timemore Chestnut S3 → **Comandante C40 MK3 Nitro Blade**, $350
+- Unchanged: KINGrinder P2 $55, Timemore Chestnut Xlite $130, Timemore C5 ESP PRO $110 (was $90), WACACO Exagrind $80
+
+Almost every paragraph of the old page compared against the X-Ultra, the $280 MK4 or the S3 at $130, so the page is rewritten
+rather than patched.
+
+**The editorial call to check:** the K-Ultra is best or tied for best on all five scores. The picker shows each grinder once
+(verified in `SelectLandingPagePicks`: premium is filled before the presets, and presets skip already-picked grinders), so the
+espresso, daily and travel slots go to the next-best grinder. The page says so in the intro and in an FAQ, and the espresso
+pick (the $350 Comandante) openly says the K-Ultra is the better espresso grinder for $90 less.
+
+**Checks run:** banned phrases (shared `ProseStyle` list) — clean, 14 blocks · listing-condition words — none · every number
+traced to prod scores and prices by script — clean · picks equal a fresh selection, in order — yes · product claims only from
+each grinder's stored summary (S2C burrs, ABS body, foldable handle, Nitro Blade, 20g capacity, 33-micron steps…).
+
+---
+
+## Intro
+
+We scored all 58 manual grinders in our database on five things — grind consistency, adjustment precision, speed and effort, build quality, and portability — and ranked them on those scores, with price and store ratings counted in. The seven below run from $55 to $350.
+
+One grinder sits above the rest, and it's better to say so up front. The 1Zpresso K-Ultra scores highest or ties for highest on all five measures, and on raw scores it would also win our espresso, daily-brewing and travel slots. Each grinder appears once here, so those slots go to the next-best machine; read them as "if not the K-Ultra". The other thing worth knowing is how little the middle costs. Our top overall pick is $160, and the $100 from there to the K-Ultra buys 2 to 8 points per measure.
+
+## Best overall — Timemore Chestnut S3 ($160)
+
+**92 on adjustment for $160**
+
+The S3 tops our overall ranking: 88 on grind consistency, 92 on adjustment precision, 85 on speed and 90 on build. Only the $260 K-Ultra scores higher on adjustment, 94 to 92.
+
+Per our data it's a machined grinder with S2C burrs and external grind adjustment, so you change the setting from outside instead of taking it apart. That matters if you move between pour-over and espresso in the same week. At $160 it's $105 above the budget pick and $100 below the K-Ultra, whose lead over it is 2 to 8 points per measure.
+
+Portability is the weak spot at 80. The $110 C5 ESP PRO and the $80 Exagrind both score 88 there, so if your grinder lives in a bag, look further down. This one belongs on the counter.
+
+## Best budget — KINGrinder P2 Lightweight Manual Coffee Grinder ($55)
+
+**Steel burrs inside a plastic body, $55**
+
+At $55 the P2 is the cheapest grinder here by $25, and the top-ranked one we track under $60.
+
+Per our data the body is ABS plastic and the burrs inside are stainless steel. The burrs are why it still reaches 72 on grind consistency and 75 on speed. The body is why build scores 55, the lowest on this page by 29 points.
+
+Adjustment precision is 68, and that's the ceiling that matters. Everything else here scores 82 or more on it. Buy it for filter coffee on a tight budget. For espresso, that 68 will show.
+
+## Premium — 1Zpresso K-Ultra Manual Coffee Grinder Silver with Carrying Case ($260)
+
+**Best or tied for best on all five scores**
+
+95 on grind consistency, 94 on adjustment, 90 on speed, 96 on build and 88 on portability. Every one of those is the best on this page or tied for it. If you want the strongest scorecard here and the price doesn't stop you, this is the one.
+
+Per our data it has an external adjustment ring, a foldable handle and a magnetic catch cup, and it comes with a carrying case, so it works on the road as well as on the counter. It's also $90 less than the Comandante C40 MK3 below, which it matches or beats on every measure.
+
+The catch is the price. $260 is $100 over our top overall pick, the Chestnut S3, and the gain is 2 to 8 points per measure. That's real, but if your grinder never leaves the kitchen, the S3 gets you most of the way.
+
+## Best for espresso — Comandante C40 MK3 Nitro Blade ($350)
+
+**95 on consistency, with stepped adjustment**
+
+The espresso slot weights grind consistency and adjustment precision above everything else. On those weights the K-Ultra above would win it, so the slot goes to the next grinder down: the Comandante C40 MK3, which matches the K-Ultra's 95 on consistency and 96 on build, the top scores here.
+
+Per our data its draw is the Nitro Blade burrs and German engineering, and our numbers back the burrs: nothing on this page scores higher on consistency. Adjustment is another story at 88, behind the K-Ultra's 94 and the S3's 92. Its settings are stepped.
+
+It's also the most expensive grinder here. $350 is $90 more than the K-Ultra, for lower scores on adjustment, speed and portability. Buy it if you want the Comandante specifically. On our numbers alone, the K-Ultra is the better espresso grinder for less.
+
+## Best for daily brewing — Timemore Chestnut Xlite ($130)
+
+**The S3's burrs for $30 less**
+
+The daily-brewing slot leans on grind consistency and speed. The K-Ultra, the C40 and the S3 would all rank above the Xlite on those weights, and all three are placed already, so it comes down to this one: 85 on consistency and 84 on speed for $130.
+
+Per our data it uses the same S2C burrs as the Chestnut S3, in an aluminum body with external adjustment. It's $30 cheaper than the S3.
+
+The S3 still scores higher on all five measures, by 1 to 10 points, and the Xlite holds 20g of beans at a time, so a large pour-over means grinding twice. If the $30 doesn't matter to you, buy the S3.
+
+## Best for travel — Timemore C5 ESP PRO Manual Coffee Grinder 50 Adjustable Settings ($110)
+
+**Folds for travel and reaches espresso, $110**
+
+The travel slot weights portability and build above everything else. With three grinders that would rank higher already placed, it goes to the C5 ESP PRO: 88 on portability, tied for the best here, and 85 on build. Per our data it has a foldable handle, 42mm burrs and a fine-threaded adjustment that reaches espresso.
+
+It's $30 more than the Exagrind below and matches or beats it on every measure, which is what the extra money buys. Against the K-Ultra, which also folds and also scores 88 on portability, it saves $150.
+
+Speed and effort is its weakest score at 78, and per our data dialing in espresso still feels restrictive next to stepless grinders. If you grind espresso at home every day, the S3 is $50 more and scores 92 on adjustment.
+
+## Best overall — WACACO Exagrind ($80)
+
+**88 on portability for $80**
+
+An 88 on portability ties the best on this page, and at $80 the Exagrind is the cheapest grinder to get there, $30 under the C5 ESP PRO. Per our data it was designed to go with travel espresso setups like the Picopresso, and its adjustment moves in 33-micron steps.
+
+82 on consistency and 85 on adjustment are level with the C5. It's $25 more than the budget pick and a far better-built grinder: 84 on build against 55.
+
+The limits are capacity and speed. It holds 20g, so anything past a single large brew means two rounds, and its 75 on speed and effort ties the budget pick for the lowest here. This is a grinder for one careful dose at a time.
+
+## FAQs
+
+**Is the K-Ultra worth $100 more than the Chestnut S3?**
+
+On our scores it's better at everything, by 2 to 8 points per measure: 95 against 88 on consistency, 94 against 92 on adjustment, 90 against 85 on speed, 96 against 90 on build and 88 against 80 on portability. If you travel with your grinder, the biggest gap, 8 points on portability, is the one you'll use. If it stays on the counter, the S3 gets you most of the K-Ultra for $160.
+
+**Why isn't the K-Ultra the espresso pick when it outscores the Comandante?**
+
+Because each grinder appears once on this page. On the espresso weights the K-Ultra comes first and the Comandante C40 MK3 second, and the K-Ultra had already taken the premium slot, so the espresso slot passed to the Comandante. If you're buying for espresso, the K-Ultra is still our first choice: it matches the C40's 95 on consistency, beats its 88 on adjustment with 94, and costs $90 less.
+
+**How much grind consistency do you lose dropping from $260 to $55?**
+
+23 points on our scale: the K-Ultra scores 95, the KINGrinder P2 scores 72. The bigger drop is adjustment precision, 94 against 68, and that's what holds the P2 back for espresso. For filter coffee on a tight budget, the P2 is still the grinder our data points to.
+
+**Does a plastic body mean a bad grinder?**
+
+Not on our numbers. The KINGrinder P2 scores 55 on build, the lowest here, because the body is ABS plastic, yet it reaches 72 on grind consistency because the burrs inside are stainless steel. The body decides how the grinder feels in your hand. The burrs decide the grind.
+
+**How many grinders did you compare to reach these seven?**
+
+58, every manual grinder in our database for this category. Each is scored 0 to 100 on five features: grind consistency, adjustment precision, grinding speed and effort, build and material quality, and portability and capacity. The overall ranking counts the five equally, with store ratings and price counted in; the three preset picks use their own weights.
+
+## Methodology note (unchanged)
+
+In the overall ranking every feature score counts equally, alongside a store customer rating where we have one and a credit for cheaper price tiers; each preset pick uses that preset's own feature weights instead.
+
+---
+
+## The save, once you approve
+
+Back up the landing-page row (id 4) to `/root/backups/landing-grinders-before-rebuild-2026-10-24.sql` → assert the live row
+still equals `…-live-before.json`, the picks equal a fresh selection, every price equals its snapshot, and the style list is
+clean → write intro, picks, FAQs → run the guide audit → expect FRESH. Undo: restore the backup row.

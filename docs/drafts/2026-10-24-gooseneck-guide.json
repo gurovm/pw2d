@@ -1,0 +1,122 @@
+{
+  "category_slug": "gooseneck-kettles",
+  "expected_picks": [
+    {
+      "role": "overall",
+      "product_id": 4325,
+      "est_price": 60
+    },
+    {
+      "role": "budget",
+      "product_id": 4282,
+      "est_price": 35
+    },
+    {
+      "role": "premium",
+      "product_id": 3787,
+      "est_price": 160
+    },
+    {
+      "role": "preset:enthusiast",
+      "product_id": 3738,
+      "est_price": 180
+    },
+    {
+      "role": "preset:casual",
+      "product_id": 3758,
+      "est_price": 130
+    },
+    {
+      "role": "preset:tea-drinker",
+      "product_id": 3742,
+      "est_price": 100
+    },
+    {
+      "role": "overall",
+      "product_id": 4266,
+      "est_price": 35
+    }
+  ],
+  "intro": "<p>We scored all 51 gooseneck kettles in our database on five things — pour precision, temperature accuracy, heating speed, ergonomic balance, and insulation — and ranked them on those scores, with price and store ratings counted in. The seven below run from $35 to $180.</p><p>Two things are worth knowing before you read on. The Brewista Artisan has the highest average score here, and on raw scores it would also win all three of our \"best for\" slots. Each kettle appears once on this page, so those slots go to the next-best kettle, and the Brewista sits in the premium slot. And money in this category buys pour control and balance, not speed: the fastest kettle on the page is the $60 Cocinare, at 90 on heating, while the $180 Fellow scores 80.</p>",
+  "picks": [
+    {
+      "role": "overall",
+      "product_id": 4325,
+      "product_name": "Cocinare Artisan Gooseneck Kettle",
+      "est_price_snapshot": 60,
+      "headline": "The fastest kettle here, at $60",
+      "body": "<p>A 90 on heating speed is the best on this page, and 88 on temperature accuracy ties the $100 Bonavita, behind only the two kettles that cost $160 and $180. Per our data that speed comes from a 1500W element.</p><p>At $60 it's $25 above our two budget kettles and beats or ties both on all five measures. It's also $100 under the Brewista, which leads it by 7 points on pour precision and 16 on balance. If you brew pour-over a few times a week, this is where we'd stop.</p><p>Balance is the weak point at 78, and insulation is 75. Per our data the body has a wave design that won't suit everyone, so look at the photos before you buy. It's a fast, accurate kettle, not the steadiest pour here.</p>"
+    },
+    {
+      "role": "budget",
+      "product_id": 4282,
+      "product_name": "Grosche Marrakesh 34oz",
+      "est_price_snapshot": 35,
+      "headline": "A stovetop kettle with a thermometer, $35",
+      "body": "<p>At $35 the Marrakesh is the cheapest way onto this page, tied with the electric Mecity further down. It's a stovetop kettle: per our data it has a built-in analog thermometer and a stainless steel body, and there's no electric base.</p><p>Against the Mecity it wins on pour precision, 78 to 70, on balance, 72 to 65, and on insulation, 75 to 55. Those are the scores you feel while you pour.</p><p>Heating is the cost. 60 on heating speed is the lowest here by 20 points, since you're waiting on your stove, and 70 on temperature accuracy is also the lowest; reading a dial isn't the same as setting a number. If you want electric at this price, the Mecity below is the same $35.</p>"
+    },
+    {
+      "role": "premium",
+      "product_id": 3787,
+      "product_name": "Brewista Artisan Electric Gooseneck Kettle",
+      "est_price_snapshot": 160,
+      "headline": "Best balance and insulation here",
+      "body": "<p>A 94 on ergonomic balance and 78 on insulation are the top scores on this page, and 92 on pour precision ties the Timemore, behind only the Fellow's 95. Its average across all five measures is the highest of the seven.</p><p>Per our data it's built around pour control and the spout rather than looks. At $160 it's $20 less than the Fellow and heats faster, 85 to 80; the Fellow keeps a narrow lead on pour precision and temperature accuracy.</p><p>The drawback our data flags is the base, which feels plasticky for $160. And it's $100 more than the Cocinare, which heats faster. Buy it if you pour slowly and often and care how the kettle sits in your hand.</p>"
+    },
+    {
+      "role": "preset:enthusiast",
+      "product_id": 3738,
+      "product_name": "Fellow Stagg EKG Pro",
+      "est_price_snapshot": 180,
+      "headline": "Best pour control here, slow to boil",
+      "body": "<p>95 on pour precision and 92 on temperature accuracy are the two highest scores on this page, and they're the two the enthusiast slot weights most. If where the water lands and how hot it is matter most to you, nothing here does better.</p><p>Per our data a good part of the price goes on design and smart features. At $180 it's the most expensive kettle on this list, $145 above the budget pick.</p><p>Two things the price doesn't buy. Heating speed is 80, second-slowest here after the stovetop Grosche. And per our data it's single-walled and gets hot to the touch; insulation scores 70, behind the Brewista's 78.</p>"
+    },
+    {
+      "role": "preset:casual",
+      "product_id": 3758,
+      "product_name": "Timemore Fish Smart 600ml",
+      "est_price_snapshot": 130,
+      "headline": "Ties the Brewista on pour, for $30 less",
+      "body": "<p>The everyday slot leans on heating speed and insulation. The Timemore scores 88 on heating, second only to the Cocinare, and 92 on pour precision, level with the $160 Brewista. Per our data its patented spout pours at a true vertical.</p><p>At $130 it's $30 under the Brewista it matches on pour, and it heats faster, 88 to 85. The Brewista is better in the hand, 94 to 82 on balance.</p><p>The drawback is temperature. Per our data the touch-sensitive slider can be finicky, and 85 on accuracy trails the Brewista's 90 and the Fellow's 92. If you brew to an exact degree, that gap is where the extra money goes.</p>"
+    },
+    {
+      "role": "preset:tea-drinker",
+      "product_id": 3742,
+      "product_name": "Bonavita 1L Variable Temperature Kettle",
+      "est_price_snapshot": 100,
+      "headline": "88 on temperature, nothing spent on styling",
+      "body": "<p>Tea is about hitting a temperature, so this slot weights temperature accuracy first and heating speed second. The Bonavita scores 88 and 85, and per our data a PID controller and a 1200W element do the work.</p><p>At $100 it's a plain tool, function over looks. Pour precision is 82 and balance 75, so it's less composed through a slow pour than the kettles above it.</p><p>The catch is higher up this page. The $60 Cocinare matches its 88 on temperature and beats it on the other four measures, for $40 less, and it ranks above the Bonavita on the tea weights too. On our numbers the Cocinare is the better tea kettle; the Bonavita is here because each kettle appears once.</p>"
+    },
+    {
+      "role": "overall",
+      "product_id": 4266,
+      "product_name": "Mecity Gooseneck Electric Kettle",
+      "est_price_snapshot": 35,
+      "headline": "The electric option at $35",
+      "body": "<p>If you want electric at the budget price, this is it: the same $35 as the stovetop Grosche, 82 on heating speed against the Grosche's 60, and 72 on temperature accuracy. Per our data it heats fast and controls temperature decently for the money.</p><p>Everything you hold is a step down. 70 on pour precision and 65 on balance are the lowest on this page.</p><p>Insulation is 55, the lowest here by 15 points, and per our data the walls are thin. For $25 more the Cocinare beats it on all five measures, and that's the upgrade we'd make first.</p>"
+    }
+  ],
+  "faqs": [
+    {
+      "question": "Why is the most expensive kettle here not the fastest?",
+      "answer": "Because heating speed isn't what the money buys in this category. The $180 Fellow scores 80 on heating; the $60 Cocinare scores 90, the best here. What the Fellow does buy is pour precision at 95 and temperature accuracy at 92, both the best on this page."
+    },
+    {
+      "question": "Is the $130 Timemore as good as the $160 Brewista?",
+      "answer": "On pour, yes: both score 92. The Brewista earns its extra $30 on balance, 94 against 82, on temperature accuracy, 90 against 85, and on insulation, 78 against 75. The Timemore heats faster, 88 against 85. If you pour slowly and often, the Brewista feels better in the hand; otherwise the Timemore is the same pour for less."
+    },
+    {
+      "question": "Which of these keeps water hot the longest?",
+      "answer": "The Brewista, at 78 on insulation, the best here. The Cocinare, the Grosche and the Timemore follow at 75, then the Fellow and the Bonavita at 70. The one to avoid if this matters is the $35 Mecity at 55, 23 points behind the Brewista."
+    },
+    {
+      "question": "Should I buy the stovetop Grosche or the electric Mecity?",
+      "answer": "They cost the same $35. The Grosche pours better, 78 against 70, sits better in the hand, 72 against 65, and holds heat far better, 75 against 55. The Mecity heats much faster, 82 against 60, and is a touch more accurate, 72 against 70. If you have a stove and don't mind watching a dial, take the Grosche. If you'd rather press a button, take the Mecity."
+    },
+    {
+      "question": "How many gooseneck kettles did you compare to get to these seven?",
+      "answer": "51, every gooseneck kettle in our database for this category. Each is scored 0 to 100 on five features: pour precision and control, temperature accuracy, heating speed, ergonomic balance, and thermal insulation and durability. The overall ranking counts the five equally, with store ratings and price counted in; the three preset picks use their own weights."
+    }
+  ],
+  "methodology_note": "In the overall ranking every feature score counts equally, alongside a store customer rating where we have one and a credit for cheaper price tiers; each preset pick uses that preset's own feature weights instead."
+}

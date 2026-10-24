@@ -1,0 +1,84 @@
+{
+  "intro": "<p>We scored all 58 manual grinders in our database on five things — grind consistency, adjustment precision, speed and effort, build quality, and portability — then weighted those scores to rank them. The seven below run from $55 to $280, which in hand-grinder terms is most of the range worth buying.</p><p>Manual grinders are a narrow field, and the numbers sit close together. The distance between our budget pick and our premium pick is 23 points of grind consistency and $225. That's a real difference in the cup, and it's also a lot of money for something you crank by hand. What most people actually want to know is where the curve flattens. On this data it flattens around $130.</p>",
+  "picks": [
+    {
+      "body": "<p>A 92 on adjustment precision is the highest on this page, and 90s on both grind consistency and build put the X-Ultra ahead of everything except the $280 Comandante. It covers pour-over and espresso ranges without you changing anything internally.</p><p>The external adjustment ring is the reason it takes best overall. You change grind size from outside the grinder instead of pulling it apart, which matters if you switch brew methods week to week. At $160 it's $105 above our budget pick and a little over half the price of the premium one — the middle of this list, and the best-balanced thing on it.</p><p>Portability is its own weakest number at 85. Both the C5 ESP PRO and the Exagrind below reach 88 for less money, so if the grinder is going to live in a bag rather than on a counter, they're the smarter buy. This is a full-size tool that travels adequately.</p>",
+      "role": "overall",
+      "headline": "Best all-round scorecard short of the Comandante",
+      "product_id": 4074,
+      "product_name": "1Zpresso X-Ultra Manual Coffee Grinder-Midnight Black",
+      "est_price_snapshot": 160
+    },
+    {
+      "body": "<p>A 55 on build quality is the lowest score on this page by a distance, and it comes down to the ABS plastic chassis. The burrs inside are stainless steel, which is why it still reaches 72 on grind consistency — respectable for the cheapest grinder here, and the reason it's the budget pick rather than a warning.</p><p>Buy it for filter coffee on a tight budget, or as a second grinder you don't mind knocking around. Nothing else here is $55.</p><p>The 68 on adjustment precision is the real ceiling. Espresso wants finer control than this offers and you will feel the shortfall. For pour-over, where the target window is far more forgiving, it's genuinely enough. It costs $105 less than the X-Ultra for two specific reasons: the body and the adjustment.</p>",
+      "role": "budget",
+      "headline": "Steel burrs inside a plastic body, $55",
+      "product_id": 3811,
+      "product_name": "KINGrinder P2 Lightweight Manual Coffee Grinder",
+      "est_price_snapshot": 55
+    },
+    {
+      "body": "<p>A 95 on grind consistency and 96 on build quality are the two highest numbers anywhere on this page. The C40 has been the reference filter grinder for years, and its Nitro Blade burrs and German machining are what the money buys.</p><p>At $280 it sits $225 above our budget pick. If you brew filter coffee daily and care about the gap between good and excellent, that's defensible spending on something that should outlast several cheaper grinders.</p><p>Its adjustment is stepped out of the box, which makes dialling espresso more awkward than on the machines above it — and 85 on adjustment precision is lower than both the $160 X-Ultra and the $130 Chestnut S3, which each hit 92. If espresso is your main use, you'd be paying premium money for the wrong strength. Filter is where this one earns it.</p>",
+      "role": "premium",
+      "headline": "That 95 on consistency costs $225 more",
+      "product_id": 3849,
+      "product_name": "Comandante C40 MK4 Black",
+      "est_price_snapshot": 280
+    },
+    {
+      "body": "<p>A 92 on adjustment precision matches the X-Ultra for the best on this page, and the S3 costs $30 less to get there. That's why it takes the espresso slot — fine control over grind size is what espresso demands most, and the external adjustment delivers it without disassembly.</p><p>An 88 on consistency and 90 on build fill out the rest. For $75 over the budget pick you're getting a properly machined tool that grinds quickly and holds its setting between doses, which is most of what dialling in actually requires.</p><p>Portability is 80, and that's the honest limit. The C5 ESP PRO below reaches 88 for $40 less, so if this grinder needs to travel, buy that one instead. The S3 is a countertop grinder that happens to be hand-powered.</p>",
+      "role": "preset:espresso-pro",
+      "headline": "Ties the best adjustment score, costs $30 less",
+      "product_id": 3828,
+      "product_name": "Timemore Chestnut S3",
+      "est_price_snapshot": 130
+    },
+    {
+      "body": "<p>An 85 on consistency, 88 on build and 82 on adjustment are solid numbers, and the aluminium body with S2C burrs puts the Xlite in the upper half of this list for daily pour-over.</p><p>Here's the honest problem. At $130 it carries the same estimated price as the Chestnut S3 above, and the S3 scores higher on all five measures — consistency, adjustment, speed, build and portability. If both sit at that price when you're buying, take the S3. The Xlite earns this slot on the daily-brewing weighting, but it isn't the better tool.</p><p>Its 20g capacity is the other limit, so a large pour-over means grinding twice. Buy it if you find it discounted below the S3. At level pricing, the pick above it is the same money and more grinder.</p>",
+      "role": "preset:daily-brewer",
+      "headline": "Same price as the S3, slightly less grinder",
+      "product_id": 4106,
+      "product_name": "Timemore Chestnut Xlite",
+      "est_price_snapshot": 130
+    },
+    {
+      "body": "<p>An 88 on portability and capacity is the joint-best on this page, and 85 on both adjustment precision and build quality is unusual at $90. The fine-threaded adjustment and 42mm burrs are what let it handle espresso rather than filter alone — most grinders at this price don't try.</p><p>It's $35 above the budget pick and $70 under the X-Ultra, which makes it the value point here for anyone grinding away from home. Take it camping. Leave it in a desk drawer at work.</p><p>The 78 on grinding speed and effort is its weakest number, and that's the tradeoff for the rest: fine threads and aggressive burrs mean more turns of the handle. A double espresso is genuine work, and you'll notice it every morning if that's your daily drink rather than an occasional one.</p>",
+      "role": "preset:traveler",
+      "headline": "Most portable grinder here that handles espresso",
+      "product_id": 3826,
+      "product_name": "Timemore C5 ESP PRO Manual Coffee Grinder 50 Adjustable Settings",
+      "est_price_snapshot": 90
+    },
+    {
+      "body": "<p>An 88 on portability matches the C5 ESP PRO for the best here, and at $80 the Exagrind is $10 cheaper. It was built to pair with travel espresso setups, and its 33-micron adjustment steps are fine enough to make that pairing credible rather than aspirational.</p><p>An 82 on consistency and 85 on adjustment put it level with the C5 on control and a touch behind on grind. For $25 over the budget pick, that's a lot of grinder for the money.</p><p>The 20g capacity is the ceiling — anything past a single large brew means two rounds — and its 75 on grinding speed is the lowest score on this page, level with the budget pick. This is built for a small, careful dose. It is not the grinder for making four cups on a Sunday morning.</p>",
+      "role": "overall",
+      "headline": "Ties on portability for ten dollars less",
+      "product_id": 3861,
+      "product_name": "WACACO Exagrind",
+      "est_price_snapshot": 80
+    }
+  ],
+  "faqs": [
+    {
+      "answer": "They do, and it's worth knowing before you buy. The Timemore Chestnut S3 and Chestnut Xlite carry the same estimated price, but the S3 scores higher on every measure we track — 88 against 85 on consistency, 92 against 82 on adjustment. The Xlite holds its slot on daily-brewing weighting. At equal prices, take the S3.",
+      "question": "Why do two grinders on this list cost the same $130?"
+    },
+    {
+      "answer": "You set the grind from outside the grinder instead of taking it apart to reach an internal nut. It sounds minor until you switch between pour-over and espresso in the same week. Our top pick and the Chestnut S3 both have it, and both score 92 on adjustment precision — the two highest here.",
+      "question": "What does external grind adjustment actually change day to day?"
+    },
+    {
+      "answer": "23 points on our scale — the Comandante C40 scores 95, the KINGrinder P2 scores 72. In practice that's the difference between filter coffee that tastes clean and filter coffee that tastes slightly muddy. For pour-over it's noticeable. Whether it's $225 noticeable depends on how often you brew.",
+      "question": "How much grind consistency do you actually lose dropping from $280 to $55?"
+    },
+    {
+      "answer": "Not automatically. The KINGrinder P2 scores 55 on build — the lowest here — because of its ABS plastic chassis, yet it still manages 72 on grind consistency because the burrs inside are stainless steel. The body affects how the grinder feels and how long it survives being dropped. The burrs affect the coffee.",
+      "question": "Does a plastic body mean a bad grinder?"
+    },
+    {
+      "answer": "58 — every manual grinder in our database for this category. Each one is scored 0-100 on five features: grind consistency, adjustment precision, grinding speed and effort, build and material quality, and portability and capacity. Those scores are weighted to produce the order above.",
+      "question": "How many grinders did you compare to reach these seven?"
+    }
+  ],
+  "methodology_note": "In the overall ranking every feature score counts equally, alongside a store customer rating where we have one and a credit for cheaper price tiers; each preset pick uses that preset's own feature weights instead."
+}
