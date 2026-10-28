@@ -88,6 +88,9 @@ the code in brackets. Codes (Q5, F12, H-E…) are kept only so the old text can 
 - [ ] **c2d detached products** — 8 rows, owner decision (4 look right, 3 are grain mills, 1 Oracle Jet)
 - [ ] **Product 3352 carries feature values from two categories**
 - [ ] **Unchecked or stuck rows** — Eureka Costanza R (3568, collection-scoped URL); ECM Estetika (4052, `status = failed`, can never be rescanned); #3292's Whole Latte Love offer
+- [ ] **84 live pw2d products with no category** — pages 404, not in the sitemap; 49 have brandless names; hide or re-home, owner decision → `docs/summaries/2026-10-28-score-titles-live-lavalier-picker-merged-three-dji-mics.md` §3
+- [ ] **Lavalier 2424 "Synco G2(A2) Pro"** — its listing now reads SYNCO G4 (a different product behind the same link); re-import or hide at the next lavalier top-up → same summary §3
+- [ ] **4 empty pw2d brand rows** — Wave 394, Stage 395, SmallRig 396, Blink 397 (0 products since the 10-28 lavalier fixes); delete once nothing re-imports into them
 
 ## Frontend & polish
 

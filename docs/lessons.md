@@ -303,3 +303,16 @@ decision before arguing from revenue.
 3. **`ORDER BY tenant_id … LIMIT 20` across tenants** returned only the first tenant's rows, and the SEO log briefly
    said pw2d had no preset-query rows. **Rule:** per-tenant questions get per-tenant queries (or a window function),
    never one capped query sorted by tenant.
+
+## 2026-10-28 — Two wrong claims caught before they cost anything
+
+1. **Two audit agents agreed on a defect the package already handles.** The review and performance reports both said a
+   tenant setting takes up to 60 min to apply because nothing clears the resolver cache on save. stancl's base `Tenant`
+   uses `InvalidatesResolverCache` (its `saved` hook clears every resolver), and the live switch had already shown the
+   new title on the very next request. **Rule:** a finding about framework or package behaviour is checked in the
+   vendor base class and against what prod has already shown. Two agents reading the same app code and agreeing is not
+   independent confirmation (extends 2026-08-22).
+2. **Same name is not same product.** Three "Shure BLX1288/CVL" listings went into the duplicates list; they are
+   frequency bands (H9, H10, J11) sold for different regions. **Rule:** before calling same-name listings duplicates,
+   read the listing titles for band, region, voltage or kit; merge only identical kits (lesson 2026-10-05 covers which
+   copy to keep).
