@@ -1,0 +1,89 @@
+{
+    "id": 7,
+    "slug": "lavalier-wireless-systems",
+    "title_template": null,
+    "intro": "<p>We scored all 178 lavalier and wireless systems in our database on six things — clarity and warmth, connection stability, setup simplicity, noise isolation, battery endurance, and build and portability — from 0 to 100, then weighted them to rank these seven. Prices run from $60 to $690, and the two best all-rounders cost $85 and $60.</p><p>Three of the slots follow a job rather than a score total: the Vlogger, Presenter and Filmmaker picks use different weightings (connection first, voice first, clarity above everything). If none of those fits, start with the overall pick, then read the budget pick and decide whether $10 matters to you.</p>",
+    "picks": [
+        {
+            "body": "<p>The Wireless Micro wins on the scores nobody puts in a headline: setup simplicity 95, connection stability 90, build and portability 92. It's built around a phone — plug-and-play, tiny, with a charge case that pushes battery endurance to 88. Clarity is 85, which is Rode doing what Rode does. At $85 it's $25 above the cheapest pick on this list and $10 above the budget one.</p><p>What it won't do is fight a loud room. Noise isolation scores 70: there's no active cancelling, and its own summary says so. Record beside traffic and the traffic is in the take. If your shoots happen in noisy places, the DJI Mic 2's 85 isolation is what the extra $115 buys. For everyone else — talking to a phone in a normal room — this is the one, and the price is the least interesting thing about it.</p>",
+            "role": "overall",
+            "headline": "Clip on, press record, done",
+            "product_id": 2220,
+            "product_name": "Rode Wireless Micro",
+            "est_price_snapshot": 85
+        },
+        {
+            "body": "<p>Line the Lark M2 up against the overall pick and the scores nearly overlap: setup 90 to its 95, connection 85 to 90, battery 88 to 88, build 92 to 92. It's $75, ten dollars cheaper, and it has 13,674 Amazon reviews at 4.7 stars, so the sample isn't small. The transmitters clip on magnetically, run about 10 hours, and the case tops them up.</p><p>Two things cost it the top slot. Clarity scores 78 against the Rode's 85 — clean 48kHz/24-bit audio, but not the warmer sound. And the built-in noise cancelling is the aggressive kind: isolation scores 70, and the summary warns it can flatten a natural voice. Turn it off in a quiet room. The rated 300m range is line-of-sight; walls shorten it. If $10 is real money to you, buy this and you've lost almost nothing.</p>",
+            "role": "budget",
+            "headline": "Ten dollars less, near-identical scores",
+            "product_id": 2171,
+            "product_name": "Hollyland Lark M2",
+            "est_price_snapshot": 75
+        },
+        {
+            "body": "<p>This is the premium pick because it solves the problem the compact kits can't: crowded airwaves. It runs on 2.4 and 5.8 GHz at once and manages frequencies automatically, which is why connection stability scores 92, the best on this list. Battery endurance is 90 on a 12-hour rechargeable. Build is 89 — Shure's usual rugged hardware. The WL93 subminiature lavalier it comes with scores 85 on clarity, made for presentations.</p><p>Now the $690 question, since it's $630 more than the cheapest pick and $430 more than the DJI Mic 3. The WL93 is omnidirectional, so noise isolation is 70: it hears the room, and placement matters. The receiver is a tabletop unit, not something you pocket, and the summary says as much. The rating is 5 stars from 5 reviews, which is a small sample. Buy it for a stage, a conference room, or a venue where the cheap kits drop out. For a phone and a park, it's the wrong tool.</p>",
+            "role": "premium",
+            "headline": "Dual-band Shure for rooms full of RF",
+            "product_id": 4778,
+            "product_name": "GLXD14+/93 Dual Band Pro Digital Wireless Microphone System",
+            "est_price_snapshot": 690
+        },
+        {
+            "body": "<p>The Vlogger weighting puts connection stability at 95 and setup simplicity at 90, with clarity down at 30 — you're moving, you're outdoors, you need it to just work. The Mic 2 scores 88 on connection, 95 on setup (instant pairing, a touchscreen, magnetic mounts), and then over-delivers where the weighting doesn't even ask: clarity 92 with 32-bit float internal recording, noise isolation 85, battery 93 with the charging case.</p><p>It costs $200, which is $115 more than the overall pick and $140 more than the cheapest. The known weakness is the 2.4GHz link in dense RF — a trade show, a packed venue — where its own summary calls it the only real vulnerability. The noise cancelling can also change the sound of a voice if you push it. For a person walking and talking to a camera, those are edge cases. This is the pick with 5,090 reviews behind it, and the scores say why.</p>",
+            "role": "preset:vlogger",
+            "headline": "The vlogger weighting's obvious winner",
+            "product_id": 2200,
+            "product_name": "DJI Mic 2",
+            "est_price_snapshot": 200
+        },
+        {
+            "body": "<p>Presenter weighting is clarity 95 and connection 90, with setup at 30 and build at 20 — it's about sounding right for an hour on a stage, not about pocketability. The Mic 3 scores 88 on clarity with adaptive gain control, so levels stay even when a speaker turns their head or raises their voice. Connection is 90 on a dual-band, anti-interference link. Battery endurance is 95: 28 hours total with the case.</p><p>It's $260 — $60 more than the Mic 2, and here's the honest comparison: the Mic 2 actually scores higher on clarity (92 to 88) and setup (95 to 92). What you're paying $60 for is the dual-band link and the battery, both of which matter more on a stage than in a park. Noise isolation is 85 on both. The listing is a bundle, per its summary, so check what's in the box before you assume one transmitter or two. If you present once a month, the Mic 2 is enough; if it's your job, the Mic 3's link is the safer bet.</p>",
+            "role": "preset:presenter",
+            "headline": "Twenty-eight hours and adaptive gain",
+            "product_id": 2276,
+            "product_name": "DJI Mic 3",
+            "est_price_snapshot": 260
+        },
+        {
+            "body": "<p>Filmmaker weighting is clarity 100 — everything else is second — and connection 90. The GO III scores 90 on clarity with 32-bit float recording on board, which means a take can't clip: too loud gets fixed in post instead of being lost. Connection is 88 on 2.4GHz, setup 95 with auto-pairing, build 92. It's $160: $40 less than the DJI Mic 2, $100 more than the cheapest pick.</p><p>Why it isn't the overall winner: battery endurance is 87, on a quoted 7-plus hours, the lowest figure among the wireless kits here. Noise isolation scores 85, but read the reason — the number rests on 32-bit float making noise easier to clean up afterwards, not on any cancelling in the box, so on the day the room is still in the recording. And 2.4GHz carries the same crowded-venue caveat as the DJI. For someone who edits, none of that matters much; for someone who doesn't edit, the Mic 2's on-board cancelling is worth the $40.</p>",
+            "role": "preset:filmmaker",
+            "headline": "32-bit float for $160, no excuses",
+            "product_id": 2272,
+            "product_name": "Rode Wireless GO III (Black)",
+            "est_price_snapshot": 160
+        },
+        {
+            "body": "<p>Second overall pick, and it's wired: a 3.5mm TRS plug, no transmitter, no receiver, no charging. That's why connection stability scores 85 and setup 95 — a cable doesn't drop out — and why battery endurance is 99: there is no battery. At $60 it's the cheapest pick here, $25 under the Wireless Micro, with 5,218 reviews at 4.5 stars.</p><p>The price of that simplicity is range and isolation. You are tethered to whatever it plugs into, so it suits a desk, a podcast, or a phone in a pocket, not a walk-and-talk. Noise isolation scores 45, the lowest on the page: it's omnidirectional and hears everything in the room. Clarity is 78 — clear speech, not warmth. If you record sitting down, this beats every wireless kit on reliability per dollar. If you move, spend the $25 on the Wireless Micro.</p>",
+            "role": "overall",
+            "headline": "The wired one, and it's on purpose",
+            "product_id": 2258,
+            "product_name": "Rode Lavalier GO Black",
+            "est_price_snapshot": 60
+        }
+    ],
+    "faqs": [
+        {
+            "answer": "On this list, real isolation starts at $160. The DJI Mic 2 ($200), DJI Mic 3 ($260) and Rode Wireless GO III ($160) all score 85 — though the GO III's number rests on 32-bit float making noise easier to clean up in post, not on cancelling in the box. The Rode Wireless Micro, Lark M2 and the Shure all sit at 70, and the wired Lavalier GO is 45. If you record in loud places and won't edit, the Mic 2 is the safe answer.",
+            "question": "Which of these picks actually isolates noise, and what does it cost?"
+        },
+        {
+            "answer": "Only for a specific problem. Feature for feature they're close: connection 92 to 90, clarity 85 to 85, battery 90 to 88. What the Shure adds is a dual-band radio that manages its own frequencies — the thing that keeps working in a conference room where dozens of other devices are transmitting. For a phone in a park that difference never shows up, and the Rode's 92 on build and portability beats the Shure's 89 and its tabletop receiver.",
+            "question": "Is the $690 Shure worth it over the $85 Rode?"
+        },
+        {
+            "answer": "Because two of the job-based weightings picked them. The Mic 2 wins the Vlogger slot on clarity 92 and setup 95; the Mic 3 wins Presenter on a dual-band link (connection 90) and battery 95 — 28 hours with its case. The $60 gap buys the link and the battery, not better sound: the Mic 2 scores higher on clarity. Walking and talking, buy the Mic 2. Standing on a stage for a living, buy the Mic 3.",
+            "question": "Why are there two DJI kits, and which one do I want?"
+        },
+        {
+            "answer": "Mostly from charging cases. The Wireless Micro (88), Lark M2 (88), Mic 2 (93) and Mic 3 (95) all earned their number with a case in the math — the Mic 3's 95 is 28 hours total, not per charge. The GO III's 87 is quoted on the transmitters alone, 7-plus hours. The Shure's 90 is a single 12-hour pack. And the wired Lavalier GO scores 99 for the simplest reason on the page: it has no battery at all.",
+            "question": "Where do the battery scores actually come from?"
+        }
+    ],
+    "methodology_note": "Scores are relative to the 178 lavalier and wireless systems scored in this category on August 29, 2026; wired and wireless picks are measured on the same six features, which is why a wired mic can top connection stability. Every pick's live listing was re-verified the same day, and listings flagged for condition, availability or price are excluded from both selection and pricing.",
+    "status": "published",
+    "generated_at": "2026-08-29T10:25:43.000000Z",
+    "stale_reasons": [
+        "selection_drift",
+        "price_drift"
+    ]
+}

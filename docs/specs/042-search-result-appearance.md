@@ -122,6 +122,12 @@ each new name starts with the brand, carries the model, ≤ 8 words, no trailing
 **Ship together** (one deploy + the Filament switch + the renames on the same day), then read pw2d product-page
 CTR against the 0.67% baseline (09-06 → 10-12) from ~3 weeks after Google re-crawls.
 
+**2026-10-28:** 68 renames applied (backup `/root/backups/2026-10-28-renames/`); B1 deployed (`959ec30`), live titles
+verified unchanged while the key is absent on both tenants. pw2d set to `review_score` the same day (owner go; tenant
+row backed up to `/root/backups/2026-10-28-renames/tenant-pw2d-before-title-switch.sql`). Verified live: e.g.
+`Adesso AKB-450UB Review: 4.9/10 — Productivity & Ergonomic Keyboards`, title score = `reviewRating` 4.9; c2d unchanged.
+**Measurement starts 2026-10-28.**
+
 ## File structure
 
 | File | Change |
