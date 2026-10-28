@@ -80,6 +80,48 @@ every 1–3 weeks). Shipping both at once would make any CTR change impossible t
    `{name} Review: {score}/10 — {category}` where a score exists, otherwise the current template. Decide
    from Phase A data. c2d stays on the current template as the comparison.
 
+### Phase B — build notes (2026-10-27)
+
+**Gate met 10-24** (SEO checkpoint UPDATE 2026-10-24): stars kept on both tenants from our own rating; pw2d star
+CTR 0.95% vs 0.92% baseline. Our number in the snippet did not cost clicks, so the template carries it.
+
+**Verified on prod 10-27:**
+- Live pw2d title: `Keychron K8 HE TKL Mechanical Gaming Keyboards — AI Review & Match Score`. The plural
+  category name is glued to the product name; on long names "Review" falls past the visible ~60 characters.
+- Queries landing on pw2d product pages (28 d, `gsc_top_query`) are mostly bare model names (`aoc gk330`,
+  `aula f106 pro`, `monster mission 300`); 34 of 327 rows contain "review". The name must lead with brand + model.
+- Score coverage, live categorized products: pw2d 804 of 842 have a score (179 under 6.0, 149 at 8.0+); c2d 463 of 463.
+- **Renames: 65 pw2d + 17 c2d** (was 88 on 10-04; the pools grew). pw2d by category: lavalier 40, headsets 12,
+  mechanical keyboards 9, ergonomic 3, podcast mics 0 (its model backfill fixed them). Another 49 brandless pw2d
+  names sit on the 84 live products with `category_id = NULL`; those pages return 404 and are not in the sitemap,
+  so they are out of scope.
+- A rename is a plain `name` update: `ProductObserver::saved` reacts only to `is_ignored` / `category_id`, and the
+  slug is never regenerated. No job, no AI call, URLs unchanged.
+
+**B1 — title template (builder):**
+- New tenant data key `seo_product_title`, values `default` (or absent) | `review_score`. Editable in
+  `TenantResource` beside `seo_title_suffix` (a Select). The owner sets pw2d to `review_score` in Filament after
+  deploy; c2d stays absent → current template, as the comparison.
+- `SeoSchema::forSelectedProduct`: compute `$score = $product->editorialScore()` once and reuse it for both the
+  title and `reviewRating`. Title rule:
+  - `review_score` **and** score non-null **and** category present →
+    `"{$name} Review: {$scoreFormatted}/10 — {$category->name}"`, where `$scoreFormatted = number_format($score, 1)`
+    (the page prints `number_format(…, 1)`, `product-compare.blade.php:617`; `7.0` must read `7.0/10`, not `7/10`).
+  - Otherwise the current template, unchanged.
+  - The title gates on the score only, not on `ai_summary`: the visible score line does the same.
+- Same payload feeds the SSR head and `ProductCompare::openProduct()`'s `meta:product-opened` event, so both paths
+  change together. Update the template sentence in `ProductNameShaper`'s docblock.
+- Tests (Pest, `tests/Feature/Seo/SeoSchemaTest.php`): `review_score` + scored → new title; `review_score` + one
+  feature missing → old title; key absent → old title; score 7.0 → `7.0/10`; no category → old title. Tenant setup
+  per lessons 2026-04-11 (re-fetch after `Tenant::create`).
+
+**B2 — renames (Claude, not the builder):** draft old → new in `docs/drafts/2026-10-27-product-renames.md`;
+each new name starts with the brand, carries the model, ≤ 8 words, no trailing connector, and is a fixed point of
+`ProductNameShaper::shape()`. Owner reviews → backup → per-record `update(['name' => …])` on prod.
+
+**Ship together** (one deploy + the Filament switch + the renames on the same day), then read pw2d product-page
+CTR against the 0.67% baseline (09-06 → 10-12) from ~3 weeks after Google re-crawls.
+
 ## File structure
 
 | File | Change |

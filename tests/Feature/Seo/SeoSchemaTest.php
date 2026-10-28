@@ -310,6 +310,69 @@ class SeoSchemaTest extends TestCase
         return $product->load('brand', 'category.features', 'featureValues');
     }
 
+    private function useReviewScoreTitle(): void
+    {
+        $tenant = tenancy()->tenant;
+        $tenant->seo_product_title = 'review_score';
+        $tenant->save();
+    }
+
+    /** @test */
+    public function review_score_title_is_used_when_template_is_on_and_every_feature_is_scored(): void
+    {
+        $this->useReviewScoreTitle();
+        $product = $this->makeScoredProduct('rs-all', 3, [60.0, 70.0, 75.0]);
+
+        $title = SeoSchema::forSelectedProduct($product)['title'];
+
+        $this->assertSame("{$product->name} Review: 6.8/10 — {$product->category->name}", $title);
+    }
+
+    /** @test */
+    public function review_score_title_falls_back_when_one_category_feature_is_unscored(): void
+    {
+        $this->useReviewScoreTitle();
+        $product = $this->makeScoredProduct('rs-missing', 3, [60.0, 70.0]);
+
+        $this->assertSame(
+            "{$product->name} {$product->category->name} — AI Review & Match Score",
+            SeoSchema::forSelectedProduct($product)['title'],
+        );
+    }
+
+    /** @test */
+    public function default_title_is_used_when_template_key_is_absent(): void
+    {
+        $product = $this->makeScoredProduct('rs-absent', 3, [60.0, 70.0, 75.0]);
+
+        $this->assertSame(
+            "{$product->name} {$product->category->name} — AI Review & Match Score",
+            SeoSchema::forSelectedProduct($product)['title'],
+        );
+    }
+
+    /** @test */
+    public function review_score_title_keeps_one_decimal_for_a_whole_score(): void
+    {
+        $this->useReviewScoreTitle();
+        $product = $this->makeScoredProduct('rs-seven', 2, [60.0, 80.0]);
+
+        $this->assertStringContainsString('7.0/10', SeoSchema::forSelectedProduct($product)['title']);
+    }
+
+    /** @test */
+    public function review_score_template_falls_back_for_a_product_without_category(): void
+    {
+        $this->useReviewScoreTitle();
+        $product = Product::factory()->create(['category_id' => null, 'slug' => 'rs-nocat']);
+        $product->load('brand', 'category.features', 'featureValues');
+
+        $this->assertSame(
+            "{$product->name} — AI Review & Match Score",
+            SeoSchema::forSelectedProduct($product)['title'],
+        );
+    }
+
     /** @test */
     public function review_rating_is_present_when_every_category_feature_is_scored(): void
     {

@@ -9,7 +9,9 @@ namespace App\Support;
  * name AFTER the AI has answered (replaces the old `capProductName()`). The
  * raw Amazon title is never a name source; this only trims what the AI returned
  * and guarantees the name starts with the brand, because the product page
- * title is `{name} {category} — AI Review & Match Score`.
+ * title is `{name} {category} — AI Review & Match Score`, or, for tenants with
+ * `seo_product_title = review_score` and a full score,
+ * `{name} Review: {score}/10 — {category}`.
  */
 final class ProductNameShaper
 {

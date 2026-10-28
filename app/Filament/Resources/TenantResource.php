@@ -99,6 +99,15 @@ class TenantResource extends Resource
                             ->label('Title suffix')
                             ->helperText('Appended to category page titles, e.g. " | Coffee2Decide". Defaults to brand name.')
                             ->maxLength(60),
+                        Forms\Components\Select::make('seo_product_title')
+                            ->label('Product page title')
+                            ->helperText('Title template for product pages. The score version needs every category feature scored; otherwise the default is used.')
+                            ->options([
+                                'default'      => 'Name + category — AI Review & Match Score',
+                                'review_score' => 'Name Review: score/10 — category',
+                            ])
+                            ->default('default')
+                            ->native(false),
                         Forms\Components\TextInput::make('seo_default_title')
                             ->label('Homepage title')
                             ->helperText('Full <title> tag for the homepage.')

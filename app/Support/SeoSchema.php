@@ -241,9 +241,17 @@ class SeoSchema
     public static function forSelectedProduct(Product $product): array
     {
         $category = $product->category;
-        $title = $category
-            ? "{$product->name} {$category->name} — AI Review & Match Score"
-            : "{$product->name} — AI Review & Match Score";
+        // Computed once: feeds the title (Spec 042 Phase B) and review.reviewRating below.
+        $score = $product->editorialScore();
+
+        $title = match (true) {
+            $category && $score !== null && tenant('seo_product_title') === 'review_score'
+                => "{$product->name} Review: " . number_format($score, 1) . "/10 — {$category->name}",
+            (bool) $category
+                => "{$product->name} {$category->name} — AI Review & Match Score",
+            default
+                => "{$product->name} — AI Review & Match Score",
+        };
 
         $description = $product->ai_summary
             ? Str::limit(strip_tags($product->ai_summary), 150)
@@ -288,7 +296,6 @@ class SeoSchema
                 ],
             ];
 
-            $score = $product->editorialScore();
             if ($score !== null) {
                 $schema['review']['reviewRating'] = [
                     '@type'       => 'Rating',
