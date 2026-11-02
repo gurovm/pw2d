@@ -91,6 +91,8 @@ the code in brackets. Codes (Q5, F12, H-E…) are kept only so the old text can 
 - [ ] **Unchecked or stuck rows** — Eureka Costanza R (3568, collection-scoped URL); ECM Estetika (4052, `status = failed`, can never be rescanned); #3292's Whole Latte Love offer
 - [ ] **84 live pw2d products with no category** — pages 404, not in the sitemap; 49 have brandless names; hide or re-home, owner decision → `docs/summaries/2026-10-28-score-titles-live-lavalier-picker-merged-three-dji-mics.md` §3
 - [ ] **Lavalier 2424 "Synco G2(A2) Pro"** — its listing now reads SYNCO G4 (a different product behind the same link); re-import or hide at the next lavalier top-up → same summary §3
+- [ ] **One maker, two brand rows: ASUS / ASUS ROG, Logitech / Logitech G** — the picker's 3-per-brand cap counts them apart (seen on the 11-01 keyboards rebuild); merging touches other categories → summary 2026-11-02 §3
+- [ ] **Presets with equal `sort_order` fall back to database order** — all 4 keyboard presets are 0, so the guide took Pro Gamer, Hobbyist, Streamer and left Wireless off (owner OK 11-01); check other categories before their next rebuild → `docs/drafts/2026-10-29-mech-keyboards-guide-draft.md` call 4
 - [ ] **4 empty pw2d brand rows** — Wave 394, Stage 395, SmallRig 396, Blink 397 (0 products since the 10-28 lavalier fixes); delete once nothing re-imports into them
 
 ## Frontend & polish
