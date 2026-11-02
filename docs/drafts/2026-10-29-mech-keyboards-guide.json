@@ -1,0 +1,94 @@
+{
+  "category_slug": "mechanical-gaming-keyboards",
+  "expected_picks": [
+    {"role": "overall", "product_id": 2692, "est_price": 120},
+    {"role": "budget", "product_id": 2721, "est_price": 30},
+    {"role": "premium", "product_id": 2490, "est_price": 230},
+    {"role": "preset:pro-gamer", "product_id": 2711, "est_price": 400},
+    {"role": "preset:hobbyist", "product_id": 5071, "est_price": 200},
+    {"role": "preset:streamer", "product_id": 2722, "est_price": 200},
+    {"role": "overall", "product_id": 5061, "est_price": 130}
+  ],
+  "intro": "<p>We scored all 192 mechanical gaming keyboards in our database on six things — gaming responsiveness, typing feel and acoustics, build quality, software and customization, ergonomics and layout, and wireless performance — and ranked them on those scores, with price and store ratings counted in. The seven below run from $30 to $400.</p><p>Two things are worth knowing first. Keychron holds three of the seven slots, and three is as many as we give any one brand. On raw scores the Keychron Q2 Max, our premium pick, would top all three \"best for\" rankings too, and for hobbyists and streamers more Keychron boards come right after it. So those three slots went to the best keyboards from other brands. And our best overall pick scores 70 on gaming responsiveness, tied for the lowest here. It earns its place on typing, build and software. If competitive games are your main use, start with the pro gamer pick or the NuPhy.</p>",
+  "picks": [
+    {
+      "role": "overall",
+      "product_id": 2692,
+      "product_name": "Keychron Q5 Pro Gray",
+      "est_price_snapshot": 120,
+      "headline": "The best software score here, for $120",
+      "body": "<p>It came first in our overall ranking. Software and customization is 98, the best on this page, and per our data that means QMK/VIA: open-source remapping, macros and layers. Build quality is 95 and typing feel is 90. Per the listing it's a 96% board with a programmable knob, double-shot PBT keycaps and hot-swappable K Pro Brown switches.</p><p>The obvious comparison is our premium pick, the Q2 Max. It costs $110 more and beats this board by 15 points on gaming, 5 on typing, 3 on build and 10 on wireless. Software is a tie in practice, 98 to 97. The Q5 Pro's 96% layout also keeps more keys than the Q2 Max's 65%.</p><p>The drawback is gaming. 70 on responsiveness ties for the lowest here, and per our data tactile switches like these aren't everyone's choice for competitive play. Its 5-star store rating comes from 7 reviews, so give that little weight. If you type all day and game now and then, this is the one we'd buy.</p>"
+    },
+    {
+      "role": "budget",
+      "product_id": 2721,
+      "product_name": "Keychron C3 Pro",
+      "est_price_snapshot": 30,
+      "headline": "QMK and a gasket mount for $30",
+      "body": "<p>This is the 8K version of the C3 Pro. Per the listing it polls at 8000Hz and puts hot-swappable Super Brown switches in a gasket-mounted TKL case. It placed fifth in our overall ranking, ahead of keyboards that cost four times as much.</p><p>Software is 88, the best on this page after the two Q boards, and per our data it's the same QMK/VIA support they have. It also has 138 store reviews, more than any other pick here, at 4.4 stars.</p><p>The drawback is the case. Per our data it's mostly plastic, and 68 on build quality is the lowest on this page. It's wired only, so there's no wireless score, and typing feel is 78, 12 points under the Q5 Pro. For $90 less, that's a trade we'd take.</p>"
+    },
+    {
+      "role": "premium",
+      "product_id": 2490,
+      "product_name": "Keychron Q2 Max Wireless Black",
+      "est_price_snapshot": 230,
+      "headline": "The best typing and build scores here",
+      "body": "<p>Typing feel is 95 and build quality is 98, both the best on this page. Per our data it's a gasket-mounted 65% board in a CNC aluminum case, with QMK/VIA behind a software score of 97. Wireless is 90, over 2.4GHz or Bluetooth 5.1. It's the top-scoring keyboard in the highest price band.</p><p>On raw scores it would also win all three of our \"best for\" slots: pro gamer, hobbyist and streamer. Each keyboard appears once here, so it stays in this one, and the other slots go to the next-best boards.</p><p>The drawback is gaming next to the dedicated gaming picks. 85 on responsiveness trails the 95 that the Azoth, the GMMK and the Razer each score. Ergonomics is 75: per our data the typing angle is fixed and there's no wrist rest. Its 4.7-star rating comes from 10 reviews.</p>"
+    },
+    {
+      "role": "preset:pro-gamer",
+      "product_id": 2711,
+      "product_name": "ASUS ROG Azoth Extreme Black",
+      "est_price_snapshot": 400,
+      "headline": "Top gaming and wireless scores, at $400",
+      "body": "<p>The pro gamer slot weights gaming responsiveness far above everything else, then build quality. The Azoth scores 95 on gaming, tied for the best here, and 92 on build. Wireless is 93, the best on this page, and per our data that's ASUS's SpeedNova 2.4GHz link. Per the listing it's a 75% board with NX Snow linear switches, PBT keycaps, a gasket mount, a carbon fiber plate in an aluminum case, and a color OLED screen.</p><p>On these weights the Keychron Q2 Max scores a little higher. It already holds the premium slot, so this one goes to the Azoth.</p><p>The drawback is price. At $400 it's the most expensive keyboard here, and the GMMK 3 PRO HE and the Razer both match its 95 on gaming for $200. Over the GMMK, the extra $200 buys 5 points of typing feel and 18 of wireless, and gives up 7 of ergonomics. Software is 78, tied for the lowest here, and per our data Armoury Crate can be resource-heavy.</p>"
+    },
+    {
+      "role": "preset:hobbyist",
+      "product_id": 5071,
+      "product_name": "Glorious GMMK 3 PRO HE",
+      "est_price_snapshot": 200,
+      "headline": "Magnetic or MX switches in one aluminum case",
+      "body": "<p>The hobbyist slot weights build quality and typing feel most, then software. On those weights Keychron's Q boards take the top eight places. Keychron already has three slots here, so this one went to the best board from another brand. The GMMK scores 92 on build, 85 on typing and 78 on software.</p><p>Per the listing it's a 75% board with a modular aluminum body and a modular gasket system, and its hot-swap sockets take both standard MX switches and magnetic Hall Effect ones. Per our data that's where its customization is unmatched. It's quick too: 95 on gaming, with rapid trigger and an 8K polling rate.</p><p>The drawback is the store rating. 3.7 stars from 17 reviews is the lowest on this page, and per our data the Glorious Core software is clunky and buggy. If you don't mind another Keychron, the Q2 Max scores higher on these weights for $30 more.</p>"
+    },
+    {
+      "role": "preset:streamer",
+      "product_id": 2722,
+      "product_name": "Razer BlackWidow V4 Low Profile HyperSpeed Wireless",
+      "est_price_snapshot": 200,
+      "headline": "Quiet low-profile switches and a control roller",
+      "body": "<p>The streamer slot weights typing feel and software most, then gaming. Keychron boards take seven of the top eight places on those weights, and the one that isn't a Keychron, the Azoth, holds the pro gamer slot. This one went to the best board left: the Razer, with 85 on software, 95 on gaming and 75 on typing feel.</p><p>Per our data its low-profile Yellow linear switches are smooth and quiet, which counts when your mic sits next to the keyboard. It also has a multi-function roller and dedicated control buttons. Wireless is 92, over HyperSpeed or Bluetooth, and ergonomics is 82, helped by the low profile.</p><p>The drawback is typing feel. 75 is the lowest on this page, and per our data the linear switches lack the tactile feedback many typists want. The ABS keycaps may also shine with long use. If you type more than you play, the $120 Q5 Pro scores 90 there.</p>"
+    },
+    {
+      "role": "overall",
+      "product_id": 5061,
+      "product_name": "NuPhy Air75 HE",
+      "est_price_snapshot": 130,
+      "headline": "Rapid trigger and the best ergonomics score, for $130",
+      "body": "<p>The NuPhy came third in our overall ranking. Second was another Keychron, and Keychron is at its limit here. Per the listing it's a wired, low-profile 75% board with magnetic Jade switches, rapid trigger and adjustable actuation. Gaming responsiveness is 92, 3 points under the best here, for $70 less than the GMMK.</p><p>Ergonomics is 90, the best on this page, and per our data the low profile lets you type comfortably without a wrist rest. Typing feel is 85 and build quality is 88, with an aluminum top frame and PBT keycaps.</p><p>The drawback is that it's wired only, so there's no wireless score. Software is 78, tied for the lowest here: per our data the web-based configurator sets actuation points fine but lacks polish. Against the $120 Q5 Pro it's 22 points ahead on gaming and 20 behind on software.</p>"
+    }
+  ],
+  "faqs": [
+    {
+      "question": "Why are three of the seven picks Keychrons, but none of the \"best for\" picks?",
+      "answer": "Three is as many slots as we give one brand. Keychron boards won best overall (the Q5 Pro), best budget (the C3 Pro) and premium (the Q2 Max), so the three \"best for\" slots went to the best keyboards from other brands. On raw scores the Q2 Max tops all three of those rankings, and Keychron boards take the top eight places for hobbyists. If you want a Keychron for any of those uses, the $230 Q2 Max is the one."
+    },
+    {
+      "question": "Which keyboard here is best for competitive gaming?",
+      "answer": "Three tie at 95 on gaming responsiveness: the $400 ASUS ROG Azoth Extreme, the $200 Glorious GMMK 3 PRO HE and the $200 Razer BlackWidow V4 Low Profile. Per the listing the GMMK has magnetic Hall Effect switches, rapid trigger and an 8K polling rate. The $130 NuPhy Air75 HE scores 92 with magnetic switches and rapid trigger, but it's wired. We'd choose between the GMMK and the NuPhy, depending on whether you need wireless."
+    },
+    {
+      "question": "Keychron Q5 Pro or Q2 Max: which should I buy?",
+      "answer": "The $120 Q5 Pro, for most people. It's $110 less, it edges the Q2 Max on software, 98 to 97, and its 96% layout keeps more keys. The $230 Q2 Max is ahead on gaming, 85 to 70, and on wireless, 90 to 80, and it has the best typing and build scores on this page. Buy the Q2 Max if you game as much as you type and don't need the extra keys."
+    },
+    {
+      "question": "Which of these are wired only?",
+      "answer": "Two, per their listings: the $30 Keychron C3 Pro and the $130 NuPhy Air75 HE. The other five are wireless. The best wireless scores here are the ASUS ROG Azoth Extreme at 93, the Razer BlackWidow V4 Low Profile at 92 and the Keychron Q2 Max at 90. The GMMK 3 PRO HE is lowest at 75, and per our data its battery drains fast at 8K polling with bright RGB."
+    },
+    {
+      "question": "How many keyboards did you compare to get to these seven?",
+      "answer": "192, every mechanical gaming keyboard in our database for this category. Each is scored 0 to 100 on six features: gaming responsiveness, typing feel and acoustics, build quality and durability, software and customization, ergonomics and layout, and wireless performance. The overall ranking counts the six equally, with store ratings and price counted in; the three \"best for\" picks use their own weights."
+    }
+  ],
+  "methodology_note": "In the overall ranking every feature score counts equally, alongside a store customer rating where we have one and a credit for cheaper price tiers; each preset pick uses that preset's own feature weights instead. Every pick's listing was checked on October 29, 2026."
+}
