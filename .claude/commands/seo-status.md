@@ -26,6 +26,8 @@ Prod: `ssh root@209.97.153.234`, app at `/var/www/pw2d`, DB via `mysql -u root p
    ```
    ⚠️ **Composition artifact:** `wpos` is impression-weighted. New long-tail pages enter at pos 30–50 and drag the average down while nothing real got worse. Never judge from the aggregate alone — always check the target queries (step 3).
 
+   ⚠️ **Bot queries** (2026-11-02): if one page's impressions jump several-fold with 0 clicks, pull its queries from the GSC API (`searchanalytics->query`, dimension `query`, page filter) before believing it. Templated nonsense like "lenovo cold brew maker review 2026" made 92% of a guide's impressions that week. Report the buckets with and without such pages, and lean on clicks.
+
    **Read the position buckets, not the average** (decided 2026-09-21, when deep impressions vanished from GSC on both tenants in one week and flattered `wpos` by 15+ points). Page-one impressions are the honest visibility number:
    ```sql
    SELECT tenant_id, YEARWEEK(metric_date) AS wk,

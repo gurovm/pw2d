@@ -1346,3 +1346,121 @@ tea" `?preset=tea-drinker` 7.9 (15), "semi-automatic espresso for beginners" 5.3
 2. c2d: does the ~35 clicks/wk pace hold for a full week?
 3. `/vs/`: does GO vs Silvia stay on page one; does Express vs Pro climb?
 4. Do the three pw2d FAIL pages get re-crawled after the `?limit=` fix?
+
+### Addendum 2026-10-29 — `?limit=` crawl count (real Googlebot 66.249.*, nginx 10-16 → 10-29 09:30 UTC)
+- **The fix works.** Product-page `?limit=` fetches: 853 in 10-01 → 10-15 → 170 in 10-16 → 10-28, ~7/day in the last
+  week. Live product pages on both domains link no `?limit=` URL. The 134 product paths still fetched with `limit=`
+  are URLs Google already knew; the count is draining.
+- **The freed fetches did not go to real product pages.** Plain product fetches: 910 in 10-01 → 10-15, 813 in
+  10-16 → 10-28 (both ~60/day). All real-Googlebot requests fell from 3,898 (10-01 → 10-15) to ~1,750 (10-16 → 10-28).
+- **Coverage, 10-16 → 10-29:** pw2d 266 of 912 live product pages fetched at least once (~29%); c2d 207 of 526 (~39%).
+- **Question 4 answered: no.** The three pw2d FAIL pages (Keychron K8 HE, Razer BlackWidow V4 TKL, AULA F99S; any
+  listing of those names) have had no Googlebot fetch since 10-16. "Request indexing" in URL Inspection is the lever.
+- **Spec 042 Phase B read:** 40 pw2d product pages were fetched between the 10-28 switch and 10-29 09:30. At ~29% per
+  two weeks, most pw2d product pages will not have been re-read by 11-18. So the read should compare pages fetched after
+  10-28 with the rest, which needs that fetch list. nginx keeps 14 days, so the 10-28 → 11-04 fetches are deleted
+  before 11-18 unless the list is saved or retention is raised.
+- GSC "Alternate page with proper canonical" count not read: the Page indexing report is not in the API.
+- **Later 10-29:** URL Inspection API: **4** FAIL pages, not 3. Both Keychron K8 HE listings fail (`-3b750` crawled
+  09-19, `-nqjld` 09-17), plus AULA F99S (08-31) and Razer BlackWidow V4 TKL (09-04); a third K8 HE listing (`-white-r9bes`)
+  is "URL is unknown to Google". All five were sent to the owner for "Request indexing". nginx log retention raised 14 →
+  60 days (`/etc/logrotate.d/nginx`, backup `/root/backups/logrotate-nginx-before-60d-2026-10-29`), so the Phase B read
+  on 11-18 can use the fetch list without saving it by hand.
+
+## UPDATE — 2026-11-02 check: impressions this week are bot-inflated (templated "{brand} {category} review 2026" queries on both tenants), so visibility can't be read; clicks are the honest signal — c2d 28d clicks 78 → 103, pw2d 14 → 11. `/vs/` GO vs Silvia on page one with its first clicks. Wait a week.
+
+*(Due ~10-29/31; run 11-02, during the weekly picks runs.)*
+
+**Pipeline:** 4/4 HEALTHY. GSC through 10-30 on both tenants (no lag between them), GA4 through 11-01. No SEO errors and no
+`outbound clicks failed` in the log. Week 202643 is partial (6 days: 10-25 → 30).
+
+### Bot impressions — read this before any number below
+Page-one impressions jumped the same week on both tenants (c2d 1,488 → 6,006, pw2d 189 → 759), almost all on two guides,
+with 0 clicks. GSC API, per query, 10-25 → 30:
+- `/best/cold-brew-makers` (c2d): 4,599 impressions over 140 queries; **"lenovo cold brew maker review 2026" 3,561**, "hp cold
+  brew maker review 2026" 586 — 25 templated queries = 4,221 (92%). Before 10-25 the same queries ran at ~5/day.
+- `/best/mechanical-gaming-keyboards` (pw2d): 623 over 62 queries; **"garmin mechanical keyboard review 2026" 410**, plus "best
+  rust proof / unbreakable / bodybuilders / athletes mechanical keyboard" — 22 such queries = 492 (79%).
+- The same pattern sits at lower volume on compare pages ("stroller vs pour over coffee maker", "chicco tea kettle review 2025",
+  "cold brew maker vs smart lock"). Brand × category nonsense at a steady position with 0 clicks = automated queries (SEO
+  tools / scrapers), not readers. Both tenants, same week → not our work.
+- **Rule for future reads:** when a page's impressions jump several-fold, read its queries through the GSC API before
+  believing it; the stored `gsc_top_query` is only the day's top query.
+
+### Trajectory
+| Metric (28d) | pw2d 10-24 | **pw2d 11-02** | c2d 10-24 | **c2d 11-02** |
+|---|---|---|---|---|
+| Pages w/ impressions | 429 | **413** | 389 | **408** |
+| Impressions | 5,380 | **6,161** (4,774 without the 2 guides) | 8,338 | **14,606** (9,908 without) |
+| Clicks | 14 | **11** | 78 | **103** |
+| Weighted pos | 32.7 | **31.9** (34.9 without) | 17.3 | **14.5** (16.8 without) |
+| CTR | 0.26% | **0.18%** ⚠️ | 0.94% | **0.71%** ⚠️ |
+
+⚠️ CTR falls only because of the bot impressions; clicks are the number to trust this week.
+
+### Position buckets (impressions per week; 202643 = 6 days)
+| tenant | wk | ≤10 | 11–20 | 21–50 | 50+ | clicks (≤10) |
+|---|---|---|---|---|---|---|
+| pw2d | 202641 | 355 | 188 | 534 | 1,253 | 3 (2) |
+| pw2d | 202642 | 189 | 158 | 104 | 71 | 3 (1) |
+| pw2d | 202643 raw | 759 | 328 | 125 | 119 | 1 (1) |
+| pw2d | 202643 without the 2 guides | **337** | 146 | 88 | 119 | 1 (1) |
+| c2d | 202641 | 1,169 | 632 | 184 | 576 | 23 (16) |
+| c2d | 202642 | 1,488 | 607 | 263 | 42 | **40 (30)** |
+| c2d | 202643 raw | 6,006 | 1,213 | 202 | 52 | 23 (20) |
+| c2d | 202643 without the 2 guides | **1,989** | 623 | 202 | 52 | 23 (20) |
+
+- **c2d clicks:** the full week 10-18 → 24 made **40**, a new high (Q2 answered: the ~35/wk pace held). 10-25 → 30: 23 in 6
+  days (~27/wk pace). Page-one impressions rose while clicks fell, so part of the "clean" rise is bot traffic too.
+- **pw2d product pages, page one per day:** 10-18 → 24 ~21/day; 10-25 → 30: 28, 61, 61, 30, 15, 14. Not readable through
+  the bot noise; the last two days are the lowest yet. Phase B titles have been live since 10-28; read on 11-18 as planned (Q1
+  open).
+
+### Google clicks → store clicks (28d)
+- **c2d: 103 → 21** (10-24: 78 → 19). `/compare/pour-over` 3, ECM Mechanika Max II 2, Bezzera LUCE S PID 2, then 1 each: Bezzera
+  BZ10, Matrix DE, Quick Mill Pippa, Alexander Greek mill, Timemore Chestnut Xlite, Mecity, Soma, Hario V60 Fit, Greater Goods,
+  Epeios, RHD, Clever dripper, `/compare/gooseneck`, `/compare/super-automatic`.
+- **pw2d: 11 → 3** (Keychron K8 HE, Micropack split keyboard, `/compare/gaming-chat-headsets`).
+
+### Estimated affiliate revenue (PostHog, 28d, ×30/28)
+- **c2d ≈ $17/month** (Whole Latte Love $14 from 7 clicks, $999–2,999 machines: Mechanika Max II ×2, Matrix DE, Sole, LUCE S,
+  BZ10, Pippa; Amazon $3 from 14 clicks, $20–1,748 — the De'Longhi Eletta Explore click is 73% of the Amazon figure). Up from
+  $13 (10-24).
+- **pw2d ≈ $0.3/month** (3 Amazon clicks: HyperX Cloud III $70, Keychron K8 HE $130, Micropack $46).
+- **Trigger ($50/month for ~a month): not met, 0 of 4 weeks.**
+
+### Target preset queries (14d, positions ≤ 50)
+pw2d:
+
+| Query | 10-15 | 10-24 | **11-02** |
+|---|---|---|---|
+| ergonomic keyboard for programmers / developers (`?preset=programmer`) | 12.8 / 7.5 | 10.0 / 10.0 | **8.4 / 13.6** (12 + 8 impr) |
+| rsi keyboard (`?preset=rsi-sufferer`) | 9.9 | 10.7 | **11.3** (10) |
+| best (mechanical) keyboard for streamers (`?preset=streamer`) | 13.0 | gone | **11.1 / 9.9** (21 + 7) — back |
+| gaming headset for remote workers (`?preset=remote-worker`) | ~9 | gone | **12.1** (22) — back |
+
+c2d (all 0 clicks): "best pour over coffee maker for beginners" `?preset=beginner` **8.3** (32; "…for short people" 2.8 gone),
+"best durable pour over coffee maker" `?preset=traveler` 3.1 (28), "best lightweight…" 9.3 (5.2), "travel friendly" 9.0,
+"semi-automatic espresso for beginners" 6.0 (5.3), "gooseneck kettle for tea" 7.3 (7.9).
+
+### `/best/` and `/vs/` pages (14d)
+- **`/vs/profitec-go-vs-rancilio-silvia`: 200 impr, 5 clicks, pos 7.5** — holds page one and has its first clicks (Q3 ✓).
+  Express vs Pro 43 impr at 20.4 (was 22–31), climbing slowly. Gate ~11-16 (≥ 2 of 5 on page one): 1 of 2, three Jura
+  pages unwritten.
+- c2d `/best/` without cold brew: pour-over 39 / 9.3, semi-automatic 32 / 7.8 (1 click), super-automatic 27 / 17.1,
+  gooseneck 24 / 8.9, grinders 33 / 36.9.
+- pw2d `/best/`: ergonomic 28 / 9.5, podcast mics 10 / 7.6, headsets 7 / 7.7, lavalier 7 / 5.4. Mechanical keyboards was
+  rebuilt 11-01 — expect churn there for 1–3 weeks.
+
+### Decisions (2026-11-02)
+- **Ambiguous → wait one week, no new on-page spec.** Impressions are polluted by bot queries; judge by clicks and by the
+  target queries' positions until it passes.
+- **pw2d:** Phase B read stays on 11-18 (fetch list from nginx, kept 60 days). The page-one slide is still unread.
+- **c2d:** no on-page work. Clicks up 32% on 28 days.
+- **Affiliate trigger not met** (c2d ≈ $17). No action.
+
+### Next check (~2026-11-07, with the weekly picks run)
+1. Has the bot burst passed (cold brew and keyboards guides back to ~5–30 impressions/day)?
+2. c2d clicks per week: back to ≥ 35, or ~27?
+3. pw2d product pages on page one per day, without bot queries.
+4. Express vs Pro: page one by the ~11-16 gate?
