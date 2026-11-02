@@ -4,6 +4,19 @@ Living document of quirks, gotchas, and mistakes worth not repeating. Add new en
 
 ---
 
+## 2026-10-29 — Proposed a picker fix on a stale column; the owner approved it before the trace caught it
+
+The NuPhy Air75 HE pick read `stock_status = out_of_stock` with no `unavailable` flag, and the architect told the owner
+"the picker accepts out-of-stock keyboards" and proposed a rule change, which the owner approved. Tracing it before
+briefing the builder showed the opposite: the extension sends **no price** from any page that says "out of stock", and
+the offer had a $129.95 price from today's sweep. So the latest scan saw a buyable page, and `out_of_stock` was a
+leftover, because ingestion keeps the previous `stock_status` when a payload omits it. **Rule:** before calling a
+record wrong because of a status column, trace how that column is written (including any keep-the-previous-value
+fallback) and check it against the other fields of the same latest write. Do that trace before proposing the fix to
+the owner, not after the owner approves it.
+
+---
+
 ## 2026-10-24 — Diagnosed extension errors from a browser that does not see what the extension sees
 
 Two of the picks run's three Amazon errors (Breville Bambino, Kinesis Advantage360) were opened in the Claude-in-Chrome

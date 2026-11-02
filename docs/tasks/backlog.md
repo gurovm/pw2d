@@ -44,6 +44,7 @@ the code in brackets. Codes (Q5, F12, H-E…) are kept only so the old text can 
 - [ ] **`price_drift` 15% threshold too loose for espresso-machine prices**
 - [ ] **Weekly picks run never checks non-Amazon pick offers** — 4 Clive Coffee offers on c2d semi-automatic; La Marzocco Linea Mini's only offer is unverified; accept or spot-check monthly (owner decision)
 - [ ] **Premium picks die first** — headsets and lavalier both went stale within 3 weeks of a rebuild on a premium high-price flag; if it repeats, prefer picks with a second offer
+- [ ] **`stock_status = out_of_stock` sticks after a listing comes back** — ingestion keeps the previous value when the payload's `stock_status` is null, so a priced, unflagged offer can still read out of stock (NuPhy Air75 HE 3601, sE V7 MK 431 on 10-29); admin-only today (no public read, not in `isPickEligible`); fix before anything starts reading the column: a priced payload without a stock status clears `out_of_stock` → `docs/drafts/2026-10-29-mech-keyboards-guide-draft.md` call 3
 - [ ] **`(store_id, url(120))` prefix index on `product_offers`** [Perf M1] · **`url_hash` column** [Q12]
 
 ## Extension
